@@ -5,6 +5,7 @@ from .models import Case, Location, Disease
 from .repositories import CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
+from unittest.mock import patch
 # Create your tests here.
 
 class CaseRepositoryTestCase(TestCase):
@@ -44,9 +45,10 @@ class CaseRepositoryTestCase(TestCase):
         locations = self.repository.get_all_case_locations()
         self.assertEqual(locations, [])
 
-    def test_get_all_case_locations_exception(self):
-        with self.assertRaises(ObjectDoesNotExist):
-            raise ObjectDoesNotExist("Error retrieving case locations")
+    @patch('pt_backend.models.Case.get_all_cases_locations', side_effect=ObjectDoesNotExist)
+    def test_get_all_case_locations_exception(self, mock_get_all_cases_locations):
+        result = self.repository.get_all_case_locations()
+        self.assertEqual(result, {"error": "Error retrieving case locations"})
 
 
 class CaseAPITest(TestCase):
@@ -80,8 +82,8 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), [])  
 
-    def test_get_all_case_locations_exception(self):
-        with self.assertRaises(Exception):
-            response = self.client.get('/cases/locations/')
-            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-            self.assertIn("error", response.json())
+    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=Exception("Database error"))
+    def test_get_all_case_locations_exception(self, mock_get_all_case_locations):
+        response = self.client.get('/cases/locations/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn("error", response.json())
