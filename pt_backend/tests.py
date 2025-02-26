@@ -3,6 +3,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from .models import Case, Location, Disease
 from .repositories import CaseRepository
+from django.core.exceptions import ObjectDoesNotExist
 import uuid
 # Create your tests here.
 
@@ -35,6 +36,17 @@ class CaseRepositoryTestCase(TestCase):
             }
         ]
         self.assertEqual(locations, expected)
+
+        
+    def test_get_all_case_locations_empty(self):
+        Location.objects.all().delete() 
+
+        locations = self.repository.get_all_case_locations()
+        self.assertEqual(locations, [])
+
+    def test_get_all_case_locations_exception(self):
+        with self.assertRaises(ObjectDoesNotExist):
+            raise ObjectDoesNotExist("Error retrieving case locations")
 
 
 class CaseAPITest(TestCase):
