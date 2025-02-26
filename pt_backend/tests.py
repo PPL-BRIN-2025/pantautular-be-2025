@@ -30,8 +30,8 @@ class CaseRepositoryTestCase(TestCase):
             {
                 "id": str(self.case.id),
                 "city": "Bandung",
-                "latitude": str(self.location.latitude),
-                "longitude": str(self.location.longitude),
+                "latitude": f"{float(self.location.latitude):.6f}", 
+                "longitude": f"{float(self.location.longitude):.6f}",
             }
         ]
         self.assertEqual(locations, expected)
