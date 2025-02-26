@@ -37,7 +37,7 @@ class CaseRepositoryTestCase(TestCase):
         ]
         self.assertEqual(locations, expected)
 
-        
+
     def test_get_all_case_locations_empty(self):
         Location.objects.all().delete() 
 
@@ -73,3 +73,15 @@ class CaseAPITest(TestCase):
             {"id": str(self.case1.id), "city": "Jakarta", "latitude": "-6.208800", "longitude": "106.845600"},
             {"id": str(self.case2.id), "city": "Bandung", "latitude": "-6.917500", "longitude": "107.619100"}
         ])
+
+    def test_get_all_case_locations_empty(self):
+        Location.objects.all().delete()  
+        response = self.client.get('/cases/locations/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])  
+
+    def test_get_all_case_locations_exception(self):
+        with self.assertRaises(Exception):
+            response = self.client.get('/cases/locations/')
+            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.assertIn("error", response.json())
