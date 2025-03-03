@@ -23,22 +23,6 @@ class CaseRepositoryTestCase(TestCase):
         )
         self.repository = CaseRepository()
 
-    def setUp(self):
-        """Set up test data for each test case."""
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Female",
-            age=25,
-            city="Bandung",
-            status="recovered",
-            disease=self.disease
-        )
-        self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung", case=self.case
-        )
-        self.repository = CaseRepository()
-
     def test_get_all_case_locations(self):
 
         locations = self.repository.get_all_case_locations()
@@ -98,8 +82,8 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn("error", response.json())
     
-    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=ObjectDoesNotExist)
-    def test_get_all_case_locations_not_found(self, mock_get_all_case_locations):
+    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', return_value=None)
+    def test_get_all_case_locations_returns_none(self, mock_get_all_case_locations):
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found"})
