@@ -2,8 +2,8 @@ from django.test import TestCase
 
 # Create your tests here.
 from django.test import TestCase
-from pt_backend.models import Case, Disease, Location
-from pt_backend.repositories import DiseaseRepository, LocationRepository
+from pt_backend.models import Case, Disease, Location, News
+from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
@@ -72,3 +72,41 @@ class LocationRepositoryTestCase(TestCase):
     def test_get_all_locations_name_exception(self, mock_get_all_locations):
         result = self.repository.get_all_locations_name()
         self.assertEqual(result, {"error": "Error retrieving locations"})
+
+class NewsRepositoryTestCase(TestCase):
+    def setUp(self):
+        self.news1 = News.objects.create(
+            portal="kompas.com",
+            news_type="health",
+            content="COVID-19 Detected in Jakarta",
+            url="https://www.kompas.com/covid-jakarta",
+            author="Dr. Joko",
+            title="COVID-19 case detected in Jakarta...",
+            release_date="2025-03-01 00:00:00+00"
+        )
+        self.news2 = News.objects.create(
+            portal="detik.com",
+            news_type="health",
+            content="SARS Detected in Medan",
+            url="https://www.detik.com/sars-medan",
+            author="Dr. Sari",
+            title="SARS case detected in Medan...",
+            release_date="2025-03-01 00:00:00+00"
+        )
+        self.repository = NewsRepository()
+
+    def test_get_all_news_name(self):
+        news = self.repository.get_all_news_name()
+        expected = ["kompas.com", "detik.com"]
+        self.assertEqual(news, expected)
+
+    def test_get_all_news_name_empty(self):
+        News.objects.all().delete()  
+
+        news = self.repository.get_all_news_name()
+        self.assertEqual(news, [])
+
+    @patch('pt_backend.models.News.get_all_news', side_effect=ObjectDoesNotExist)
+    def test_get_all_news_name_exception(self, mock_get_all_news):
+        result = self.repository.get_all_news_name()
+        self.assertEqual(result, {"error": "Error retrieving news"})
