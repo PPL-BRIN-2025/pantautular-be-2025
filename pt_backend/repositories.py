@@ -1,4 +1,5 @@
 from .models import Case
+from .serializers import CaseLocationSerializer
 from django.core.exceptions import ObjectDoesNotExist
 
 class CaseRepository:
@@ -7,16 +8,7 @@ class CaseRepository:
             locations = Case.get_all_cases_locations()
             if not locations.exists():
                 return []
-            return [
-                {
-                    "id": str(location.case.id),
-                    "city": location.case.city,
-                    "latitude": f"{float(location.latitude):.6f}",
-                    "longitude": f"{float(location.longitude):.6f}",
-                }
-                for location in locations
-            ]
+            return CaseLocationSerializer.serialize(locations)
         except ObjectDoesNotExist:  
             return {"error": "Error retrieving case locations"}
-
     

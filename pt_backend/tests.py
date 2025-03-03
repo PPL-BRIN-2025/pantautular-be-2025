@@ -6,11 +6,9 @@ from .repositories import CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
-# Create your tests here.
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
-        """Setup data sebelum setiap test dijalankan"""
         self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
         self.case = Case.objects.create(
             id=uuid.uuid4(),
@@ -26,7 +24,6 @@ class CaseRepositoryTestCase(TestCase):
         self.repository = CaseRepository()
 
     def test_get_all_case_locations(self):
-        """Test apakah repository dapat mengambil semua lokasi kasus"""
         locations = self.repository.get_all_case_locations()
         expected = [
             {
