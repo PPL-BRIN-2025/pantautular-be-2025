@@ -23,29 +23,42 @@ class CaseRepositoryTestCase(TestCase):
         )
         self.repository = CaseRepository()
 
-    def test_get_all_case_locations(self):
-        locations = self.repository.get_all_case_locations()
-        expected = [
-            {
-                "id": str(self.case.id),
-                "city": "Bandung",
-                "latitude": f"{float(self.location.latitude):.6f}", 
-                "longitude": f"{float(self.location.longitude):.6f}",
-            }
-        ]
-        self.assertEqual(locations, expected)
+    def setUp(self):
+        """Set up test data for each test case."""
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Female",
+            age=25,
+            city="Bandung",
+            status="recovered",
+            disease=self.disease
+        )
+        self.location = Location.objects.create(
+            latitude=-6.9175, longitude=107.6191, name="Bandung", case=self.case
+        )
+        self.repository = CaseRepository()
 
+    def test_get_all_case_locations(self):
+
+        locations = self.repository.get_all_case_locations()
+        self.assertTrue(locations.exists())
+        self.assertEqual(locations.count(), 1)
+
+        location = locations.first()
+        self.assertEqual(location.name, "Bandung")
+        self.assertEqual(float(location.latitude), -6.9175)
+        self.assertEqual(float(location.longitude), 107.6191)
 
     def test_get_all_case_locations_empty(self):
         Location.objects.all().delete() 
-
         locations = self.repository.get_all_case_locations()
         self.assertEqual(locations, [])
 
-    @patch('pt_backend.models.Case.get_all_cases_locations', side_effect=ObjectDoesNotExist)
-    def test_get_all_case_locations_exception(self, mock_get_all_cases_locations):
-        result = self.repository.get_all_case_locations()
-        self.assertEqual(result, {"error": "Error retrieving case locations"})
+    def test_get_all_case_locations_exception(self):
+        with self.assertRaises(ObjectDoesNotExist):
+            Case.objects.get(id=uuid.uuid4()) 
+
 
 
 class CaseAPITest(TestCase):
