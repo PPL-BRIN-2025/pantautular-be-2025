@@ -2,8 +2,8 @@ from django.test import TestCase
 
 # Create your tests here.
 from django.test import TestCase
-from pt_backend.models import Disease
-from pt_backend.repositories import DiseaseRepository
+from pt_backend.models import Case, Disease, Location
+from pt_backend.repositories import DiseaseRepository, LocationRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
@@ -36,3 +36,39 @@ class DiseaseRepositoryTestCase(TestCase):
     def test_get_all_diseases_name_exception(self, mock_get_all_diseases):
         result = self.repository.get_all_diseases_name()
         self.assertEqual(result, {"error": "Error retrieving diseases"})
+
+class LocationRepositoryTestCase(TestCase):
+    def setUp(self):
+        """Setup data sebelum setiap test dijalankan"""
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=30,
+            city="Jakarta",
+            status="recovered",
+            disease=self.disease
+        )
+        self.location1 = Location.objects.create(
+            latitude=-6.2088, longitude=106.8456, name="Jakarta", case=self.case
+        )
+        self.location2 = Location.objects.create(
+            latitude=-6.9175, longitude=107.6191, name="Bandung", case=self.case
+        )
+        self.repository = LocationRepository()
+
+    def test_get_all_locations_name(self):
+        locations = self.repository.get_all_locations_name()
+        expected = ["Jakarta", "Bandung"]
+        self.assertEqual(locations, expected)
+
+    def test_get_all_locations_name_empty(self):
+        Location.objects.all().delete()  
+
+        locations = self.repository.get_all_locations_name()
+        self.assertEqual(locations, [])
+
+    @patch('pt_backend.models.Location.get_all_locations', side_effect=ObjectDoesNotExist)
+    def test_get_all_locations_name_exception(self, mock_get_all_locations):
+        result = self.repository.get_all_locations_name()
+        self.assertEqual(result, {"error": "Error retrieving locations"})
