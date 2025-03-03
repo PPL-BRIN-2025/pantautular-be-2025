@@ -74,6 +74,9 @@ class Disease(models.Model):
     name = models.CharField(max_length=255)
     level_of_alertness = models.IntegerField()
 
+    def get_all_diseases():
+        return Disease.objects.all()
+
     def get_disease_by_id(disease_id):
         return Disease.objects.filter(disease_id=disease_id).first()
 
@@ -146,6 +149,9 @@ class News(models.Model):
 
     def get_all_sumber_berita_kesehatan_detail():
         return News.objects.filter(news_type="Kesehatan")
+    
+    def get_all_news():
+        return News.objects.all()
 
     def __str__(self):
         return self.title
