@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 class DiseaseRepositoryTestCase(TestCase):
     def setUp(self):
-        """Setup data sebelum setiap test dijalankan"""
         self.disease1 = Disease.objects.create(
             id=uuid.uuid4(), name="COVID-19", level_of_alertness=5
         )
@@ -22,7 +21,6 @@ class DiseaseRepositoryTestCase(TestCase):
         self.repository = DiseaseRepository()
 
     def test_get_all_diseases_name(self):
-        """Test apakah repository dapat mengambil semua nama penyakit"""
         diseases = self.repository.get_all_diseases_name()
         expected = ["COVID-19", "Ebola"]
         self.assertEqual(diseases, expected)
@@ -40,21 +38,12 @@ class DiseaseRepositoryTestCase(TestCase):
 
 class LocationRepositoryTestCase(TestCase):
     def setUp(self):
-        """Setup data sebelum setiap test dijalankan"""
         self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Pria",
-            age=30,
-            city="Jakarta",
-            status="recovered",
-            disease=self.disease
-        )
         self.location1 = Location.objects.create(
-            latitude=-6.2088, longitude=106.8456, name="Jakarta", case=self.case
+            latitude=-6.2088, longitude=106.8456, name="Jakarta"
         )
         self.location2 = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung", case=self.case
+            latitude=-6.9175, longitude=107.6191, name="Bandung"
         )
         self.repository = LocationRepository()
 
@@ -76,23 +65,50 @@ class LocationRepositoryTestCase(TestCase):
 
 class NewsRepositoryTestCase(TestCase):
     def setUp(self):
+        self.disease1 = Disease.objects.create(id=uuid.uuid4(), name="COVID-19", level_of_alertness=5)
+        self.disease2 = Disease.objects.create(id=uuid.uuid4(), name="Ebola", level_of_alertness=4)
+
+        self.location1 = Location.objects.create(id=uuid.uuid4(), latitude=-6.2088, longitude=106.8456, name="Jakarta")
+        self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, name="Bandung")
+
+        self.case1 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=30,
+            city="Jakarta",
+            status="kematian",
+            disease=self.disease1,
+            location=self.location1
+        )
+        self.case2 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Wanita",
+            age=25,
+            city="Bandung",
+            status="terjangkit",
+            disease=self.disease2,
+            location=self.location2
+        )
+
         self.news1 = News.objects.create(
+            id=uuid.uuid4(),
             portal="kompas.com",
-            news_type="health",
-            content="COVID-19 Detected in Jakarta",
+            type="health",
+            title="COVID-19 Detected in Jakarta",
+            content="COVID-19 case detected in Jakarta...",
             url="https://www.kompas.com/covid-jakarta",
             author="Dr. Joko",
-            title="COVID-19 case detected in Jakarta...",
-            release_date="2025-03-01 00:00:00+00"
+            case=self.case1
         )
         self.news2 = News.objects.create(
+            id=uuid.uuid4(),
             portal="detik.com",
-            news_type="health",
-            content="SARS Detected in Medan",
+            type="health",
+            title="SARS Detected in Medan",
+            content="SARS case detected in Medan...",
             url="https://www.detik.com/sars-medan",
             author="Dr. Sari",
-            title="SARS case detected in Medan...",
-            release_date="2025-03-01 00:00:00+00"
+            case=self.case2
         )
         self.repository = NewsRepository()
 
@@ -115,12 +131,64 @@ class NewsRepositoryTestCase(TestCase):
 class FiltersViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.diseaseRepository = DiseaseRepository()
+        self.locationRepository = LocationRepository()
+        self.newsRepository = NewsRepository()
 
-    @patch('pt_backend.repositories.DiseaseRepository.get_all_diseases_name', side_effect=ObjectDoesNotExist)
-    def test_get_filters_diseases_not_found(self, mock_get_all_diseases_name):
+        self.disease1 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.disease2 = Disease.objects.create(name="Ebola", level_of_alertness=4)
+
+        self.location1 = Location.objects.create(id=uuid.uuid4(), latitude=-6.2088, longitude=106.8456, name="Jakarta")
+        self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, name="Bandung")
+
+        self.case1 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=30,
+            city="Jakarta",
+            status="kematian",
+            disease=self.disease1,
+            location=self.location1
+        )
+        self.case2 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Wanita",
+            age=25,
+            city="Bandung",
+            status="terjangkit",
+            disease=self.disease2,
+            location=self.location2
+        )
+
+        self.news1 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="kompas.com",
+            type="health",
+            title="COVID-19 Detected in Jakarta",
+            content="COVID-19 case detected in Jakarta...",
+            url="https://www.kompas.com/covid-jakarta",
+            author="Dr. Joko",
+            case=self.case1
+        )
+        self.news2 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="detik.com",
+            type="health",
+            title="SARS Detected in Medan",
+            content="SARS case detected in Medan...",
+            url="https://www.detik.com/sars-medan",
+            author="Dr. Sari",
+            case=self.case2
+        )
+
+    def test_get_filters(self):
         response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No diseases found"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {
+            "diseases": ["COVID-19", "Ebola"],
+            "locations": ["Jakarta", "Bandung"],
+            "news": ["kompas.com", "detik.com"]
+        })
 
 class FilterAPITest(TestCase):
     def setUp(self):
@@ -130,25 +198,25 @@ class FilterAPITest(TestCase):
         self.locationRepository = LocationRepository()
         self.newsRepository = NewsRepository()
 
-        self.disease1 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.disease2 = Disease.objects.create(name="Ebola", level_of_alertness=4)
+        self.disease1 = Disease.objects.create(id=uuid.uuid4(), name="COVID-19", level_of_alertness=5)
+        self.disease2 = Disease.objects.create(id=uuid.uuid4(), name="Ebola", level_of_alertness=4)
+
+        self.location1 = Location.objects.create(id=uuid.uuid4(), latitude=-6.2088, longitude=106.8456, name="Jakarta")
+        self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, name="Bandung")
 
         self.case1 = Case.objects.create(
-            id=1, gender="Male", age=30, city="Jakarta", status="kematian", disease=self.disease1
+            id=uuid.uuid4(), gender="Pria", age=30, city="Jakarta", status="kematian", disease=self.disease1, location=self.location1
         )
         self.case2 = Case.objects.create(
-            id=2, gender="Female", age=25, city="Bandung", status="terjangkit", disease=self.disease2
+            id=uuid.uuid4(), gender="Wanita", age=25, city="Bandung", status="terjangkit", disease=self.disease2, location=self.location2
         )
-
-        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, name="Jakarta", case_id=self.case1.id)
-        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, name="Bandung", case_id=self.case2.id)
 
         #     portal, news_type , content , url ,author ,title ,release_date 
         self.news1 = News.objects.create(
-            portal="kompas.com", news_type="health", content="COVID-19 Detected in Jakarta", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", title="COVID-19 case detected in Jakarta...", release_date="2025-03-01 00:00:00+00"
+            id=uuid.uuid4(), portal="kompas.com", type="health", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
         )
         self.news2 = News.objects.create(
-            portal="detik.com", news_type="health", content="SARS Detected in Medan", url="https://www.detik.com/sars-medan", author="Dr. Sari", title="SARS case detected in Medan...", release_date="2025-03-01 00:00:00+00"
+            id=uuid.uuid4(), portal="detik.com", type="health", title="SARS Detected in Medan", content="SARS case detected in Medan...", url="https://www.detik.com/sars-medan", author="Dr. Sari", case=self.case2
         )
 
     def test_get_filters(self):
