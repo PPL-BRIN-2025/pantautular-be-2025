@@ -1,4 +1,6 @@
 from django.test import TestCase
+from rest_framework.test import APIClient
+from rest_framework import status
 
 # Create your tests here.
 from django.test import TestCase
@@ -7,7 +9,6 @@ from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsR
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
-# Create your tests here.
 
 class DiseaseRepositoryTestCase(TestCase):
     def setUp(self):
@@ -110,3 +111,13 @@ class NewsRepositoryTestCase(TestCase):
     def test_get_all_news_name_exception(self, mock_get_all_news):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
+
+class FiltersViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    @patch('pt_backend.repositories.DiseaseRepository.get_all_diseases_name', side_effect=ObjectDoesNotExist)
+    def test_get_filters_diseases_not_found(self, mock_get_all_diseases_name):
+        response = self.client.get('/api/filters/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.json(), {"error": "No diseases found"})
