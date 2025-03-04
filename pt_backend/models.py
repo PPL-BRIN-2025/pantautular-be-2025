@@ -104,8 +104,12 @@ class Case(models.Model):
 
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    portal = models.CharField(max_length=255)
     title = models.CharField(max_length=255)
+    type = models.CharField(max_length=255)
     content = models.TextField()
+    url = models.URLField()
+    author = models.CharField(max_length=255)
     date_published = models.DateTimeField(auto_now_add=True)
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
 
