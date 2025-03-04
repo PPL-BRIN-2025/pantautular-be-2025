@@ -29,6 +29,6 @@ class CaseRepositoryTestCase(TestCase):
         self.assertEqual(locations.count(), 1)
         case_data = locations.first()
         self.assertEqual(str(case_data["id"]), str(self.case.id))
-        self.assertEqual(float(case_data["longitude"]), -6.9175)
-        self.assertEqual(float(case_data["latitude"]), 107.6191)
+        self.assertEqual(float(case_data["location__latitude"]), -6.9175)
+        self.assertEqual(float(case_data["location__longitude"]), 107.6191)
     
