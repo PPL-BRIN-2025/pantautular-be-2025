@@ -78,4 +78,8 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found"})
 
-    
+    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=Exception("Database error"))
+    def test_get_all_case_locations_exception(self, mock_get_all_case_locations):
+        response = self.client.get('/cases/locations/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn("An unexpected error occurred. Please try again later.", response.json())
