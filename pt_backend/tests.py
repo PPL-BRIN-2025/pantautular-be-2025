@@ -37,3 +37,8 @@ class CaseRepositoryTestCase(TestCase):
         locations = CaseRepository.get_all_case_locations()
         self.assertEqual(locations, [])
     
+    @patch.object(Case, 'get_all_cases_locations', side_effect=ObjectDoesNotExist)
+    def test_get_all_case_locations_handles_object_does_not_exist(self, mock_get_all_cases_locations):
+        locations = self.repository.get_all_case_locations()
+        self.assertIsNone(locations)
+    
