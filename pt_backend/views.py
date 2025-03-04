@@ -5,7 +5,7 @@ from .services import CaseService
 from .serializers import CaseLocationSerializer
 
 class AllCaseLocationsView(APIView):
-    def get(self, request):
-        pass
+    pass
+
 
 
