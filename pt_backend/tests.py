@@ -62,8 +62,8 @@ class CaseAPITest(TestCase):
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), [
-            {"id": str(self.case1.id), "city": "Jakarta", "latitude": "-6.208800", "longitude": "106.845600"},
-            {"id": str(self.case2.id), "city": "Bandung", "latitude": "-6.917500", "longitude": "107.619100"}
+            {"id": str(self.case1.id), "location__latitude": "-6.208800", "location__longitude": "106.845600"},
+            {"id": str(self.case2.id), "location__latitude": "-6.917500", "location__longitude": "107.619100"}
         ])
 
     

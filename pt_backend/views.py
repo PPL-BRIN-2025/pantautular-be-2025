@@ -1,11 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .services import CaseService
 from .serializers import CaseLocationSerializer
+from .services import CaseService
+
 
 class AllCaseLocationsView(APIView):
-    pass
+    serializer_class = CaseLocationSerializer
+
+    def get(self, request):
+        cases = CaseService.get_all_case_locations()
+        serialized_data = self.serializer_class(cases, many=True).data
+        return Response(serialized_data, status=status.HTTP_200_OK)
 
 
 
