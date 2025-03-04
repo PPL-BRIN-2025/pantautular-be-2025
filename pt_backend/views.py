@@ -10,8 +10,11 @@ class AllCaseLocationsView(APIView):
 
     def get(self, request):
         cases = CaseService.get_all_case_locations()
+        if cases is None:
+            return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
         serialized_data = self.serializer_class(cases, many=True).data
         return Response(serialized_data, status=status.HTTP_200_OK)
+    
 
 
 
