@@ -65,5 +65,11 @@ class CaseAPITest(TestCase):
             {"id": str(self.case1.id), "location__latitude": "-6.208800", "location__longitude": "106.845600"},
             {"id": str(self.case2.id), "location__latitude": "-6.917500", "location__longitude": "107.619100"}
         ])
+        
+    def test_get_all_case_locations_empty(self):
+        Location.objects.all().delete()  
+        response = self.client.get('/cases/locations/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), []) 
 
     
