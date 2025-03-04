@@ -5,7 +5,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository
-from django.core.exceptions import ObjectDoesNotExist
 
 class FiltersView(APIView):
     def get(self, request):
@@ -24,7 +23,5 @@ class FiltersView(APIView):
                 },
                 status=status.HTTP_200_OK
             )
-        except ObjectDoesNotExist:
-            return Response({"error": "No diseases found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
