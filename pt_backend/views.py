@@ -1,8 +1,23 @@
-from django.shortcuts import render
-from django.views.decorators.http import require_GET
-from django.http import HttpResponse
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import CaseLocationSerializer
+from .services import CaseService
 
-@require_GET
-def hello_world(request):
-    return HttpResponse("Hello, World!")
+
+class AllCaseLocationsView(APIView):
+    serializer_class = CaseLocationSerializer
+    service = CaseService()
+    def get(self, request):
+        try:
+            cases = self.service.get_all_case_locations()
+            if cases is None:
+                return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
+            serialized_data = self.serializer_class(cases, many=True).data
+            return Response(serialized_data, status=status.HTTP_200_OK)
+        except Exception: 
+            return Response({"An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+
+
 

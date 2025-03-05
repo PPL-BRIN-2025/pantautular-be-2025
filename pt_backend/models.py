@@ -114,8 +114,9 @@ class Case(models.Model):
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
-    def get_all_locations(self):
-        return Location.objects.filter(cases__disease=self).distinct()
+    @staticmethod
+    def get_all_locations():
+        return Case.objects.values("id", "location__longitude", "location__latitude")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
