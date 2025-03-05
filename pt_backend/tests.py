@@ -90,12 +90,12 @@ class CaseAPITest(TestCase):
         """Test jika request dikirim tanpa API key"""
         self.client.credentials()  # Hapus API key dari request
         response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
 
     def test_get_all_case_locations_invalid_api_key(self):
         """Test jika request dikirim dengan API key yang salah"""
         self.client.credentials(HTTP_X_API_KEY="wrong-api-key")
         response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
