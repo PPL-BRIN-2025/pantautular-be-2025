@@ -3,9 +3,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import CaseLocationSerializer
 from .services import CaseService
+from .authentication import APIKeyAuthentication
 
 
 class AllCaseLocationsView(APIView):
+    authentication_classes = [APIKeyAuthentication]  
+    permission_classes = []  
+
     serializer_class = CaseLocationSerializer
     service = CaseService()
     def get(self, request):
@@ -17,7 +21,6 @@ class AllCaseLocationsView(APIView):
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception: 
             return Response({"An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
 
 
 
