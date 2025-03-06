@@ -73,6 +73,7 @@ class Disease(models.Model):
         return self.name
 
 class HealthProtocolDisease(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     health_protocol = models.ForeignKey(HealthProtocol, on_delete=models.CASCADE, related_name="diseases")
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="protocols")
 
@@ -101,9 +102,10 @@ class Location(models.Model):
 
 class Case(models.Model):
     STATUS_CHOICES = [
-        ("confirmed", "Confirmed"),
-        ("recovered", "Recovered"),
-        ("deceased", "Deceased"),
+        ("minimal", "Minimal"),
+        ("biasa", "Biasa"),
+        ("bahaya", "Bahaya"),
+        ("katastropik", "Katastropik"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
