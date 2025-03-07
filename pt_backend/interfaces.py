@@ -1,6 +1,12 @@
 from abc import ABC, abstractmethod
 
-class CaseRetreivalInterface(ABC):
+class CaseRetrievalInterface(ABC):
     @abstractmethod
-    def get_all_case_locations(self):
+    def get_all_case_locations(self) -> object:
         pass
+
+class CaseRepositoryInterface(ABC):
+    @abstractmethod
+    def get_all_locations(self):
+        pass
+
