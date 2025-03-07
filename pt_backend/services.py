@@ -1,6 +1,9 @@
-from .repositories import CaseRepository
-from .interfaces import CaseRetrievalInterface
+from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface
 
 class CaseService(CaseRetrievalInterface):
+    def __init__(self, repository: CaseRepositoryInterface):
+        self.repository = repository
+
     def get_all_case_locations(self):
-        return CaseRepository.get_all_case_locations()
+        locations = self.repository.get_all_locations()
+        return locations if locations else []
