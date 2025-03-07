@@ -118,7 +118,7 @@ class Case(models.Model):
 
     @staticmethod
     def get_all_locations():
-        return Case.objects.values("id", "location__longitude", "location__latitude")
+        return Case.objects.values("id", "location__longitude", "location__latitude", "city")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"

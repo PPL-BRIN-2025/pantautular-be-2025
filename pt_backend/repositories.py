@@ -1,14 +1,7 @@
 from .models import Case
 from django.core.exceptions import ObjectDoesNotExist
+from .interfaces import CaseRepositoryInterface
 
-class CaseRepository:
-    @staticmethod
-    def get_all_case_locations():
-        try:
-            locations = Case.get_all_locations()
-            if not locations.exists():
-                return []
-            return locations
-        except ObjectDoesNotExist:
-            return None
-    
+class CaseRepository(CaseRepositoryInterface):
+    def get_all_locations(self):
+        return Case.get_all_locations()
