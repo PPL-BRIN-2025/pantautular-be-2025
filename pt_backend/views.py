@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import CaseLocationSerializer
-from .services import CaseService
+from .services import CacheService, CaseService
 from .repositories import CaseRepository
 from .authentication import APIKeyAuthentication
 
@@ -14,7 +14,9 @@ class AllCaseLocationsView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.service = CaseService(CaseRepository())  
+        cache_service = CacheService()
+        repository = CaseRepository()
+        self.service = CaseService(repository, cache_service)  
 
     def get(self, request):
         try:
@@ -23,7 +25,8 @@ class AllCaseLocationsView(APIView):
                 return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
             serialized_data = self.serializer_class(cases, many=True).data
             return Response(serialized_data, status=status.HTTP_200_OK)
-        except Exception:
+        except Exception as e:
+            print(e)
             return Response({"An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
