@@ -1,6 +1,7 @@
-from unittest import TestCase
+import unittest
 from unittest.mock import Mock, patch
 from django.db.models import Q
+from typing import Dict, Optional, Any
 from .filters import (
     DiseaseFilter,
     LocationFilter,
@@ -8,8 +9,10 @@ from .filters import (
     PortalFilter,
     DateRangeFilter
 )
+from .service import CaseFilterService
+from .strategy import FilterStrategy
 
-class FilterTestCase(TestCase):
+class FilterTestCase(unittest.TestCase):
     def setUp(self):
         self.disease_filter = DiseaseFilter()
         self.location_filter = LocationFilter()
@@ -80,4 +83,52 @@ class FilterTestCase(TestCase):
     def test_date_range_filter_with_partial_data(self):
         data = {'date_range': {'start_date': '2024-01-01'}}
         result = self.date_range_filter.apply(data)
-        self.assertIsNone(result) 
+        self.assertIsNone(result)
+
+
+
+class TestFilterStrategy(unittest.TestCase):
+    def setUp(self):
+        class ConcreteFilter:
+            @property
+            def field_name(self) -> str:
+                return "test_field"
+            
+            def build_query(self, value: any) -> Q:
+                return Q(test_field=value)
+            
+            def should_apply(self, data: dict) -> bool:
+                return super().should_apply(data)
+                
+            def apply(self, data: dict) -> Q:
+                return super().apply(data)
+        
+        self.filter = type('TestFilter', (ConcreteFilter, FilterStrategy), {})()
+
+    def test_field_name_property(self):
+        self.assertEqual(self.filter.field_name, "test_field")
+
+    def test_should_apply_with_data(self):
+        data = {"test_field": "value"}
+        self.assertTrue(self.filter.should_apply(data))
+
+    def test_should_apply_without_data(self):
+        data = {"other_field": "value"}
+        self.assertFalse(self.filter.should_apply(data))
+
+    def test_should_apply_with_empty_value(self):
+        data = {"test_field": ""}
+        self.assertFalse(self.filter.should_apply(data))
+
+    def test_apply_with_valid_data(self):
+        data = {"test_field": "value"}
+        result = self.filter.apply(data)
+        self.assertIsInstance(result, Q)
+        self.assertEqual(str(result), str(Q(test_field="value")))
+
+    def test_apply_with_invalid_data(self):
+        data = {"other_field": "value"}
+        result = self.filter.apply(data)
+        self.assertIsNone(result)
+
+
