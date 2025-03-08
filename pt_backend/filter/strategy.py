@@ -4,13 +4,13 @@ from django.db.models import Q
 class FilterStrategy(Protocol):
     @property
     def field_name(self) -> str:
-        pass  
+        pass  # pragma: no cover
 
     def should_apply(self, data: Dict) -> bool:
         return bool(data.get(self.field_name))
 
     def build_query(self, value: Any) -> Q:
-        pass  
+        pass  # pragma: no cover
 
     def apply(self, data: Dict) -> Optional[Q]:
         if self.should_apply(data):
