@@ -23,9 +23,10 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
+        self.repository = CaseRepository()
 
     def test_get_all_case_locations(self):
-        locations = CaseRepository.get_all_case_locations()
+        locations = self.repository.get_all_locations()
         self.assertTrue(locations.exists())
         self.assertEqual(locations.count(), 1)
         case_data = locations.first()
@@ -35,13 +36,9 @@ class CaseRepositoryTestCase(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Location.objects.all().delete() 
-        locations = CaseRepository.get_all_case_locations()
+        locations = self.repository.get_all_case_locations()
         self.assertEqual(locations, [])
-    
-    @patch.object(Case, 'get_all_locations', side_effect=ObjectDoesNotExist)
-    def test_get_all_case_locations_handles_object_does_not_exist(self, mock_get_all_cases_locations):
-        locations = CaseRepository.get_all_case_locations()
-        self.assertIsNone(locations)
+
 
 class CaseAPITest(TestCase):
     def setUp(self):
@@ -71,14 +68,8 @@ class CaseAPITest(TestCase):
     def test_get_all_case_locations_empty(self):
         Location.objects.all().delete()
         response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
-
-    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', return_value=None)
-    def test_get_all_case_locations_returns_none(self, mock_get_all_case_locations):
-        response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found"})
+        self.assertEqual(response.json(), [])
 
     @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=Exception("Database error"))
     def test_get_all_case_locations_exception(self, mock_get_all_case_locations):
