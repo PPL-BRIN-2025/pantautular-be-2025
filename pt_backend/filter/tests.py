@@ -132,3 +132,110 @@ class TestFilterStrategy(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class CaseFilterServiceTest(unittest.TestCase):
+    def setUp(self):
+        self.filter_service = CaseFilterService()
+        
+        self.patcher = patch('pt_backend.filter.service.Case')
+        self.mock_case = self.patcher.start()
+        
+        self.mock_queryset = Mock()
+        self.mock_case.objects.filter.return_value = self.mock_queryset
+        self.mock_queryset.values.return_value = self.mock_queryset
+        self.mock_queryset.distinct.return_value = ['mocked_result']
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    def test_filter_cases_initialization(self):
+        self.assertEqual(len(self.filter_service.filters), 5)
+        self.assertIsInstance(self.filter_service.filters[0], DiseaseFilter)
+        self.assertIsInstance(self.filter_service.filters[1], LocationFilter)
+        self.assertIsInstance(self.filter_service.filters[2], AlertnessFilter)
+        self.assertIsInstance(self.filter_service.filters[3], PortalFilter)
+        self.assertIsInstance(self.filter_service.filters[4], DateRangeFilter)
+
+    def test_filter_cases_with_all_filters(self):
+        data = {
+            'diseases': ['COVID-19'],
+            'locations': ['Jakarta'],
+            'level_of_alertness': 3,
+            'portals': ['BBC'],
+            'date_range': {
+                'start_date': '2024-01-01',
+                'end_date': '2024-12-31'
+            }
+        }
+
+        result = self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.filter.assert_called_once()
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+
+    def test_filter_cases_empty_data(self):
+        data = {}
+        result = self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.filter.assert_called_once()
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+
+    def test_filter_cases_partial_filters(self):
+        data = {
+            'diseases': ['COVID-19'],
+            'locations': ['Jakarta']
+        }
+
+        result = self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.filter.assert_called_once()
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+
+    def test_filter_cases_invalid_filter_data(self):
+        data = {
+            'diseases': [], 
+            'locations': None,  
+            'level_of_alertness': 'invalid' 
+        }
+
+        result = self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.filter.assert_called_once()
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+
+    def test_filter_cases_with_none_returning_filter(self):
+        mock_filter = Mock()
+        mock_filter.apply.return_value = None
+        
+        original_filters = self.filter_service.filters
+        self.filter_service.filters = [mock_filter] + original_filters[1:]
+        
+        data = {'some_key': 'some_value'}
+        result = self.filter_service.filter_cases(data)
+        
+        mock_filter.apply.assert_called_once_with(data)
+        
+        self.mock_case.objects.filter.assert_called_once()
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+        
+        self.filter_service.filters = original_filters
+
