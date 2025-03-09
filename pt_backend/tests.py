@@ -93,7 +93,7 @@ class CaseAPITest(TestCase):
         self.cache_service.delete("all_case_locations")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found"})
+        self.assertEqual(response.json(), [])
 
     @patch('pt_backend.services.CaseService.get_all_case_locations')
     def test_get_all_case_locations_exception(self, mock_get_all_locations):
