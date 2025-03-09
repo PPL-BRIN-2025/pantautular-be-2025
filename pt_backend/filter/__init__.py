@@ -1,14 +1,10 @@
-from .strategy import FilterStrategy
-from .filters import (
-    DiseaseFilter,
-    LocationFilter,
-    AlertnessFilter,
-    PortalFilter,
-    DateRangeFilter
-)
+from .disease_filter import DiseaseFilter
+from .location_filter import LocationFilter
+from .alertness_filter import AlertnessFilter
+from .portal_filter import PortalFilter
+from .date_range_filter import DateRangeFilter
 
 __all__ = [
-    'FilterStrategy',
     'DiseaseFilter',
     'LocationFilter',
     'AlertnessFilter',

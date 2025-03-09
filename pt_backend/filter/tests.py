@@ -1,18 +1,19 @@
-import unittest
-from unittest.mock import Mock, patch
+from django.test import TestCase
 from django.db.models import Q
+from unittest.mock import Mock, patch
 from typing import Dict, Optional, Any
-from .filters import (
-    DiseaseFilter,
-    LocationFilter,
-    AlertnessFilter,
-    PortalFilter,
-    DateRangeFilter
-)
-from .service import CaseFilterService
 from .strategy import FilterStrategy
+from .disease_filter import DiseaseFilter
+from .location_filter import LocationFilter
+from .alertness_filter import AlertnessFilter
+from .portal_filter import PortalFilter
+from .date_range_filter import DateRangeFilter
+from .service import CaseFilterService
+from pt_backend.models import Case, Disease, Location, News
+from datetime import datetime
+import uuid
 
-class FilterTestCase(unittest.TestCase):
+class FilterTestCase(TestCase):
     def setUp(self):
         self.disease_filter = DiseaseFilter()
         self.location_filter = LocationFilter()
@@ -87,7 +88,7 @@ class FilterTestCase(unittest.TestCase):
 
 
 
-class TestFilterStrategy(unittest.TestCase):
+class TestFilterStrategy(TestCase):
     def setUp(self):
         class ConcreteFilter:
             @property
@@ -132,7 +133,7 @@ class TestFilterStrategy(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class CaseFilterServiceTest(unittest.TestCase):
+class CaseFilterServiceTest(TestCase):
     def setUp(self):
         self.filter_service = CaseFilterService()
         
