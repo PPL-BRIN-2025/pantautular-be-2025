@@ -5,7 +5,7 @@ from .interfaces import CaseRepositoryInterface
 class DiseaseRepository:
     def get_all_diseases_name(self):
         try:
-            diseases = Disease.get_all_diseases()
+            diseases = Disease.objects.all()
             if not diseases.exists():
                 return []
             return [disease.name for disease in diseases]
@@ -15,7 +15,7 @@ class DiseaseRepository:
 class LocationRepository:
     def get_all_locations_name(self):
         try:
-            locations = Location.get_all_locations()
+            locations = Location.objects.all()
             if not locations.exists():
                 return []
             return [location.name for location in locations]
@@ -26,7 +26,7 @@ class LocationRepository:
 class NewsRepository:
     def get_all_news_name(self):
         try:
-            news = News.get_all_news()
+            news = News.objects.all()
             if not news.exists():
                 return []
             return [news.portal for news in news]
@@ -35,4 +35,4 @@ class NewsRepository:
 
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
-        return Case.get_all_locations()
+        return Case.get_all_locations

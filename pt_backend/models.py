@@ -97,9 +97,6 @@ class Location(models.Model):
     def __str__(self):
         return self.name
 
-    def get_all_locations():
-        return Location.objects.all()
-
     def __str__(self):
         return self.name
 
@@ -136,9 +133,6 @@ class News(models.Model):
     author = models.CharField(max_length=255)
     date_published = models.DateTimeField(auto_now_add=True)
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
-
-    def get_all_news():
-        return News.objects.all()
 
     def __str__(self):
         return self.title
