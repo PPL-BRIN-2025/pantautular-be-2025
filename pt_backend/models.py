@@ -64,14 +64,16 @@ class Disease(models.Model):
     @staticmethod
     def get_disease_by_id(disease_id):
         return Disease.objects.filter(id=disease_id).first()
-
-    def get_all_diseases():
-        return Disease.objects.all()
-
+    
+    @staticmethod
+    def get_disease_cases(self):
+        return self.cases.all()
+    
     def __str__(self):
         return self.name
 
 class HealthProtocolDisease(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     health_protocol = models.ForeignKey(HealthProtocol, on_delete=models.CASCADE, related_name="diseases")
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="protocols")
 
@@ -82,7 +84,18 @@ class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     latitude = models.DecimalField(max_digits=8, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=False)
+
+    @staticmethod
+    def get_location_by_name(name):
+        return Location.objects.filter(name=name).first()
+
+    @staticmethod
+    def get_all_locations():
+        return Location.objects.all()
+
+    def __str__(self):
+        return self.name
 
     def get_all_locations():
         return Location.objects.all()
@@ -92,9 +105,10 @@ class Location(models.Model):
 
 class Case(models.Model):
     STATUS_CHOICES = [
-        ("confirmed", "Confirmed"),
-        ("recovered", "Recovered"),
-        ("deceased", "Deceased"),
+        ("minimal", "Minimal"),
+        ("biasa", "Biasa"),
+        ("bahaya", "Bahaya"),
+        ("katastropik", "Katastropik"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -105,9 +119,10 @@ class Case(models.Model):
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
-    def get_all_cases():
-        return Case.objects.all()
-
+    @staticmethod
+    def get_all_locations():
+        return Case.objects.values("id", "location__longitude", "location__latitude", "city")
+    
     def __str__(self):
         return f"Case {self.id} - {self.city}"
 
