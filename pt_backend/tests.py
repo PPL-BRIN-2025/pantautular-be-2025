@@ -6,7 +6,9 @@ from .repositories import CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 import os
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+from pt_backend.services import CacheService
+
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
@@ -23,25 +25,23 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
+        self.repository = CaseRepository()
 
     def test_get_all_case_locations(self):
-        locations = CaseRepository.get_all_case_locations()
+        locations = self.repository.get_all_locations()
         self.assertTrue(locations.exists())
         self.assertEqual(locations.count(), 1)
         case_data = locations.first()
         self.assertEqual(str(case_data["id"]), str(self.case.id))
         self.assertEqual(float(case_data["location__latitude"]), -6.9175)
         self.assertEqual(float(case_data["location__longitude"]), 107.6191)
+        self.assertEqual(case_data["city"], "Bandung")
 
     def test_get_all_case_locations_empty(self):
-        Location.objects.all().delete() 
-        locations = CaseRepository.get_all_case_locations()
-        self.assertEqual(locations, [])
-    
-    @patch.object(Case, 'get_all_locations', side_effect=ObjectDoesNotExist)
-    def test_get_all_case_locations_handles_object_does_not_exist(self, mock_get_all_cases_locations):
-        locations = CaseRepository.get_all_case_locations()
-        self.assertIsNone(locations)
+        Case.objects.all().delete()
+        locations = self.repository.get_all_locations()
+        self.assertFalse(locations.exists())
+
 
 class CaseAPITest(TestCase):
     def setUp(self):
@@ -60,31 +60,47 @@ class CaseAPITest(TestCase):
             id=uuid.uuid4(), gender="Female", age=25, city="Bandung", status="recovered", disease=self.disease2, location=self.location2
         )
 
+        # Initialize cache service
+        self.cache_service = CacheService()
+
     def test_get_all_case_locations(self):
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [
-            {"id": str(self.case1.id), "location__latitude": "-6.208800", "location__longitude": "106.845600"},
-            {"id": str(self.case2.id), "location__latitude": "-6.917500", "location__longitude": "107.619100"}
-        ])
+        response_data = response.json()
+        self.assertEqual(len(response_data), 2)
+        
+        response_data.sort(key=lambda x: x['city'])
+        expected_data = [
+            {
+                "id": str(self.case2.id),
+                "location__longitude": "107.619100",
+                "location__latitude": "-6.917500",
+                "city": "Bandung"
+            },
+            {
+                "id": str(self.case1.id),
+                "location__longitude": "106.845600",
+                "location__latitude": "-6.208800",
+                "city": "Jakarta"
+            }
+        ]
+        expected_data.sort(key=lambda x: x['city'])
+        self.assertEqual(response_data, expected_data)
 
     def test_get_all_case_locations_empty(self):
-        Location.objects.all().delete()
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
-
-    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', return_value=None)
-    def test_get_all_case_locations_returns_none(self, mock_get_all_case_locations):
+        Case.objects.all().delete()
+        # Clear the cache
+        self.cache_service.delete("all_case_locations")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found"})
 
-    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=Exception("Database error"))
-    def test_get_all_case_locations_exception(self, mock_get_all_case_locations):
+    @patch('pt_backend.services.CaseService.get_all_case_locations')
+    def test_get_all_case_locations_exception(self, mock_get_all_locations):
+        mock_get_all_locations.side_effect = Exception("Database error")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn("An unexpected error occurred. Please try again later.", response.json())
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
 
     def test_get_all_case_locations_missing_api_key(self):
         self.client.credentials()
@@ -95,5 +111,67 @@ class CaseAPITest(TestCase):
     def test_get_all_case_locations_invalid_api_key(self):
         self.client.credentials(HTTP_X_API_KEY="wrong-api-key")
         response = self.client.get('/cases/locations/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+
+class CaseFilterPostTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        
+        # Mock the filter service
+        self.patcher = patch('pt_backend.views.CaseFilterService')
+        self.mock_filter_service = self.patcher.start()
+        self.mock_filter_instance = Mock()
+        self.mock_filter_service.return_value = self.mock_filter_instance
+
+        self.test_uuid1 = uuid.uuid4()
+        self.test_uuid2 = uuid.uuid4()
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    def test_post_filter_success(self):
+        mock_cases = [
+            {'id': str(self.test_uuid1), 'location__longitude': '106.845600', 'location__latitude': '-6.208800', 'city': 'Jakarta'},
+            {'id': str(self.test_uuid2), 'location__longitude': '107.619100', 'location__latitude': '-6.917500', 'city': 'Bandung'}
+        ]
+        self.mock_filter_instance.filter_cases.return_value = mock_cases
+
+        filter_data = {
+            'diseases': ['COVID-19'],
+            'locations': ['Jakarta']
+        }
+        response = self.client.post('/cases/locations/', filter_data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.mock_filter_instance.filter_cases.assert_called_once_with(filter_data)
+        self.assertEqual(response.json(), mock_cases)
+
+    def test_post_filter_no_results(self):
+        self.mock_filter_instance.filter_cases.return_value = []
+        response = self.client.post('/cases/locations/', {'diseases': ['Unknown']}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.json(), {"error": "No case locations found matching the filters"})
+
+    def test_post_filter_error(self):
+        """Test error handling when filter service raises exception"""
+        self.mock_filter_instance.filter_cases.side_effect = Exception("Database error")
+        response = self.client.post('/cases/locations/', {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+
+    def test_post_filter_missing_api_key(self):
+        self.client.credentials()  # Remove API key
+        response = self.client.post('/cases/locations/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+
+    def test_post_filter_invalid_api_key(self):
+        self.client.credentials(HTTP_X_API_KEY="wrong-api-key")
+        response = self.client.post('/cases/locations/', {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
