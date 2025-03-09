@@ -1,13 +1,11 @@
 from django.db.models import Q, QuerySet
 from typing import Dict
 from pt_backend.models import Case
-from .filters import (
-    DiseaseFilter,
-    LocationFilter,
-    AlertnessFilter,
-    PortalFilter,
-    DateRangeFilter
-)
+from .disease_filter import DiseaseFilter
+from .location_filter import LocationFilter
+from .alertness_filter import AlertnessFilter
+from .portal_filter import PortalFilter
+from .date_range_filter import DateRangeFilter
 
 
 class CaseFilterService:
