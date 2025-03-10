@@ -2,7 +2,7 @@ from django.test import TestCase
 
 from django.test import TestCase
 from pt_backend.models import Case, Disease, Location, News
-from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository
+from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
@@ -91,3 +91,35 @@ class NewsRepositoryTestCase(BaseTestCase):
     def test_get_all_news_name_exception(self, mock_get_all_news):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
+
+class CaseRepositoryTestCase(TestCase):
+    def setUp(self):
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.location = Location.objects.create(
+            latitude=-6.9175, longitude=107.6191, name="Bandung"
+        )
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Female",
+            age=25,
+            city="Bandung",
+            status="recovered",
+            disease=self.disease,
+            location=self.location
+        )
+        self.repository = CaseRepository()
+
+    def test_get_all_case_locations(self):
+        locations = self.repository.get_all_locations()
+        self.assertTrue(locations.exists())
+        self.assertEqual(locations.count(), 1)
+        case_data = locations.first()
+        self.assertEqual(str(case_data["id"]), str(self.case.id))
+        self.assertEqual(float(case_data["location__latitude"]), -6.9175)
+        self.assertEqual(float(case_data["location__longitude"]), 107.6191)
+        self.assertEqual(case_data["city"], "Bandung")
+
+    def test_get_all_case_locations_empty(self):
+        Case.objects.all().delete()
+        locations = self.repository.get_all_locations()
+        self.assertFalse(locations.exists())

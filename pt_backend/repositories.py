@@ -36,4 +36,4 @@ class NewsRepository:
 
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
-        return Case.get_all_locations
+        return Case.get_all_locations()
