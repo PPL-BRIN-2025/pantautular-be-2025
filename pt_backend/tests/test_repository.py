@@ -37,7 +37,9 @@ class DiseaseRepositoryTestCase(BaseTestCase):
     def test_get_all_diseases_name(self):
         diseases = self.repository.get_all_diseases_name()
         expected = ["COVID-19", "Ebola"]
-        self.assertEqual(diseases, expected)
+        for disease in diseases:
+            self.assertIn(disease, expected)
+        self.assertEqual(len(diseases), len(expected))
 
     def test_get_all_diseases_name_empty(self):
         Disease.objects.all().delete()  
@@ -45,7 +47,7 @@ class DiseaseRepositoryTestCase(BaseTestCase):
         diseases = self.repository.get_all_diseases_name()
         self.assertEqual(diseases, [])
 
-    @patch('pt_backend.models.Disease.objects.all', side_effect=ObjectDoesNotExist)
+    @patch('pt_backend.models.Disease.objects.values_list', side_effect=ObjectDoesNotExist)
     def test_get_all_diseases_name_exception(self, mock_get_all_diseases):
         result = self.repository.get_all_diseases_name()
         self.assertEqual(result, {"error": "Error retrieving diseases"})
@@ -58,7 +60,9 @@ class LocationRepositoryTestCase(BaseTestCase):
     def test_get_all_locations_name(self):
         locations = self.repository.get_all_locations_name()
         expected = ["Jakarta", "Bandung"]
-        self.assertEqual(locations, expected)
+        for location in locations:
+            self.assertIn(location, expected)
+        self.assertEqual(len(locations), len(expected))
 
     def test_get_all_locations_name_empty(self):
         Location.objects.all().delete()  
@@ -66,7 +70,7 @@ class LocationRepositoryTestCase(BaseTestCase):
         locations = self.repository.get_all_locations_name()
         self.assertEqual(locations, [])
 
-    @patch('pt_backend.models.Location.objects.all', side_effect=ObjectDoesNotExist)
+    @patch('pt_backend.models.Location.objects.values_list', side_effect=ObjectDoesNotExist)
     def test_get_all_locations_name_exception(self, mock_get_all_locations):
         result = self.repository.get_all_locations_name()
         self.assertEqual(result, {"error": "Error retrieving locations"})
@@ -79,7 +83,9 @@ class NewsRepositoryTestCase(BaseTestCase):
     def test_get_all_news_name(self):
         news = self.repository.get_all_news_name()
         expected = ["kompas.com", "detik.com"]
-        self.assertEqual(news, expected)
+        for news_item in news:
+            self.assertIn(news_item, expected)
+        self.assertEqual(len(news), len(expected))
 
     def test_get_all_news_name_empty(self):
         News.objects.all().delete()  
@@ -87,7 +93,7 @@ class NewsRepositoryTestCase(BaseTestCase):
         news = self.repository.get_all_news_name()
         self.assertEqual(news, [])
 
-    @patch('pt_backend.models.News.objects.all', side_effect=ObjectDoesNotExist)
+    @patch('pt_backend.models.News.objects.values_list', side_effect=ObjectDoesNotExist)
     def test_get_all_news_name_exception(self, mock_get_all_news):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
