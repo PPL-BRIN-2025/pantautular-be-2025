@@ -6,6 +6,8 @@ from pt_backend.models import (
 )
 from decimal import Decimal
 import uuid
+import secrets
+import string
 
 # Define test constants at module level
 TEST_PASSWORD = "test_password_123"  # Only used for testing
@@ -13,10 +15,12 @@ NEW_TEST_PASSWORD = "new_test_password_456"  # Only used for testing
 
 class UserModelTest(TestCase):
     def setUp(self):
+        # Generate random password for testing
+        self.test_password = secrets.token_urlsafe(32)
         self.user = User.objects.create(
             name="Test User",
             email="test@example.com",
-            password=make_password(TEST_PASSWORD),
+            password=make_password(self.test_password),
             role="admin"
         )
 
@@ -25,8 +29,10 @@ class UserModelTest(TestCase):
         self.assertFalse(self.user.has_role("user"))
 
     def test_update_password(self):
-        self.user.update_password(NEW_TEST_PASSWORD)
-        self.assertTrue(check_password(NEW_TEST_PASSWORD, self.user.password))
+        # Generate new random password for testing
+        new_password = secrets.token_urlsafe(32)
+        self.user.update_password(new_password)
+        self.assertTrue(check_password(new_password, self.user.password))
 
     def test_str_representation(self):
         self.assertEqual(str(self.user), "Test User")
