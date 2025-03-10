@@ -1,11 +1,6 @@
-from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
 
-from pt_backend.models import Case, Disease, Location, News
-from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository
-from django.core.exceptions import ObjectDoesNotExist
-import uuid
+from pt_backend.models import Disease, Location, News
 from unittest.mock import patch
 from .test_repository import BaseTestCase
 
@@ -32,38 +27,32 @@ class FilterAPITest(BaseTestCase):
             "news": []
         })
 
-    @patch('pt_backend.repositories.DiseaseRepository.get_all_diseases_name', side_effect=ObjectDoesNotExist)
-    def test_get_filters_exception(self, mock_get_all_diseases_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No diseases found"})
-    
-    @patch('pt_backend.repositories.DiseaseRepository.get_all_diseases_name', side_effect=Exception("Database error"))
-    def test_get_filters_exception(self, mock_get_all_diseases_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn("error", response.json())
+    def _test_get_filters_exception(self, patch_target, side_effect, expected_status, expected_error):
+        with patch(patch_target, side_effect=side_effect):
+            response = self.client.get('/api/filters/')
+            self.assertEqual(response.status_code, expected_status)
+            self.assertEqual(response.json(), {"error": expected_error})
 
-    @patch('pt_backend.repositories.LocationRepository.get_all_locations_name', side_effect=ObjectDoesNotExist)
-    def test_get_filters_exception(self, mock_get_all_locations_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No locations found"})
-    
-    @patch('pt_backend.repositories.LocationRepository.get_all_locations_name', side_effect=Exception("Database error"))
-    def test_get_filters_exception(self, mock_get_all_locations_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn("error", response.json())
+    def test_get_filters_disease_db_error(self):
+        self._test_get_filters_exception(
+            'pt_backend.repositories.DiseaseRepository.get_all_diseases_name',
+            Exception("Database error"),
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Database error"
+        )
 
-    @patch('pt_backend.repositories.NewsRepository.get_all_news_name', side_effect=ObjectDoesNotExist)
-    def test_get_filters_exception(self, mock_get_all_news_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No news found"})
+    def test_get_filters_location_db_error(self):
+        self._test_get_filters_exception(
+            'pt_backend.repositories.LocationRepository.get_all_locations_name',
+            Exception("Database error"),
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Database error"
+        )
 
-    @patch('pt_backend.repositories.NewsRepository.get_all_news_name', side_effect=Exception("Database error"))
-    def test_get_filters_exception(self, mock_get_all_news_name):
-        response = self.client.get('/api/filters/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn("error", response.json())
+    def test_get_filters_news_db_error(self):
+        self._test_get_filters_exception(
+            'pt_backend.repositories.NewsRepository.get_all_news_name',
+            Exception("Database error"),
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Database error"
+        )
