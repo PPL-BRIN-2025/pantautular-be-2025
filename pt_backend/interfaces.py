@@ -1,0 +1,24 @@
+from abc import ABC, abstractmethod
+
+class CaseRetrievalInterface(ABC):
+    @abstractmethod
+    def get_all_case_locations(self):
+        pass # pragma: no cover
+
+class CaseRepositoryInterface(ABC):
+    @abstractmethod
+    def get_all_locations(self):
+        pass # pragma: no cover
+
+class CacheInterface(ABC):
+    @abstractmethod
+    def get(self, key):
+        pass # pragma: no cover
+
+    @abstractmethod
+    def set(self, key, value, timeout):
+        pass # pragma: no cover
+
+    @abstractmethod
+    def delete(self, key):
+        pass # pragma: no cover
