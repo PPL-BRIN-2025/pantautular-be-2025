@@ -1,5 +1,5 @@
 from django.test import TestCase
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from pt_backend.models import (
     User, Role, Permission, Disease, Location, Case, News,
     HealthProtocol
@@ -7,13 +7,17 @@ from pt_backend.models import (
 from decimal import Decimal
 import uuid
 
+# Define test constants at module level
+TEST_PASSWORD = "test_password_123"  # Only used for testing
+NEW_TEST_PASSWORD = "new_test_password_456"  # Only used for testing
+
 class UserModelTest(TestCase):
     def setUp(self):
         self.user = User.objects.create(
             name="Test User",
-            password="old_password",
-            role="admin",
-            email="test@example.com"
+            email="test@example.com",
+            password=make_password(TEST_PASSWORD),
+            role="admin"
         )
 
     def test_has_role(self):
@@ -21,9 +25,8 @@ class UserModelTest(TestCase):
         self.assertFalse(self.user.has_role("user"))
 
     def test_update_password(self):
-        new_password = "new_password"
-        self.user.update_password(new_password)
-        self.assertTrue(check_password(new_password, self.user.password))
+        self.user.update_password(NEW_TEST_PASSWORD)
+        self.assertTrue(check_password(NEW_TEST_PASSWORD, self.user.password))
 
     def test_str_representation(self):
         self.assertEqual(str(self.user), "Test User")
