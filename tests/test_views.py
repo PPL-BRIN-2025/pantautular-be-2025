@@ -1,9 +1,8 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import Case, Location, Disease
-from .repositories import CaseRepository
-from django.core.exceptions import ObjectDoesNotExist
+from pt_backend.models import Case, Location, Disease
+from pt_backend.repositories import CaseRepository
 import uuid
 import os
 from unittest.mock import patch, Mock
@@ -60,7 +59,6 @@ class CaseAPITest(TestCase):
             id=uuid.uuid4(), gender="Female", age=25, city="Bandung", status="recovered", disease=self.disease2, location=self.location2
         )
 
-        # Initialize cache service
         self.cache_service = CacheService()
 
     def test_get_all_case_locations(self):
@@ -89,11 +87,10 @@ class CaseAPITest(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
-        # Clear the cache
         self.cache_service.delete("all_case_locations")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json(), {"error": "No case locations found"})
 
     @patch('pt_backend.services.CaseService.get_all_case_locations')
     def test_get_all_case_locations_exception(self, mock_get_all_locations):
@@ -114,13 +111,13 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
 
+
 class CaseFilterPostTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
         self.client.credentials(HTTP_X_API_KEY=self.api_key)
         
-        # Mock the filter service
         self.patcher = patch('pt_backend.views.CaseFilterService')
         self.mock_filter_service = self.patcher.start()
         self.mock_filter_instance = Mock()
@@ -174,4 +171,4 @@ class CaseFilterPostTest(TestCase):
         self.client.credentials(HTTP_X_API_KEY="wrong-api-key")
         response = self.client.post('/cases/locations/', {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+        self.assertEqual(response.json(), {"detail": "Invalid API Key"}) 

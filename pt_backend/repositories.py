@@ -1,5 +1,6 @@
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
+from .models import Case
 from .interfaces import CaseRepositoryInterface
 
 class DiseaseRepository:

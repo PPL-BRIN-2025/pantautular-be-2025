@@ -2,13 +2,13 @@ from django.test import TestCase
 from django.db.models import Q
 from unittest.mock import Mock, patch
 from typing import Dict, Optional, Any
-from .strategy import FilterStrategy
-from .disease_filter import DiseaseFilter
-from .location_filter import LocationFilter
-from .alertness_filter import AlertnessFilter
-from .portal_filter import PortalFilter
-from .date_range_filter import DateRangeFilter
-from .service import CaseFilterService
+from pt_backend.filter.strategy import FilterStrategy
+from pt_backend.filter.disease_filter import DiseaseFilter
+from pt_backend.filter.location_filter import LocationFilter
+from pt_backend.filter.alertness_filter import AlertnessFilter
+from pt_backend.filter.portal_filter import PortalFilter
+from pt_backend.filter.date_range_filter import DateRangeFilter
+from pt_backend.filter.service import CaseFilterService
 from pt_backend.models import Case, Disease, Location, News
 from datetime import datetime
 import uuid
@@ -239,4 +239,3 @@ class CaseFilterServiceTest(TestCase):
         self.assertEqual(result, ['mocked_result'])
         
         self.filter_service.filters = original_filters
-
