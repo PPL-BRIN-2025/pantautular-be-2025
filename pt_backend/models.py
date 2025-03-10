@@ -97,8 +97,6 @@ class Location(models.Model):
     def __str__(self):
         return self.name
 
-    def __str__(self):
-        return self.name
 
 class Case(models.Model):
     STATUS_CHOICES = [

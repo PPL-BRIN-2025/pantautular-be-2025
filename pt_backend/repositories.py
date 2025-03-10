@@ -1,5 +1,4 @@
 from .models import Case
-from django.core.exceptions import ObjectDoesNotExist
 from .interfaces import CaseRepositoryInterface
 
 class CaseRepository(CaseRepositoryInterface):
