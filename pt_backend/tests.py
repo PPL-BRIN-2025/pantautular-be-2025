@@ -7,6 +7,8 @@ from django.core.exceptions import ObjectDoesNotExist
 import uuid
 import os
 from unittest.mock import patch
+from pt_backend.services import CacheService
+
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
@@ -33,11 +35,12 @@ class CaseRepositoryTestCase(TestCase):
         self.assertEqual(str(case_data["id"]), str(self.case.id))
         self.assertEqual(float(case_data["location__latitude"]), -6.9175)
         self.assertEqual(float(case_data["location__longitude"]), 107.6191)
+        self.assertEqual(case_data["city"], "Bandung")
 
     def test_get_all_case_locations_empty(self):
-        Location.objects.all().delete() 
-        locations = self.repository.get_all_case_locations()
-        self.assertEqual(locations, [])
+        Case.objects.all().delete()
+        locations = self.repository.get_all_locations()
+        self.assertFalse(locations.exists())
 
 
 class CaseAPITest(TestCase):
@@ -57,25 +60,47 @@ class CaseAPITest(TestCase):
             id=uuid.uuid4(), gender="Female", age=25, city="Bandung", status="recovered", disease=self.disease2, location=self.location2
         )
 
+        # Initialize cache service
+        self.cache_service = CacheService()
+
     def test_get_all_case_locations(self):
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [
-            {"id": str(self.case1.id), "location__latitude": "-6.208800", "location__longitude": "106.845600"},
-            {"id": str(self.case2.id), "location__latitude": "-6.917500", "location__longitude": "107.619100"}
-        ])
+        response_data = response.json()
+        self.assertEqual(len(response_data), 2)
+        
+        response_data.sort(key=lambda x: x['city'])
+        expected_data = [
+            {
+                "id": str(self.case2.id),
+                "location__longitude": "107.619100",
+                "location__latitude": "-6.917500",
+                "city": "Bandung"
+            },
+            {
+                "id": str(self.case1.id),
+                "location__longitude": "106.845600",
+                "location__latitude": "-6.208800",
+                "city": "Jakarta"
+            }
+        ]
+        expected_data.sort(key=lambda x: x['city'])
+        self.assertEqual(response_data, expected_data)
 
     def test_get_all_case_locations_empty(self):
-        Location.objects.all().delete()
+        Case.objects.all().delete()
+        # Clear the cache
+        self.cache_service.delete("all_case_locations")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), [])
 
-    @patch('pt_backend.repositories.CaseRepository.get_all_case_locations', side_effect=Exception("Database error"))
-    def test_get_all_case_locations_exception(self, mock_get_all_case_locations):
+    @patch('pt_backend.services.CaseService.get_all_case_locations')
+    def test_get_all_case_locations_exception(self, mock_get_all_locations):
+        mock_get_all_locations.side_effect = Exception("Database error")
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn("An unexpected error occurred. Please try again later.", response.json())
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
 
     def test_get_all_case_locations_missing_api_key(self):
         self.client.credentials()
