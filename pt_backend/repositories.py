@@ -6,20 +6,20 @@ from .interfaces import CaseRepositoryInterface
 class DiseaseRepository:
     def get_all_diseases_name(self):
         try:
-            diseases = Disease.objects.all()
+            diseases = Disease.objects.values_list("name", flat=True).distinct()
             if not diseases.exists():
                 return []
-            return [disease.name for disease in diseases]
+            return list(diseases)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving diseases"}
 
 class LocationRepository:
     def get_all_locations_name(self):
         try:
-            locations = Location.objects.all()
+            locations = Location.objects.values_list("name", flat=True).distinct()
             if not locations.exists():
                 return []
-            return [location.name for location in locations]
+            return list(locations)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving locations"}
         
@@ -27,10 +27,10 @@ class LocationRepository:
 class NewsRepository:
     def get_all_news_name(self):
         try:
-            news = News.objects.all()
+            news = News.objects.values_list("portal", flat=True).distinct()
             if not news.exists():
                 return []
-            return [news.portal for news in news]
+            return list(news)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving news"}
 
