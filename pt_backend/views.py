@@ -38,9 +38,6 @@ class AllCaseLocationsView(APIView):
                 cases = self.service.get_all_case_locations()
             else:
                 cases = self.filter_service.filter_cases(request.data)
-            
-            if cases is None: 
-                raise Exception("Filter service returned None")
 
             if not cases:
                 return Response(

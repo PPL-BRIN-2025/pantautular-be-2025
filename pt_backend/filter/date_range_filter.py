@@ -2,6 +2,7 @@ from datetime import datetime
 import pytz
 from django.db.models import Q
 from typing import Dict
+from typing import Optional
 
 class DateRangeFilter:
     def apply(self, data: Dict) -> Q:
@@ -17,7 +18,7 @@ class DateRangeFilter:
 
         return Q(news__date_published__range=[start_date, end_date]) & Q(news__isnull=False)
 
-    def parse_datetime(self, date_str: str, timezone) -> datetime:
+    def parse_datetime(self, date_str: str, timezone) -> Optional[datetime]:
         formats = [
             "%Y-%m-%dT%H:%M:%S.%fZ",  # Format ISO 8601 dengan milidetik
             "%Y-%m-%dT%H:%M:%SZ",      # Format ISO 8601 tanpa milidetik
