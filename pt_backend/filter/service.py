@@ -7,9 +7,7 @@ from .alertness_filter import AlertnessFilter
 from .portal_filter import PortalFilter
 from .date_range_filter import DateRangeFilter
 
-
 class CaseFilterService:
-
     def __init__(self):
         self.filters = [
             DiseaseFilter(),
@@ -21,7 +19,6 @@ class CaseFilterService:
 
     def filter_cases(self, data: Dict) -> QuerySet:
         query = Q()
-        
         for filter_strategy in self.filters:
             if q_object := filter_strategy.apply(data):
                 query &= q_object

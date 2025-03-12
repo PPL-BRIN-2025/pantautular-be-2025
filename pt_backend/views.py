@@ -23,42 +23,40 @@ class AllCaseLocationsView(APIView):
 
     def get(self, request):
         try:
-            # print("masuk koooo")
             cases = self.service.get_all_case_locations()
             if not cases:
-                # print("bukan kasus")
                 return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
-            # print("seroak sdkljfalkdsf")
             serialized_data = self.serializer_class(cases, many=True).data
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
-            # print("priiiitttt")
             print(e)
             return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
         try:
-            # print("gw gapaasdfasd")
-            cases = self.filter_service.filter_cases(request.data)
+            if not request.data:
+                cases = self.service.get_all_case_locations()
+            else:
+                cases = self.filter_service.filter_cases(request.data)
+            
+            if cases is None: 
+                raise Exception("Filter service returned None")
+
             if not cases:
-                # print("disini kahh")
                 return Response(
-                    {"error": "No case locations found matching the filters"}, 
+                    {"error": "No case locations found matching the filters"},
                     status=status.HTTP_404_NOT_FOUND
                 )
-            # print("kayanya masuk kesini")
+
             return Response(
-                self.serializer_class(cases, many=True).data, 
+                self.serializer_class(cases, many=True).data,
                 status=status.HTTP_200_OK
             )
         except Exception as e:
-            print(e)
-            # print("lkafjlkdsjflakds hmmmmmmmmmmm")
             return Response(
-                {"error": "An unexpected error occurred. Please try again later."}, 
+                {"error": "An unexpected error occurred. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 
 
