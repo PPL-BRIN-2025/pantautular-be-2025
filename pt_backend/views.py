@@ -35,12 +35,10 @@ class AllCaseLocationsView(APIView):
     def post(self, request):
         try:
             if not request.data or all(not v for v in request.data.values()):
-                return Response(
-                    {"message": "Empty filter received, returning 200 OK."},
-                    status=status.HTTP_200_OK
-                )
+                cases = self.service.get_all_case_locations()
 
-            cases = self.filter_service.filter_cases(request.data)
+            else: 
+                cases = self.filter_service.filter_cases(request.data)
 
             if not cases:
                 return Response(
