@@ -10,8 +10,12 @@ from pt_backend.filter.portal_filter import PortalFilter
 from pt_backend.filter.date_range_filter import DateRangeFilter
 from pt_backend.filter.service import CaseFilterService
 from pt_backend.models import Case, Disease, Location, News
+from datetime import timezone
 from datetime import datetime
+import pytz
 import uuid
+from django.utils.dateparse import parse_datetime
+
 
 class FilterTestCase(TestCase):
     def setUp(self):
@@ -67,24 +71,32 @@ class FilterTestCase(TestCase):
 
     def test_date_range_filter_with_valid_data(self):
         data = {
-            'date_range': {
-                'start_date': '2024-01-01',
-                'end_date': '2024-12-31'
-            }
+            'start_date': '2024-01-01T00:00:00Z',
+            'end_date': '2024-12-31T23:59:59Z'
         }
-        expected_q = Q(date_published__range=['2024-01-01', '2024-12-31'])
+        utc = pytz.UTC
+        expected_q = Q(news__date_published__range=[
+            datetime(2024, 1, 1, 0, 0, 0, tzinfo=utc),
+            datetime(2024, 12, 31, 23, 59, 59, tzinfo=utc)
+        ]) & Q(news__isnull=False)
+        
         result = self.date_range_filter.apply(data)
         self.assertEqual(str(result), str(expected_q))
+
+    def test_date_range_filter_with_missing_dates(self):
+        data = {'start_date': '2024-01-01T00:00:00Z'}  # Only start_date
+        result = self.date_range_filter.apply(data)
+        self.assertEqual(str(result), str(Q()))
+
+    def test_date_range_filter_with_invalid_format(self):
+        data = {'start_date': 'invalid-date', 'end_date': 'invalid-date'}
+        result = self.date_range_filter.apply(data)
+        self.assertEqual(str(result), str(Q()))
 
     def test_date_range_filter_with_empty_data(self):
         data = {}
         result = self.date_range_filter.apply(data)
-        self.assertIsNone(result)
-
-    def test_date_range_filter_with_partial_data(self):
-        data = {'date_range': {'start_date': '2024-01-01'}}
-        result = self.date_range_filter.apply(data)
-        self.assertIsNone(result)
+        self.assertEqual(str(result), str(Q()))
 
 
 
