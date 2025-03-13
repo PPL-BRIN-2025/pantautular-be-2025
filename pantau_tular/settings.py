@@ -136,7 +136,8 @@ STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://pantautular-fe.netlify.app"
+    "https://pantautular-fe.netlify.app",
+    "https://radiant-cobbler-73f044.netlify.app/"
 ]
 
 
