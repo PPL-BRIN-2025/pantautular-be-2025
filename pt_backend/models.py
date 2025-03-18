@@ -117,7 +117,7 @@ class Case(models.Model):
     age = models.IntegerField()
     city = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    severity = models.CharField(max_length=255, choices=SEVERITY_CHOICES, blank=True)
+    severity = models.CharField(max_length=255, choices=SEVERITY_CHOICES)
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
