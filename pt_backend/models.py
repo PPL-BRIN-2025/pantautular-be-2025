@@ -84,7 +84,8 @@ class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     latitude = models.DecimalField(max_digits=8, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    name = models.CharField(max_length=255, unique=False)
+    city = models.CharField(max_length=255, unique=False)
+    province = models.CharField(max_length=255, unique=False, blank=True)
 
     @staticmethod
     def get_location_by_name(name):
