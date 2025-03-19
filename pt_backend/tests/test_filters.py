@@ -86,7 +86,8 @@ class FilterTestCase(TestCase):
     def test_date_range_filter_with_missing_dates(self):
         data = {'start_date': '2024-01-01T00:00:00Z'}  # Only start_date
         result = self.date_range_filter.apply(data)
-        self.assertEqual(str(result), str(Q()))
+        expected_q = Q(news__date_published__gte=datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC)) & Q(news__isnull=False)
+        self.assertEqual(str(result), str(expected_q))
 
     def test_date_range_filter_with_invalid_format(self):
         data = {'start_date': 'invalid-date', 'end_date': 'invalid-date'}
