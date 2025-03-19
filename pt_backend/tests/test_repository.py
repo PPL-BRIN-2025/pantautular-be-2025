@@ -113,6 +113,25 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
+        self.case2 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Male",
+            age=25,
+            city="Bandung",
+            status="recovered",
+            disease=self.disease,
+            location=self.location
+        )
+        self.case3 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Male",
+            age=25,
+            city="Bandung",
+            status="recovered",
+            disease=self.disease,
+            location=self.location
+        )
+
         self.repository = CaseRepository()
 
     def test_get_all_case_locations(self):
@@ -129,32 +148,12 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
-
-class GenderRepositoryTest(TestCase):
-    def setUp(self):
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung"
-        )
-        # Menambahkan beberapa data kasus untuk menguji
-        Case.objects.create(gender='Male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
-        Case.objects.create(gender='Female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
-        Case.objects.create(gender='Male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
     
-    def test_get_gender_distribution_positive(self):
-        # Tes distribusi gender yang benar
-        repository = GenderRepository()
-        result = repository.get_gender_distribution()
-
-        self.assertEqual(result['Male'], 2)  # Harus ada 2 kasus laki-laki
-        self.assertEqual(result['Female'], 1)  # Harus ada 1 kasus perempuan
-
+    def test_get_gender_distribution(self):
+        result = self.repository.get_gender_distribution()
+        self.assertEqual(result, {'male': 2, 'female': 1})
+    
     def test_get_gender_distribution_empty(self):
-        # Menghapus semua data dan memastikan distribusi gender adalah 0
         Case.objects.all().delete()
-        
-        repository = GenderRepository()
-        result = repository.get_gender_distribution()
-
-        self.assertEqual(result['Male'], 0)
-        self.assertEqual(result['Female'], 0)
+        result = self.repository.get_gender_distribution()
+        self.assertEqual(result, {'male': 0, 'female': 0})
