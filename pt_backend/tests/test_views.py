@@ -143,9 +143,9 @@ class GenderDistAPITest(TestCase):
         self.location = Location.objects.create(
             latitude=-6.9175, longitude=107.6191, name="Bandung"
         )
-        Case.objects.create(gender='Male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
-        Case.objects.create(gender='Female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
-        Case.objects.create(gender='Male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
+        Case.objects.create(gender='male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
+        Case.objects.create(gender='female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
+        Case.objects.create(gender='male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
     
     def test_get_gender_dist(self):
         response = self.client.get('/api/gender-distribution/')
