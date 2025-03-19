@@ -37,3 +37,9 @@ class NewsRepository:
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
         return Case.get_all_locations()
+    
+    def get_gender_distribution(self):
+        return {
+            'male': Case.objects.filter(gender__iexact='male').count(),
+            'female': Case.objects.filter(gender__iexact='female').count()
+        }

@@ -2,7 +2,7 @@ from django.test import TestCase
 
 from django.test import TestCase
 from pt_backend.models import Case, Disease, Location, News
-from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository, GenderRepository
+from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
@@ -137,7 +137,7 @@ class CaseRepositoryTestCase(TestCase):
     def test_get_all_case_locations(self):
         locations = self.repository.get_all_locations()
         self.assertTrue(locations.exists())
-        self.assertEqual(locations.count(), 1)
+        self.assertEqual(locations.count(), 3)
         case_data = locations.first()
         self.assertEqual(str(case_data["id"]), str(self.case.id))
         self.assertEqual(float(case_data["location__latitude"]), -6.9175)
