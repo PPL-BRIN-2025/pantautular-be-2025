@@ -2,7 +2,7 @@ from django.test import TestCase
 
 from django.test import TestCase
 from pt_backend.models import Case, Disease, Location, News
-from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository
+from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository, GenderRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
@@ -129,3 +129,32 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
+
+class GenderRepositoryTest(TestCase):
+    def setUp(self):
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.location = Location.objects.create(
+            latitude=-6.9175, longitude=107.6191, name="Bandung"
+        )
+        # Menambahkan beberapa data kasus untuk menguji
+        Case.objects.create(gender='Male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
+        Case.objects.create(gender='Female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
+        Case.objects.create(gender='Male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
+    
+    def test_get_gender_distribution_positive(self):
+        # Tes distribusi gender yang benar
+        repository = GenderRepository()
+        result = repository.get_gender_distribution()
+
+        self.assertEqual(result['Male'], 2)  # Harus ada 2 kasus laki-laki
+        self.assertEqual(result['Female'], 1)  # Harus ada 1 kasus perempuan
+
+    def test_get_gender_distribution_empty(self):
+        # Menghapus semua data dan memastikan distribusi gender adalah 0
+        Case.objects.all().delete()
+        
+        repository = GenderRepository()
+        result = repository.get_gender_distribution()
+
+        self.assertEqual(result['Male'], 0)
+        self.assertEqual(result['Female'], 0)
