@@ -1,8 +1,6 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
 from django.core.cache import cache
 
-
-
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY = "all_case_locations"
     CACHE_TIMEOUT = 300 
