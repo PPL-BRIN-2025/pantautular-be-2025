@@ -132,3 +132,43 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+
+class GenderDistAPITest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.location = Location.objects.create(
+            latitude=-6.9175, longitude=107.6191, name="Bandung"
+        )
+        Case.objects.create(gender='Male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
+        Case.objects.create(gender='Female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
+        Case.objects.create(gender='Male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
+    
+    def test_get_gender_dist(self):
+        response = self.client.get('/api/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_data = {
+            'Male': 2, 'Female': 1
+        }
+        self.assertEqual(response.data, expected_data)
+    
+    def test_get_gender_dist_empty(self):
+        Case.objects.all().delete()
+        response = self.client.get('/api/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_data = {
+            'Male': 0,
+            'Female': 0
+        }
+        self.assertEqual(response.data, expected_data)
+
+    @patch('pt_backend.services.GenderDistributionService.get_gender_distribution')
+    def test_get_gender_dist_exception(self, mock_get_gender_dist):
+        mock_get_gender_dist.side_effect = Exception("Database error")
+
+        response = self.client.get('/api/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
