@@ -88,15 +88,15 @@ class Location(models.Model):
     province = models.CharField(max_length=255, unique=False)
 
     @staticmethod
-    def get_location_by_name(name):
-        return Location.objects.filter(name=name).first()
+    def get_location_by_city(city):
+        return Location.objects.filter(city=city).first()
 
     @staticmethod
     def get_all_locations():
         return Location.objects.all()
 
     def __str__(self):
-        return self.name
+        return self.city
 
 
 class Case(models.Model):
