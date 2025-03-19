@@ -151,7 +151,7 @@ class GenderDistAPITest(TestCase):
         response = self.client.get('/api/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_data = {
-            'Male': 2, 'Female': 1
+            'male': 2, 'female': 1
         }
         self.assertEqual(response.data, expected_data)
     
@@ -160,8 +160,8 @@ class GenderDistAPITest(TestCase):
         response = self.client.get('/api/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_data = {
-            'Male': 0,
-            'Female': 0
+            'male': 0,
+            'female': 0
         }
         self.assertEqual(response.data, expected_data)
 
