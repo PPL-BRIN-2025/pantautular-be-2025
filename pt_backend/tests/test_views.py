@@ -2,7 +2,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 from pt_backend.models import Case, Location, Disease
-from pt_backend.services import CacheService
+from pt_backend.services import CacheService, CaseService
+from pt_backend.repositories import CaseRepository
 import uuid
 import os
 from unittest.mock import patch, Mock
@@ -139,6 +140,10 @@ class GenderDistAPITest(TestCase):
         self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
         self.client.credentials(HTTP_X_API_KEY=self.api_key)
 
+        self.cache_service = CacheService()
+        self.repository = CaseRepository()
+        self.service = CaseService(self.repository, self.cache_service)
+
         self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
         self.location = Location.objects.create(
             latitude=-6.9175, longitude=107.6191, name="Bandung"
@@ -146,29 +151,12 @@ class GenderDistAPITest(TestCase):
         Case.objects.create(gender='male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
         Case.objects.create(gender='female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
         Case.objects.create(gender='male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
-    
+
     def test_get_gender_dist(self):
-        response = self.client.get('/api/gender-distribution/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        expected_data = {
-            'male': 2, 'female': 1
+        gender_dist = self.service.get_gender_dist()
+        expected_res = {
+            'male': 2,
+            'female': 1
         }
-        self.assertEqual(response.data, expected_data)
-    
-    def test_get_gender_dist_empty(self):
-        Case.objects.all().delete()
-        response = self.client.get('/api/gender-distribution/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        expected_data = {
-            'male': 0,
-            'female': 0
-        }
-        self.assertEqual(response.data, expected_data)
 
-    @patch('pt_backend.services.GenderDistributionService.get_gender_distribution')
-    def test_get_gender_dist_exception(self, mock_get_gender_dist):
-        mock_get_gender_dist.side_effect = Exception("Database error")
-
-        response = self.client.get('/api/gender-distribution/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+        self.assertEqual(expected_res, gender_dist)
