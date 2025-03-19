@@ -73,7 +73,7 @@ class DiseaseModelTest(TestCase):
         self.location = Location.objects.create(
             latitude=Decimal("1.234567"),
             longitude=Decimal("123.456789"),
-            name="Test Location"
+            city="Test Location"
         )
         self.case = Case.objects.create(
             gender="M",
@@ -105,15 +105,15 @@ class LocationModelTest(TestCase):
         self.location = Location.objects.create(
             latitude=Decimal("1.234567"),
             longitude=Decimal("123.456789"),
-            name="Test Location"
+            city="Test Location"
         )
 
-    def test_get_location_by_name(self):
-        found_location = Location.get_location_by_name("Test Location")
+    def test_get_location_by_city(self):
+        found_location = Location.get_location_by_city("Test Location")
         self.assertEqual(found_location, self.location)
 
-    def test_get_location_by_name_not_found(self):
-        not_found = Location.get_location_by_name("Nonexistent")
+    def test_get_location_by_city_not_found(self):
+        not_found = Location.get_location_by_city("Nonexistent")
         self.assertIsNone(not_found)
 
     def test_get_all_locations(self):
@@ -129,7 +129,7 @@ class LocationModelTest(TestCase):
         location = Location.objects.create(
             latitude=Decimal("2.345678"),
             longitude=Decimal("123.456789"),
-            name="Another Location"
+            city="Another Location"
         )
         self.assertEqual(str(location), "Another Location")
 
@@ -142,7 +142,7 @@ class CaseModelTest(TestCase):
         self.location = Location.objects.create(
             latitude=Decimal("1.234567"),
             longitude=Decimal("123.456789"),
-            name="Test Location"
+            city="Test Location"
         )
         self.case = Case.objects.create(
             gender="M",
@@ -174,7 +174,7 @@ class NewsModelTest(TestCase):
         self.location = Location.objects.create(
             latitude=Decimal("1.234567"),
             longitude=Decimal("123.456789"),
-            name="Test Location"
+            city="Test Location"
         )
         self.case = Case.objects.create(
             gender="M",

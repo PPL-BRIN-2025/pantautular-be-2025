@@ -16,8 +16,8 @@ class CaseAPITest(TestCase):
 
         self.disease1 = Disease.objects.create(name="Flu", level_of_alertness=2)
         self.disease2 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, name="Jakarta")
-        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, name="Bandung")
+        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, city="Jakarta")
+        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, city="Bandung")
         self.case1 = Case.objects.create(
             id=uuid.uuid4(), gender="Male", age=30, city="Jakarta", status="confirmed", disease=self.disease1, location=self.location1
         )

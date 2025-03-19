@@ -12,8 +12,8 @@ class BaseTestCase(TestCase):
         self.disease1 = Disease.objects.create(id=uuid.uuid4(), name="COVID-19", level_of_alertness=5)
         self.disease2 = Disease.objects.create(id=uuid.uuid4(), name="Ebola", level_of_alertness=4)
 
-        self.location1 = Location.objects.create(id=uuid.uuid4(), latitude=-6.2088, longitude=106.8456, name="Jakarta")
-        self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, name="Bandung")
+        self.location1 = Location.objects.create(id=uuid.uuid4(), latitude=-6.2088, longitude=106.8456, city="Jakarta")
+        self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, city="Bandung")
 
         self.case1 = Case.objects.create(
             id=uuid.uuid4(), gender="Pria", age=30, city="Jakarta", status="kematian", disease=self.disease1, location=self.location1
@@ -102,7 +102,7 @@ class CaseRepositoryTestCase(TestCase):
     def setUp(self):
         self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
         self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung"
+            latitude=-6.9175, longitude=107.6191, city="Bandung"
         )
         self.case = Case.objects.create(
             id=uuid.uuid4(),
