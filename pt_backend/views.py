@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer
+from .serializers import CaseLocationSerializer, GenderDistributionSerializer
 from .services import CacheService, CaseService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
@@ -93,7 +93,7 @@ class CaseGenderView(APIView):
     def get(self, request):
         try:
             gender_distribution = self.service.get_gender_dist()
-
-            return Response(gender_distribution, status=status.HTTP_200_OK)
+            serialized_data = GenderDistributionSerializer(gender_distribution)
+            return Response(serialized_data.data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
