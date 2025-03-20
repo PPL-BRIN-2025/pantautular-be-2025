@@ -160,3 +160,25 @@ class GenderDistAPITest(TestCase):
         }
 
         self.assertEqual(expected_res, gender_dist)
+    
+    @patch('pt_backend.services.CaseService.get_gender_dist')
+    def test_get_gender_dist_exception(self, mock_get_gender_dist):
+        mock_get_gender_dist.return_value = {
+            'male': 2,
+            'female': 1
+        }
+
+        response = self.client.get('/api/cases/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {
+            'male': 2,
+            'female': 1
+        })
+
+    @patch('pt_backend.services.CaseService.get_gender_dist')
+    def test_get_gender_dist_exception(self, mock_get_gender_dist):
+        mock_get_gender_dist.side_effect = Exception("Database error")
+
+        response = self.client.get('/api/cases/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
