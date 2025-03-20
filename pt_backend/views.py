@@ -79,3 +79,21 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class CaseGenderView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        repository = CaseRepository()
+        cache_service = CacheService()
+        self.service = CaseService(repository, cache_service)
+    
+    def get(self, request):
+        try:
+            gender_distribution = self.service.get_gender_dist()
+
+            return Response(gender_distribution, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
