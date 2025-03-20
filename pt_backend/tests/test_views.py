@@ -146,7 +146,7 @@ class GenderDistAPITest(TestCase):
 
         self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
         self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung"
+            latitude=-6.9175, longitude=107.6191, city="Bandung"
         )
         Case.objects.create(gender='male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
         Case.objects.create(gender='female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)

@@ -15,7 +15,9 @@ class CaseService(CaseRetrievalInterface):
             locations = self.repository.get_all_locations()
             self.cache_service.set(self.CACHE_KEY, locations, timeout=self.CACHE_TIMEOUT)
         return locations if locations else []
-
+    
+    def get_gender_dist(self):
+        return self.repository.get_gender_distribution()
 
 class CacheService(CacheInterface):
     def get(self, key):
