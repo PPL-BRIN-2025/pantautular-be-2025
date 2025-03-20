@@ -151,3 +151,17 @@ class CaseDetailServiceTest(TestCase):
        news.date_published = "invalid date"  
        self.service._format_news([news])
 
+
+   def test_format_news_with_none(self):
+       result = self.service._format_news(None)
+       self.assertEqual(result, [])
+
+   def test_format_health_protocols_with_exception(self):
+       disease = Mock()
+       disease.protocols.all.side_effect = Exception("Database error")
+       result = self.service._format_health_protocols(disease)
+       self.assertEqual(result, [])
+
+   def test_format_health_protocols_with_none(self):
+       result = self.service._format_health_protocols(None)
+       self.assertEqual(result, [])
