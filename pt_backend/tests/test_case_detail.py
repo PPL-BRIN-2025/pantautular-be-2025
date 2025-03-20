@@ -1,16 +1,17 @@
 import os
 from django.test import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 from datetime import datetime
-from pt_backend.formatters import (
-    CaseNewsDetailFormatter, 
-    CaseHealthProtocolDetailFormatter,
-    CaseGenderDetailFormatter
-)
-import uuid
 from pt_backend.models import Case
+from pt_backend.formatters import (
+   CaseNewsDetailFormatter,
+   CaseHealthProtocolDetailFormatter,
+   CaseGenderDetailFormatter
+)
 from pt_backend.services import CaseDetailService
 from pt_backend.repositories import CaseRepository
+import uuid
+from rest_framework.test import APITestCase
 
 
 
@@ -210,3 +211,39 @@ class CaseRepositoryTest(TestCase):
        non_existent_id = uuid.uuid4()
        result = repository.get_case_detail_by_id(non_existent_id)
        self.assertIsNone(result)
+
+
+class CaseDetailViewTest(APITestCase):
+   def setUp(self):
+       self.case_id = uuid.uuid4()
+       self.url = f"/cases/{self.case_id}/"
+      
+       service_patcher = patch('pt_backend.views.CaseDetailService')
+       self.mock_service_class = service_patcher.start()
+       self.mock_service = Mock()
+       self.mock_service_class.return_value = self.mock_service
+       self.addCleanup(service_patcher.stop)
+
+
+       # Tambahkan API key ke setiap request
+       self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+       self.client.credentials(HTTP_X_API_KEY=self.api_key)
+
+
+   def test_get_case_detail_not_found(self):
+       self.mock_service.get_case_detail.return_value = None
+       response = self.client.get(self.url)
+       self.assertEqual(response.status_code, 404)
+
+
+   def test_get_case_detail_success(self):
+       mock_data = {
+           "id": str(self.case_id),  
+           "location": "Jakarta",
+           "gender": "Laki-laki",
+           "age": 25
+       }
+       self.mock_service.get_case_detail.return_value = mock_data
+       response = self.client.get(self.url)
+       self.assertEqual(response.status_code, 200)
+       self.assertEqual(response.json(), mock_data)
