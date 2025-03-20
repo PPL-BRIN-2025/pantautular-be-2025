@@ -101,8 +101,9 @@ class CaseDetailServiceTest(TestCase):
        case.age = 25
        case.location = Mock(province="Jakarta")
       
+       # Perbaiki mock untuk disease
        disease = Mock()
-       disease.name = "COVID-19"  
+       disease.name = "COVID-19"  # Set string langsung, bukan Mock
        disease.level_of_alertness = 3
        case.disease = disease
       
@@ -141,5 +142,12 @@ class CaseDetailServiceTest(TestCase):
        self.assertEqual(len(result["news"]), 1)
        self.assertEqual(len(result["health_protocols"]), 1)
       
+       # Verify cache was set
        self.cache_service.set.assert_called_once()
+
+
+   def test_format_news_with_exception(self):
+       news = Mock()
+       news.date_published = "invalid date"  
+       self.service._format_news([news])
 
