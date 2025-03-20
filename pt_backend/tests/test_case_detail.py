@@ -101,9 +101,8 @@ class CaseDetailServiceTest(TestCase):
        case.age = 25
        case.location = Mock(province="Jakarta")
       
-       # Perbaiki mock untuk disease
        disease = Mock()
-       disease.name = "COVID-19"  # Set string langsung, bukan Mock
+       disease.name = "COVID-19"  
        disease.level_of_alertness = 3
        case.disease = disease
       
@@ -142,19 +141,14 @@ class CaseDetailServiceTest(TestCase):
        self.assertEqual(len(result["news"]), 1)
        self.assertEqual(len(result["health_protocols"]), 1)
       
-       # Verify cache was set
        self.cache_service.set.assert_called_once()
 
 
    def test_format_news_with_exception(self):
        news = Mock()
-       news.date_published = "invalid date"  
+       news.date_published = "invalid date" 
        self.service._format_news([news])
 
-
-   def test_format_news_with_none(self):
-       result = self.service._format_news(None)
-       self.assertEqual(result, [])
 
    def test_format_health_protocols_with_exception(self):
        disease = Mock()
@@ -162,6 +156,35 @@ class CaseDetailServiceTest(TestCase):
        result = self.service._format_health_protocols(disease)
        self.assertEqual(result, [])
 
+
+   def test_generate_related_search_with_none(self):
+       result = self.service._generate_related_search(None)
+       self.assertIsNone(result)
+
+
+   def test_get_case_detail_with_exception(self):
+       self.cache_service.get.return_value = None
+       self.repository.get_case_detail_by_id.side_effect = Exception("Database error")
+      
+       with self.assertRaises(Exception):
+           self.service.get_case_detail(uuid.uuid4())
+
+
+   def test_format_news_with_none(self):
+       result = self.service._format_news(None)
+       self.assertEqual(result, [])
+
+
    def test_format_health_protocols_with_none(self):
        result = self.service._format_health_protocols(None)
        self.assertEqual(result, [])
+
+
+   def test_get_case_detail_raises_exception(self):
+       self.cache_service.get.return_value = None
+       case = Mock()
+       case.news.all.side_effect = Exception("Database error")  
+       self.repository.get_case_detail_by_id.return_value = case
+
+       with self.assertRaises(Exception):
+           self.service.get_case_detail(uuid.uuid4())
