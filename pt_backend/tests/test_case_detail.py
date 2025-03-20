@@ -1,6 +1,6 @@
 import os
 from django.test import TestCase
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from datetime import datetime
 from pt_backend.formatters import (
     CaseNewsDetailFormatter, 
@@ -8,7 +8,9 @@ from pt_backend.formatters import (
     CaseGenderDetailFormatter
 )
 import uuid
+from pt_backend.models import Case
 from pt_backend.services import CaseDetailService
+from pt_backend.repositories import CaseRepository
 
 
 
@@ -188,3 +190,23 @@ class CaseDetailServiceTest(TestCase):
 
        with self.assertRaises(Exception):
            self.service.get_case_detail(uuid.uuid4())
+
+class CaseRepositoryTest(TestCase):
+   def test_get_case_detail_by_id_exception(self):
+       with patch('pt_backend.repositories.Case.objects') as mock_objects:
+           mock_chain = mock_objects.select_related.return_value
+           mock_chain.prefetch_related.return_value = mock_chain
+           mock_chain.only.return_value = mock_chain
+           mock_chain.get.return_value = None
+           mock_chain.get.side_effect = Case.DoesNotExist()
+          
+           repository = CaseRepository()
+           result = repository.get_case_detail_by_id(uuid.uuid4())
+           self.assertIsNone(result)
+
+
+   def test_get_case_detail_by_id_not_found(self):
+       repository = CaseRepository()
+       non_existent_id = uuid.uuid4()
+       result = repository.get_case_detail_by_id(non_existent_id)
+       self.assertIsNone(result)
