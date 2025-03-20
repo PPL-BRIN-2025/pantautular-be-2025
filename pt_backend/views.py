@@ -2,10 +2,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import CaseLocationSerializer
-from .services import CacheService, CaseService
+from .services import CacheService, CaseService, CaseDetailService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
+from django.http import Http404
+from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
 
 class AllCaseLocationsView(APIView):
@@ -79,3 +81,26 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CaseDetailView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        repository = CaseRepository()
+        cache_service = CacheService()
+        self.case_service = CaseDetailService(
+            repository=repository,
+            cache_service=cache_service,
+            news_formatter=CaseNewsDetailFormatter(),
+            protocol_formatter=CaseHealthProtocolDetailFormatter(),
+            gender_formatter=CaseGenderDetailFormatter()
+        )
+
+    def get(self, request, case_id):
+        case_data = self.case_service.get_case_detail(case_id)
+        if not case_data:
+            raise Http404("Case not found")
+        return Response(case_data)
