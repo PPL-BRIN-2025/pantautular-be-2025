@@ -54,13 +54,7 @@ class CaseDetailService:
                 "level_of_alertness": case.disease.level_of_alertness if case.disease else None,
                 "related_search": f"https://www.google.com/search?q=Apa+itu+{case.disease.name.replace(' ', '+')}" if case.disease else None,
                 "news": self._format_news(case.news.all()) if hasattr(case, 'news') else [],
-                "health_protocols": [
-                    {
-                        "title": protocol.health_protocol.title,
-                        "url": protocol.health_protocol.url
-                    }
-                    for protocol in case.disease.protocols.all()
-                ] if case.disease else []
+                "health_protocols": self._format_health_protocols(case.disease) if case.disease else []
             }
             
             self.cache_service.set(cache_key, case_data, timeout=3600)
@@ -75,4 +69,14 @@ class CaseDetailService:
            return [self.news_formatter.format(news) for news in news_list]
        except Exception as e:
            print(f"Error formatting news: {str(e)}")
+           return []
+       
+    def _format_health_protocols(self, disease):
+       try:
+           return [
+               self.protocol_formatter.format(protocol_disease.health_protocol)
+               for protocol_disease in disease.protocols.all()
+           ]
+       except Exception as e:
+           print(f"Error formatting health protocols: {str(e)}")
            return []
