@@ -84,21 +84,20 @@ class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     latitude = models.DecimalField(max_digits=8, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
-    name = models.CharField(max_length=255, unique=False)
+    city = models.CharField(max_length=255, unique=False)
+    province = models.CharField(max_length=255, unique=False)
 
     @staticmethod
-    def get_location_by_name(name):
-        return Location.objects.filter(name=name).first()
+    def get_location_by_city(city):
+        return Location.objects.filter(city=city).first()
 
     @staticmethod
     def get_all_locations():
         return Location.objects.all()
 
     def __str__(self):
-        return self.name
+        return self.city
 
-    def __str__(self):
-        return self.name
 
 class Case(models.Model):
     STATUS_CHOICES = [
@@ -108,11 +107,18 @@ class Case(models.Model):
         ("katastropik", "Katastropik"),
     ]
 
+    SEVERITY_CHOICES = [
+        ("hospitalisasi", "Hospitalisasi"),
+        ("insiden", "Insiden"),
+        ("mortalitas", "Mortalitas"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     gender = models.CharField(max_length=10)
     age = models.IntegerField()
     city = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    severity = models.CharField(max_length=255, choices=SEVERITY_CHOICES)
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
@@ -133,6 +139,7 @@ class News(models.Model):
     author = models.CharField(max_length=255)
     date_published = models.DateTimeField(auto_now_add=True)
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
+    img_url = models.URLField(blank=True)
 
     def __str__(self):
         return self.title

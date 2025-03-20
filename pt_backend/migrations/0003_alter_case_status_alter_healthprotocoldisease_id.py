@@ -17,15 +17,20 @@ class Migration(migrations.Migration):
             name='status',
             field=models.CharField(choices=[('minimal', 'Minimal'), ('biasa', 'Biasa'), ('bahaya', 'Bahaya'), ('katastropik', 'Katastropik')], max_length=20),
         ),
-        migrations.CreateModel(
-            name='HealthProtocolDisease',
-            fields=[
-                ('id', models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
-                ('disease', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='protocols', to='pt_backend.disease')),
-                ('health_protocol', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='diseases', to='pt_backend.healthprotocol')),
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.CreateModel(
+                    name='HealthProtocolDisease',
+                    fields=[
+                        ('id', models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+                        ('disease', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='protocols', to='pt_backend.disease')),
+                        ('health_protocol', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='diseases', to='pt_backend.healthprotocol')),
+                    ],
+                    options={
+                        'unique_together': {('health_protocol', 'disease')},
+                    },
+                ),
             ],
-            options={
-                'unique_together': {('health_protocol', 'disease')},
-            },
+            database_operations=[]
         ),
     ]

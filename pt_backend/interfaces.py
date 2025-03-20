@@ -10,6 +10,10 @@ class CaseRepositoryInterface(ABC):
     def get_all_locations(self):
         pass
 
+    @abstractmethod
+    def get_all_cases(self):
+        pass
+
 class CacheInterface(ABC):
     @abstractmethod
     def get(self, key):

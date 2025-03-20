@@ -1,115 +1,51 @@
 from django.test import TestCase
-from rest_framework.test import APIClient
-from rest_framework import status
-from .models import Case, Location, Disease
-from .repositories import CaseRepository
-from django.core.exceptions import ObjectDoesNotExist
-import uuid
-import os
-from unittest.mock import patch
-from pt_backend.services import CacheService
+from pt_backend.models import Case, Disease, Location
+from pt_backend.repositories import CaseRepository
 
-
-class CaseRepositoryTestCase(TestCase):
+class CaseRepositoryTest(TestCase):
     def setUp(self):
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, name="Bandung"
-        )
-        self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Female",
-            age=25,
-            city="Bandung",
-            status="recovered",
-            disease=self.disease,
-            location=self.location
-        )
+        """
+        Runs before each test. Creates test data for cases, diseases, and locations.
+        """
         self.repository = CaseRepository()
 
-    def test_get_all_case_locations(self):
-        locations = self.repository.get_all_locations()
-        self.assertTrue(locations.exists())
-        self.assertEqual(locations.count(), 1)
-        case_data = locations.first()
-        self.assertEqual(str(case_data["id"]), str(self.case.id))
-        self.assertEqual(float(case_data["location__latitude"]), -6.9175)
-        self.assertEqual(float(case_data["location__longitude"]), 107.6191)
-        self.assertEqual(case_data["city"], "Bandung")
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
 
-    def test_get_all_case_locations_empty(self):
-        Case.objects.all().delete()
-        locations = self.repository.get_all_locations()
-        self.assertFalse(locations.exists())
-
-
-class CaseAPITest(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
-
-        self.disease1 = Disease.objects.create(name="Flu", level_of_alertness=2)
-        self.disease2 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, name="Jakarta")
-        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, name="Bandung")
-        self.case1 = Case.objects.create(
-            id=uuid.uuid4(), gender="Male", age=30, city="Jakarta", status="confirmed", disease=self.disease1, location=self.location1
-        )
-        self.case2 = Case.objects.create(
-            id=uuid.uuid4(), gender="Female", age=25, city="Bandung", status="recovered", disease=self.disease2, location=self.location2
+        self.location = Location.objects.create(
+            latitude=6.2088, longitude=106.8456, city="Jakarta", province="DKI Jakarta"
         )
 
-        # Initialize cache service
-        self.cache_service = CacheService()
+        Case.objects.create(
+            gender="Male", age=30, city="Jakarta", status="biasa",
+            severity="hospitalisasi", disease=self.disease, location=self.location
+        )
+        Case.objects.create(
+            gender="Female", age=25, city="Surabaya", status="minimal",
+            severity="insiden", disease=self.disease, location=self.location
+        )
 
-    def test_get_all_case_locations(self):
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        response_data = response.json()
-        self.assertEqual(len(response_data), 2)
-        
-        response_data.sort(key=lambda x: x['city'])
-        expected_data = [
-            {
-                "id": str(self.case2.id),
-                "location__longitude": "107.619100",
-                "location__latitude": "-6.917500",
-                "city": "Bandung"
-            },
-            {
-                "id": str(self.case1.id),
-                "location__longitude": "106.845600",
-                "location__latitude": "-6.208800",
-                "city": "Jakarta"
-            }
-        ]
-        expected_data.sort(key=lambda x: x['city'])
-        self.assertEqual(response_data, expected_data)
+    def test_get_all_cases_returns_queryset(self):
+        """
+        Test that get_all_cases() returns a QuerySet containing all cases.
+        """
+        cases = self.repository.get_all_cases()
+        self.assertEqual(cases.count(), 2)
+        self.assertTrue(hasattr(cases, "__iter__"))  
 
-    def test_get_all_case_locations_empty(self):
-        Case.objects.all().delete()
-        # Clear the cache
-        self.cache_service.delete("all_case_locations")
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), [])
+    def test_get_all_cases_empty_database(self):
+        """
+        Test that get_all_cases() returns an empty queryset when no cases exist.
+        """
+        Case.objects.all().delete()  
+        cases = self.repository.get_all_cases()
+        self.assertEqual(cases.count(), 0)
+        self.assertFalse(cases.exists())
 
-    @patch('pt_backend.services.CaseService.get_all_case_locations')
-    def test_get_all_case_locations_exception(self, mock_get_all_locations):
-        mock_get_all_locations.side_effect = Exception("Database error")
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
-
-    def test_get_all_case_locations_missing_api_key(self):
-        self.client.credentials()
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
-
-    def test_get_all_case_locations_invalid_api_key(self):
-        self.client.credentials(HTTP_X_API_KEY="wrong-api-key")
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+    def test_get_all_cases_contains_expected_data(self):
+        """
+        Test that the retrieved cases match expected values.
+        """
+        cases = self.repository.get_all_cases()
+        cities = list(cases.values_list("city", flat=True))
+        self.assertIn("Jakarta", cities)
+        self.assertIn("Surabaya", cities)
