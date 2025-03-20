@@ -7,6 +7,8 @@ from pt_backend.formatters import (
     CaseHealthProtocolDetailFormatter,
     CaseGenderDetailFormatter
 )
+import uuid
+from pt_backend.services import CaseDetailService
 
 
 
@@ -53,3 +55,91 @@ class CaseDetailFormatterTest(TestCase):
     def test_extract_domain_with_invalid_url(self):
         result = CaseNewsDetailFormatter._extract_domain("invalid-url")
         self.assertEqual(result, "")
+
+
+class CaseDetailServiceTest(TestCase):
+   def setUp(self):
+       self.repository = Mock()
+       self.cache_service = Mock()
+       self.news_formatter = CaseNewsDetailFormatter()
+       self.protocol_formatter = CaseHealthProtocolDetailFormatter()
+       self.gender_formatter = CaseGenderDetailFormatter()
+      
+       self.service = CaseDetailService(
+           repository=self.repository,
+           cache_service=self.cache_service,
+           news_formatter=self.news_formatter,
+           protocol_formatter=self.protocol_formatter,
+           gender_formatter=self.gender_formatter
+       )
+
+
+   def test_get_case_detail_from_cache(self):
+       case_id = uuid.uuid4()
+       cached_data = {"id": case_id, "cached": True}
+       self.cache_service.get.return_value = cached_data
+      
+       result = self.service.get_case_detail(case_id)
+      
+       self.assertEqual(result, cached_data)
+       self.repository.get_case_detail_by_id.assert_not_called()
+
+
+   def test_get_case_detail_not_found(self):
+       self.cache_service.get.return_value = None
+       self.repository.get_case_detail_by_id.return_value = None
+      
+       result = self.service.get_case_detail(uuid.uuid4())
+      
+       self.assertIsNone(result)
+
+
+   def test_get_case_detail_success(self):
+       case = Mock()
+       case.id = uuid.uuid4()
+       case.gender = "Male"
+       case.age = 25
+       case.location = Mock(province="Jakarta")
+      
+       disease = Mock()
+       disease.name = "COVID-19"  
+       disease.level_of_alertness = 3
+       case.disease = disease
+      
+       news = Mock(
+           img_url="http://example.com/image.jpg",
+           url="http://example.com/news/1",
+           date_published=datetime.now(),
+           title="Test News"
+       )
+       case.news.all.return_value = [news]
+
+
+       protocol = Mock()
+       protocol.health_protocol = Mock(
+           title="Test Protocol",
+           url="http://example.com/protocol/1"
+       )
+       case.disease.protocols.all.return_value = [protocol]
+
+
+       self.cache_service.get.return_value = None
+       self.repository.get_case_detail_by_id.return_value = case
+      
+       result = self.service.get_case_detail(case.id)
+
+
+       self.assertEqual(result["id"], case.id)
+       self.assertEqual(result["location"], "Jakarta")
+       self.assertEqual(result["gender"], "Laki-laki")
+       self.assertEqual(result["age"], 25)
+       self.assertEqual(result["level_of_alertness"], 3)
+       self.assertEqual(
+           result["related_search"],
+           "https://www.google.com/search?q=Apa+itu+COVID-19"
+       )
+       self.assertEqual(len(result["news"]), 1)
+       self.assertEqual(len(result["health_protocols"]), 1)
+      
+       self.cache_service.set.assert_called_once()
+
