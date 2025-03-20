@@ -53,16 +53,7 @@ class CaseDetailService:
                 "age": case.age,
                 "level_of_alertness": case.disease.level_of_alertness if case.disease else None,
                 "related_search": f"https://www.google.com/search?q=Apa+itu+{case.disease.name.replace(' ', '+')}" if case.disease else None,
-                "news": [
-                    {
-                        "img_url": news.img_url,
-                        "url": news.url,
-                        "date": news.date_published.strftime("%d %b %Y"),
-                        "title": news.title,
-                        "domain": news.url.split("/")[2] if news.url else ""
-                    }
-                    for news in case.news.all()
-                ] if hasattr(case, 'news') else [],
+                "news": self._format_news(case.news.all()) if hasattr(case, 'news') else [],
                 "health_protocols": [
                     {
                         "title": protocol.health_protocol.title,
@@ -77,3 +68,11 @@ class CaseDetailService:
         except Exception as e:
             print(f"Error processing case detail: {str(e)}")
             raise
+
+    def _format_news(self, news_queryset):
+       try:
+           news_list = list(news_queryset)
+           return [self.news_formatter.format(news) for news in news_list]
+       except Exception as e:
+           print(f"Error formatting news: {str(e)}")
+           return []
