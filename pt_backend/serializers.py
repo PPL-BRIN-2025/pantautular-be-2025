@@ -7,5 +7,5 @@ class CaseLocationSerializer(serializers.Serializer):
     city = serializers.CharField(max_length=255)
 
 class GenderDistributionSerializer(serializers.Serializer):
-    male = serializers.CharField(max_length=10)
-    female = serializers.CharField(max_length=10)
+    male = serializers.IntegerField()
+    female = serializers.IntegerField()

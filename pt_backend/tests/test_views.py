@@ -153,13 +153,9 @@ class GenderDistAPITest(TestCase):
         Case.objects.create(gender='male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
 
     def test_get_gender_dist(self):
-        gender_dist = self.service.get_gender_dist()
-        expected_res = {
-            'male': 2,
-            'female': 1
-        }
-
-        self.assertEqual(expected_res, gender_dist)
+        response = self.client.get('/api/cases/gender-distribution/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'male': 2, 'female': 1})
     
     @patch('pt_backend.services.CaseService.get_gender_dist')
     def test_get_gender_dist_exception(self, mock_get_gender_dist):
