@@ -45,10 +45,10 @@ class CaseRepositoryTest(TestCase):
             title="Test Title",
             type="Test Type",
             content="Test content",
-            url="http://example.com",
+            url="https://example.com",
             author="Test Author",
             case=case,
-            img_url="http://example.com/image.jpg"
+            img_url="https://example.com/image.jpg"
         )
         repository = CaseRepository()
         qs = repository.get_all_cases()
@@ -93,20 +93,20 @@ class CaseRepositoryTest(TestCase):
             title="Title 1",
             type="Type 1",
             content="Content 1",
-            url="http://example.com/1",
+            url="https://example.com/1",
             author="Author 1",
             case=case,
-            img_url="http://example.com/image1.jpg"
+            img_url="https://example.com/image1.jpg"
         )
         News.objects.create(
             portal="Portal 2",
             title="Title 2",
             type="Type 2",
             content="Content 2",
-            url="http://example.com/2",
+            url="https://example.com/2",
             author="Author 2",
             case=case,
-            img_url="http://example.com/image2.jpg"
+            img_url="https://example.com/image2.jpg"
         )
         repository = CaseRepository()
         qs = repository.get_all_cases()
