@@ -2,7 +2,11 @@ from django.test import TestCase
 from django.utils import timezone
 from .models import Case, Location, Disease, News
 from .repositories import CaseRepository  # Adjust the import if needed
-
+from .services import CaseService, CacheService
+from .interfaces import CaseRepositoryInterface, CacheInterface
+from unittest.mock import MagicMock
+import unittest
+from django.core.cache import cache
 
 class CaseRepositoryTest(TestCase):
     def setUp(self):
@@ -114,3 +118,108 @@ class CaseRepositoryTest(TestCase):
             self.assertEqual(entry["location__province"], self.location.province)
             self.assertEqual(entry["location__city"], self.location.city)
             self.assertEqual(entry["severity"], case.severity)
+
+class TestCaseService(unittest.TestCase):
+    def setUp(self):
+        # Create mocks for repository and cache interfaces.
+        self.mock_repository = MagicMock(spec=CaseRepositoryInterface)
+        self.mock_cache = MagicMock(spec=CacheInterface)
+        self.service = CaseService(self.mock_repository, self.mock_cache)
+
+    def test_positive_case_cache_hit(self):
+        """
+        Positive Case:
+        When the cache contains data, the service returns that data
+        without calling the repository.
+        """
+        cached_data = [
+            {
+                "id": "1",
+                "location__province": "TestProvince",
+                "location__city": "TestCity",
+                "news__portal": "TestPortal",
+                "severity": "TestSeverity",
+                "news__date_published": "2021-01-01"
+            }
+        ]
+        self.mock_cache.get.return_value = cached_data
+
+        result = self.service.get_all_cases()
+
+        # Verify that the cache is queried.
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        # Repository should not be called.
+        self.mock_repository.get_all_cases.assert_not_called()
+        self.assertEqual(result, cached_data)
+
+    def test_negative_case_cache_miss_repository_returns_none(self):
+        """
+        Negative Case:
+        When the cache is empty (None) and the repository returns None,
+        the service should return an empty list.
+        """
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_all_cases.return_value = None
+
+        result = self.service.get_all_cases()
+
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        self.mock_repository.get_all_cases.assert_called_once()
+        # Verify that the cache is set with None and timeout is 300.
+        self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
+        # Since None is falsy, the service returns an empty list.
+        self.assertEqual(result, [])
+
+    def test_corner_case_cache_miss_repository_returns_data(self):
+        """
+        Corner Case:
+        When the cache is empty and the repository returns valid data,
+        the service caches the result and returns it.
+        """
+        repository_data = [
+            {
+                "id": "2",
+                "location__province": "CornerProvince",
+                "location__city": "CornerCity",
+                "news__portal": "CornerPortal",
+                "severity": "CornerSeverity",
+                "news__date_published": "2021-02-02"
+            }
+        ]
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_all_cases.return_value = repository_data
+
+        result = self.service.get_all_cases()
+
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        self.mock_repository.get_all_cases.assert_called_once()
+        self.mock_cache.set.assert_called_once_with("all_cases", repository_data, timeout=300)
+        self.assertEqual(result, repository_data)
+
+
+class TestCacheService(TestCase):
+    def setUp(self):
+        self.cache_service = CacheService()
+        # Clear Django's cache before each test.
+        cache.clear()
+
+    def test_set_and_get(self):
+        """
+        Test that setting a value in the cache and then retrieving it works as expected.
+        """
+        key = "test_key"
+        value = "test_value"
+        self.cache_service.set(key, value, timeout=60)
+        result = self.cache_service.get(key)
+        self.assertEqual(result, value)
+
+    def test_delete(self):
+        """
+        Test that deleting a key from the cache results in a None retrieval.
+        """
+        key = "test_key"
+        value = "test_value"
+        self.cache_service.set(key, value, timeout=60)
+        self.cache_service.delete(key)
+        result = self.cache_service.get(key)
+        self.assertIsNone(result)
