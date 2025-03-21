@@ -1,4 +1,5 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
+from .repositories import NewsRepository
 from django.core.cache import cache
 
 class CaseService(CaseRetrievalInterface):
@@ -26,3 +27,7 @@ class CacheService(CacheInterface):
 
     def delete(self, key):
         cache.delete(key)
+
+class NewsService:
+    def get_severities_dates(self):
+        return NewsRepository().get_all_severities_dates()
