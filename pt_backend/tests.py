@@ -2,11 +2,12 @@ from django.test import TestCase
 from django.utils import timezone
 from .models import Case, Location, Disease, News
 from .repositories import CaseRepository  # Adjust the import if needed
-from .services import CaseService, CacheService
+from .services import CaseService, CacheService, CaseFilterService
 from .interfaces import CaseRepositoryInterface, CacheInterface
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 import unittest
 from django.core.cache import cache
+from datetime import datetime
 
 class CaseRepositoryTest(TestCase):
     def setUp(self):
@@ -223,3 +224,72 @@ class TestCacheService(TestCase):
         self.cache_service.delete(key)
         result = self.cache_service.get(key)
         self.assertIsNone(result)
+    
+class TestCaseFilterService(unittest.TestCase):
+    def setUp(self):
+        self.dummy_qs = MagicMock(name="QuerySet")
+        self.dummy_qs.filter.return_value = self.dummy_qs
+        self.dummy_case_service = MagicMock(name="CaseService")
+        self.dummy_case_service.get_all_cases.return_value = self.dummy_qs
+        self.filter_service = CaseFilterService(self.dummy_case_service)
+
+    def test_no_filters(self):
+        """
+        When no filters are provided, the filter service should simply return
+        the original QuerySet without calling any filter() methods.
+        """
+        result = self.filter_service.filter_cases()
+        self.dummy_case_service.get_all_cases.assert_called_once()
+        self.dummy_qs.filter.assert_not_called()
+        self.assertEqual(result, self.dummy_qs)
+
+    def test_all_filters(self):
+        """
+        When all filters are provided, the service should chain filter calls
+        with the correct lookup parameters.
+        """
+        provinces = ["Province1", "Province2"]
+        cities = ["City1", "City2"]
+        news_portals = ["Portal1", "Portal2"]
+        severities = ["High", "Low"]
+        start_date_str = "2023-01-01T00:00:00"
+        end_date_str = "2023-01-31T00:00:00"
+        news_date_range = (start_date_str, end_date_str)
+
+        result = self.filter_service.filter_cases(
+            provinces=provinces,
+            cities=cities,
+            news_portals=news_portals,
+            severities=severities,
+            news_date_range=news_date_range
+        )
+        expected_calls = [
+            call(location__province__in=provinces),
+            call(location__city__in=cities),
+            call(news__portal__in=news_portals),
+            call(severity__in=severities),
+            call(news__date_published__range=(
+                datetime.fromisoformat(start_date_str),
+                datetime.fromisoformat(end_date_str)
+            ))
+        ]
+        self.assertEqual(self.dummy_qs.filter.call_count, 5)
+        self.assertEqual(self.dummy_qs.filter.call_args_list, expected_calls)
+        self.assertEqual(result, self.dummy_qs)
+
+    def test_partial_filters(self):
+        """
+        When only a subset of filters are provided, only those filters should be applied.
+        For example, if only provinces and severities are provided.
+        """
+        provinces = ["ProvinceX"]
+        severities = ["Medium"]
+
+        result = self.filter_service.filter_cases(provinces=provinces, severities=severities)
+        expected_calls = [
+            call(location__province__in=provinces),
+            call(severity__in=severities),
+        ]
+        self.assertEqual(self.dummy_qs.filter.call_count, 2)
+        self.assertEqual(self.dummy_qs.filter.call_args_list, expected_calls)
+        self.assertEqual(result, self.dummy_qs)
