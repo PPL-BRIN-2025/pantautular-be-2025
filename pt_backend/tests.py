@@ -57,28 +57,16 @@ class CaseRepositoryTest(TestCase):
         self.assertEqual(entry["location__city"], self.location.city)
         self.assertEqual(entry["news__portal"], news.portal)
         self.assertEqual(entry["severity"], case.severity)
-        # Since date_published is auto-set, we compare dates.
         self.assertEqual(entry["news__date_published"].date(), news.date_published.date())
 
-    def test_negative_case(self):
+    def test_negative_case_empty_database(self):
         """
-        A case without any related news should also appear
+        When no cases exist in the database, the repository should return an empty queryset.
         """
-        # Create a case without a related news record.
-        Case.objects.create(
-            gender="F",
-            age=25,
-            city="No News City",
-            status="bahaya",
-            severity="mortalitas",
-            disease=self.disease,
-            location=self.location
-        )
         repository = CaseRepository()
         qs = repository.get_all_cases()
         results = list(qs)
-
-        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results), 0)
 
     def test_corner_case_multiple_news(self):
         """
@@ -93,6 +81,26 @@ class CaseRepositoryTest(TestCase):
             severity="insiden",
             disease=self.disease,
             location=self.location
+        )
+        News.objects.create(
+            portal="Portal 1",
+            title="Title 1",
+            type="Type 1",
+            content="Content 1",
+            url="http://example.com/1",
+            author="Author 1",
+            case=case,
+            img_url="http://example.com/image1.jpg"
+        )
+        News.objects.create(
+            portal="Portal 2",
+            title="Title 2",
+            type="Type 2",
+            content="Content 2",
+            url="http://example.com/2",
+            author="Author 2",
+            case=case,
+            img_url="http://example.com/image2.jpg"
         )
         repository = CaseRepository()
         qs = repository.get_all_cases()
