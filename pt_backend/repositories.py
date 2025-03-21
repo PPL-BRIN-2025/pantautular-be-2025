@@ -1,7 +1,10 @@
+from django.utils import timezone
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
 from .models import Case
 from .interfaces import CaseRepositoryInterface
+from django.db.models import Count
+from django.db.models.functions import TruncDate
 
 class DiseaseRepository:
     def get_all_diseases_name(self):
@@ -33,6 +36,31 @@ class NewsRepository:
             return list(news)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving news"}
+
+    def get_all_severities_dates(self):
+        try:
+            all_severities = set(Case.objects.values_list('severity', flat=True).distinct())
+            
+            result = {}
+            for severity in all_severities:
+                if severity is not None:
+                    date_counts = News.objects.filter(case__severity=severity) \
+                        .annotate(date=TruncDate('date_published')) \
+                        .values('date') \
+                        .annotate(count=Count('id')) \
+                        .order_by('date')
+                    
+                    severity_key = str(severity)
+                    result[severity_key] = [
+                        {
+                            "date": item['date'].strftime('%Y-%m-%d'),
+                            "count": item['count']
+                        }
+                        for item in date_counts
+                    ]
+            return result
+        except Exception as e:
+            return {"error": str(e)}
 
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
