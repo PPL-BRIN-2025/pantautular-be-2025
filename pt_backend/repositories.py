@@ -37,3 +37,20 @@ class NewsRepository:
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
         return Case.get_all_locations()
+    
+    def get_case_detail_by_id(self, case_id):
+        try:
+            return Case.objects.select_related(
+                "disease",  
+                "location" 
+            ).prefetch_related(
+                "news",  
+                "disease__protocols__health_protocol"  
+            ).only(
+                'id', 'gender', 'age',
+                'disease__name', 'disease__level_of_alertness',
+                'location__province'
+            ).get(id=case_id)
+        except (Case.DoesNotExist, Exception) as e: 
+            print(f"Error getting case detail: {str(e)}")  
+            return None
