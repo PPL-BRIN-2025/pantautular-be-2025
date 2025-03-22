@@ -1,5 +1,6 @@
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Count, Case
 from .models import Case
 from .interfaces import CaseRepositoryInterface
 
@@ -39,7 +40,11 @@ class CaseRepository(CaseRepositoryInterface):
         return Case.get_all_locations()
     
     def get_gender_distribution(self):
-        return {
-            'male': Case.objects.filter(gender__iexact='male').count(),
-            'female': Case.objects.filter(gender__iexact='female').count()
-        }
+        gender_counts = Case.objects.values('gender').annotate(count=Count('id'))
+        distribution = {'male': 0, 'female': 0}
+        for gender_count in gender_counts:
+            if gender_count['gender'].lower() == 'male':
+                distribution['male'] = gender_count['count']
+            elif gender_count['gender'].lower() == 'female':
+                distribution['female'] = gender_count['count']
+        return distribution
