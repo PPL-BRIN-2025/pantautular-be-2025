@@ -27,6 +27,7 @@ class CaseDetailFormatterTest(TestCase):
         news.url = "https://example.com/news/1"
         news.date_published = datetime.strptime("2024-03-20T00:00:00Z", "%Y-%m-%dT%H:%M:%SZ")
         news.title = "Test News"
+        news.content = "News content"
 
         result = self.news_formatter.format(news)
         
@@ -35,6 +36,7 @@ class CaseDetailFormatterTest(TestCase):
         self.assertEqual(result["title"], "Test News")
         self.assertEqual(result["domain"], "example.com")
         self.assertEqual(result["date"], "20 Mar 2024")
+        self.assertEqual(result["content"], "News content")
 
     def test_protocol_formatter(self):
         protocol = Mock()
@@ -113,7 +115,8 @@ class CaseDetailServiceTest(TestCase):
            img_url="https://example.com/image.jpg",
            url="https://example.com/news/1",
            date_published=datetime.now(),
-           title="Test News"
+           title="Test News",
+           content = "News content"
        )
        case.news.all.return_value = [news]
 
@@ -139,7 +142,7 @@ class CaseDetailServiceTest(TestCase):
        self.assertEqual(result["level_of_alertness"], 3)
        self.assertEqual(
            result["related_search"],
-           "httpss://www.google.com/search?q=Apa+itu+COVID-19"
+           "https://www.google.com/search?q=Apa+itu+COVID-19"
        )
        self.assertEqual(len(result["news"]), 1)
        self.assertEqual(len(result["health_protocols"]), 1)
@@ -224,10 +227,8 @@ class CaseDetailViewTest(APITestCase):
        self.mock_service_class.return_value = self.mock_service
        self.addCleanup(service_patcher.stop)
 
-
-       # Tambahkan API key ke setiap request
        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-       self.client.credentials(https_X_API_KEY=self.api_key)
+       self.client.credentials(HTTP_X_API_KEY=self.api_key)
 
 
    def test_get_case_detail_not_found(self):

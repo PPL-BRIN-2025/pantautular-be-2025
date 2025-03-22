@@ -6,7 +6,8 @@ class CaseNewsDetailFormatter:
             "url": news.url,
             "date": news.date_published.strftime("%d %b %Y"),
             "title": news.title,
-            "domain": CaseNewsDetailFormatter._extract_domain(news.url)
+            "domain": CaseNewsDetailFormatter._extract_domain(news.url),
+            "content": news.content
         }
 
     @staticmethod
