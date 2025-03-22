@@ -2,10 +2,6 @@ from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheIn
 from django.core.cache import cache
 from .interfaces import CaseRepositoryInterface
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.text_rank import TextRankSummarizer
-from deep_translator import GoogleTranslator
 
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY = "all_case_locations"
