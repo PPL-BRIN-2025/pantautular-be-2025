@@ -17,6 +17,13 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_all_cases()
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
+    
+    def get_all_case_locations(self):
+        locations = self.cache_service.get(self.CACHE_KEY)
+        if locations is None:
+            locations = self.repository.get_all_locations()
+            self.cache_service.set(self.CACHE_KEY, locations, timeout=self.CACHE_TIMEOUT)
+        return locations if locations else []
 
 
 class CacheService(CacheInterface):

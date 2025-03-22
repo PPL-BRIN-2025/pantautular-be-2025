@@ -4,10 +4,17 @@ class CaseRetrievalInterface(ABC):
     @abstractmethod
     def get_all_cases(self):
         pass
+    @abstractmethod
+    def get_all_case_locations(self):
+        pass
 
 class CaseRepositoryInterface(ABC):
     @abstractmethod
     def get_all_cases(self):
+        pass
+    
+    @abstractmethod
+    def get_all_locations(self):
         pass
 
 class CacheInterface(ABC):
