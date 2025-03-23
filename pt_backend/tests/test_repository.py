@@ -182,11 +182,11 @@ class NewsRepositoryTestCase(BaseTestCase):
 
     def test_get_healthcare_news_statistics(self):
         result = self.repository.get_healthcare_news_statistics()
-        self.assertEqual(result, [{'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1}, {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1}])
+        self.assertEqual(result, [{'portal': 'detik.com', 'news_count': 1, 'disease_count': 1}, {'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1}])
 
     def test_get_top_healthcare_news_portal(self):
         result = self.repository.get_top_healthcare_news_portal()
-        self.assertEqual(result, [{'portal': 'kompas.com', 'count': 1}, {'portal': 'detik.com', 'count': 1}])
+        self.assertEqual(result, [{'portal': 'detik.com', 'count': 1}, {'portal': 'kompas.com', 'count': 1}])
 
     def test_get_top_healthcare_news_portal_empty(self):
         News.objects.all().delete()
