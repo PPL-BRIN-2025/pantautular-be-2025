@@ -34,6 +34,51 @@ class NewsRepository:
             return list(news)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving news"}
+        
+    def get_healthcare_news_statistics(self):
+        try:
+            news_stats = News.objects.filter(type="Kesehatan") \
+                .values('portal') \
+                .annotate(
+                    news_count=Count('id'),
+                    disease_count=Count('case__disease', distinct=True)
+                )
+
+            # Format the results
+            results = []
+            for stat in news_stats:
+                results.append({
+                    'portal': stat['portal'],
+                    'news_count': stat['news_count'], 
+                    'disease_count': stat['disease_count']
+                })
+            return results
+
+        except ObjectDoesNotExist:
+            return {"error": "Error retrieving news statistics"}
+
+    def get_top_healthcare_news_portal(self):
+        try:
+            news_stats = News.objects.filter(type="Kesehatan") \
+                .values('portal') \
+                .annotate(
+                    news_count=Count('id')
+                ) \
+                .order_by('-news_count')[:5]
+
+            if not news_stats:
+                return []
+
+            results = []
+            for stat in news_stats:
+                results.append({
+                    'portal': stat['portal'],
+                    'count': stat['news_count']
+                })
+            return results
+
+        except ObjectDoesNotExist:
+            return {"error": "Error retrieving news"}
 
 class CaseRepository(CaseRepositoryInterface):
     def get_all_locations(self):
