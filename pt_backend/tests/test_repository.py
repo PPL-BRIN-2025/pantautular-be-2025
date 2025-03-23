@@ -157,3 +157,48 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         result = self.repository.get_gender_distribution()
         self.assertEqual(result, {'male': 0, 'female': 0})
+
+class NewsRepositoryTestCase(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.repository = NewsRepository()
+        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.disease2 = Disease.objects.create(name="SARS", level_of_alertness=4)
+        self.location = Location.objects.create(
+            latitude=-6.2088, longitude=106.8456, city="Jakarta"
+        )
+        self.case1 = Case.objects.create(
+            id=uuid.uuid4(), gender="Pria", age=30, city="Jakarta", status="kematian", disease=self.disease, location=self.location
+        )
+        self.case2 = Case.objects.create(
+            id=uuid.uuid4(), gender="Wanita", age=25, city="Jakarta", status="terjangkit", disease=self.disease2, location=self.location
+        )
+        self.news1 = News.objects.create(
+            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news2 = News.objects.create(
+            id=uuid.uuid4(), portal="detik.com", type="Kesehatan", title="SARS Detected in Jakarta", content="SARS case detected in Medan...", url="https://www.detik.com/sars-jakarta", author="Dr. Sari", case=self.case2
+        )
+
+    def test_get_healthcare_news_statistics(self):
+        result = self.repository.get_healthcare_news_statistics()
+        self.assertEqual(result, [{'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1}, {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1}])
+
+    def test_get_top_healthcare_news_portal(self):
+        result = self.repository.get_top_healthcare_news_portal()
+        self.assertEqual(result, [{'portal': 'kompas.com', 'count': 1}, {'portal': 'detik.com', 'count': 1}])
+
+    def test_get_top_healthcare_news_portal_empty(self):
+        News.objects.all().delete()
+        result = self.repository.get_top_healthcare_news_portal()
+        self.assertEqual(result, [])
+    
+    def test_get_top_healthcare_news_portal_exception(self):
+        with patch('pt_backend.models.News.objects.filter', side_effect=ObjectDoesNotExist):
+            result = self.repository.get_top_healthcare_news_portal()
+            self.assertEqual(result, {"error": "Error retrieving news"})
+    
+    def test_get_healthcare_news_statistics_exception(self):
+        with patch('pt_backend.models.News.objects.filter', side_effect=ObjectDoesNotExist):
+            result = self.repository.get_healthcare_news_statistics()
+            self.assertEqual(result, {"error": "Error retrieving news statistics"})
