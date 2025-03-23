@@ -44,7 +44,6 @@ class NewsRepository:
                     disease_count=Count('case__disease', distinct=True)
                 )
 
-            # Format the results
             results = []
             for stat in news_stats:
                 results.append({
