@@ -1,12 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer
+from .serializers import CaseLocationSerializer, PrevalenceSerializer
 from .services import CacheService, CaseService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
-
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -56,8 +55,6 @@ class AllCaseLocationsView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
-
 class FiltersView(APIView):
     def get(self, request):
         disease_repository = DiseaseRepository()
@@ -78,4 +75,27 @@ class FiltersView(APIView):
 
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)     
+        
+class PrevalenceView(APIView):
+    def get(self, request):
+        try:    
+            repository = CaseRepository()
+            result = repository.get_prevalence()
+            
+            if "error" in result:
+                return Response(
+                    {"error": result["error"]}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            serializer = PrevalenceSerializer(data=result)
+            if serializer.is_valid():
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        except ValueError as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
