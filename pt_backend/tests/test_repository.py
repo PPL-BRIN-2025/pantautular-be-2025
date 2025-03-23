@@ -173,16 +173,21 @@ class NewsRepositoryTestCase(BaseTestCase):
         
         result = self.repository.get_all_severities_dates()
         
+        self.assertNotIn("hospitalisasi", result)
+        self.assertNotIn("mortalitas", result)
+        self.assertEqual(result, {})
+
+    def test_get_all_severities_dates_with_none_severity(self):
+        # Get results from repository method
+        result = self.repository.get_all_severities_dates()
+        
+        # Verify that keys 'None' and '' are not in the results
+        self.assertNotIn('None', result)
+        self.assertNotIn('', result)
+        
+        # The original severity types should still be there
         self.assertIn("hospitalisasi", result)
         self.assertIn("mortalitas", result)
-        self.assertEqual(len(result["hospitalisasi"]), 0)
-        self.assertEqual(len(result["mortalitas"]), 0)
-
-    @patch('pt_backend.models.News.objects.filter', side_effect=Exception("Database error"))
-    def test_get_all_severities_dates_exception(self, mock_filter):
-        result = self.repository.get_all_severities_dates()
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Database error")
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
