@@ -1,11 +1,11 @@
 from django.test import TestCase
-
-from django.test import TestCase
 from pt_backend.models import Case, Disease, Location, News
 from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
 from unittest.mock import patch
+from datetime import datetime
+from django.utils import timezone
 
 class BaseTestCase(TestCase):
     def setUp(self):
@@ -16,17 +16,45 @@ class BaseTestCase(TestCase):
         self.location2 = Location.objects.create(id=uuid.uuid4(), latitude=-6.9175, longitude=107.6191, city="Bandung")
 
         self.case1 = Case.objects.create(
-            id=uuid.uuid4(), gender="Pria", age=30, city="Jakarta", status="kematian", disease=self.disease1, location=self.location1
+            id=uuid.uuid4(), 
+            gender="Pria", 
+            age=30, 
+            city="Jakarta", 
+            status="kematian", 
+            disease=self.disease1, 
+            location=self.location1
         )
         self.case2 = Case.objects.create(
-            id=uuid.uuid4(), gender="Wanita", age=25, city="Bandung", status="terjangkit", disease=self.disease2, location=self.location2
+            id=uuid.uuid4(), 
+            gender="Wanita", 
+            age=25, 
+            city="Bandung", 
+            status="terjangkit", 
+            disease=self.disease2, 
+            location=self.location2
         )
 
         self.news1 = News.objects.create(
-            id=uuid.uuid4(), portal="kompas.com", type="health", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+            id=uuid.uuid4(), 
+            portal="kompas.com", 
+            type="health", 
+            title="COVID-19 Detected in Jakarta", 
+            content="COVID-19 case detected in Jakarta...", 
+            url="https://www.kompas.com/covid-jakarta",
+            date_published=timezone.now(),            
+            author="Dr. Joko", 
+            case=self.case1
         )
         self.news2 = News.objects.create(
-            id=uuid.uuid4(), portal="detik.com", type="health", title="SARS Detected in Medan", content="SARS case detected in Medan...", url="https://www.detik.com/sars-medan", author="Dr. Sari", case=self.case2
+            id=uuid.uuid4(), 
+            portal="detik.com", 
+            type="health", 
+            title="SARS Detected in Medan", 
+            content="SARS case detected in Medan...", 
+            url="https://www.detik.com/sars-medan", 
+            date_published=timezone.now(),            
+            author="Dr. Sari", 
+            case=self.case2
         )
 
 class DiseaseRepositoryTestCase(BaseTestCase):
@@ -100,9 +128,15 @@ class NewsRepositoryTestCase(BaseTestCase):
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
+        self.repository = CaseRepository()
+        self.disease = Disease.objects.create(
+            name="COVID-19", 
+            level_of_alertness=5
+        )
         self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, city="Bandung"
+            latitude=-6.9175, 
+            longitude=107.6191, 
+            city="Bandung"
         )
         self.case = Case.objects.create(
             id=uuid.uuid4(),
@@ -113,8 +147,18 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
-        self.repository = CaseRepository()
-
+        self.news = News.objects.create(
+            id=uuid.uuid4(), 
+            portal="kompas.com", 
+            type="health", 
+            title="COVID-19 Detected in Jakarta", 
+            content="COVID-19 case detected in Jakarta...", 
+            url="https://www.kompas.com/covid-jakarta", 
+            date_published=timezone.make_aware(datetime(2023, 1, 1, 11, 15, 0)),            
+            author="Dr. Joko", 
+            case= self.case
+        )
+        
     def test_get_all_case_locations(self):
         locations = self.repository.get_all_locations()
         self.assertTrue(locations.exists())
@@ -129,3 +173,38 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
+    
+    def test_get_prevalence_with_valid_year(self):
+        result = self.repository.get_prevalence(2023)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["year"], 2023)
+        self.assertEqual(result["total_cases"], 1)
+        self.assertEqual(result["population"], 278696200)
+        self.assertGreater(result["prevalence"], 0)
+    
+    def test_get_prevalence_default_year(self):
+        result = self.repository.get_prevalence()
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["year"], 2024)
+        self.assertEqual(result["total_cases"], 0)
+        self.assertEqual(result["population"], 281603800) 
+        self.assertEqual(result["prevalence"], 0)
+    
+    def test_get_prevalence_with_invalid_year(self):    
+        result = self.repository.get_prevalence(1990)
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], f"Population data not available for year {1990}")
+        
+    def test_get_prevalence_with_negative_year(self):
+        result = self.repository.get_prevalence(-2023)
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], f"Error calculating prevalence: year {-2023} is out of range")
+        
+    def test_get_prevalence_with_future_year(self):
+        result = self.repository.get_prevalence(2300)
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], f"Population data not available for year {2300}") 
+        

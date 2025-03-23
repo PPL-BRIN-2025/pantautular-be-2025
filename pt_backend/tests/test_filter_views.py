@@ -2,6 +2,8 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from pt_backend.tests.test_repository import BaseTestCase
 from pt_backend.models import Disease, Location, News, Case
+from datetime import datetime
+from django.utils import timezone
 
 
 class FiltersViewTest(BaseTestCase):
@@ -59,6 +61,7 @@ class FiltersViewTest(BaseTestCase):
             content="Test content",
             url="https://kompas.com/test1",
             author="Author 1",
+            date_published=timezone.now(),
             case=self.case
         )
         self.news2 = News.objects.create(
@@ -68,6 +71,7 @@ class FiltersViewTest(BaseTestCase):
             content="Test content",
             url="https://detik.com/test2",
             author="Author 2",
+            date_published=timezone.now(),
             case=self.case
         )
 
