@@ -207,13 +207,13 @@ class NewsAPITest(TestCase):
     # API Tests
     def test_get_healthcare_news_statistics_api(self):
         mock_data = [
-            {'portal': 'detik.com', 'count': 1, 'disease_count': 1},
-            {'portal': 'kompas.com', 'count': 1, 'disease_count': 1},
-            {'portal': 'kemenkes.go.id', 'count': 1, 'disease_count': 1},
-            {'portal': 'bps.go.id', 'count': 2, 'disease_count': 1},
-            {'portal': 'bpjs.go.id', 'count': 1, 'disease_count': 1},
-            {'portal': 'kemenhub.go.id', 'count': 1, 'disease_count': 1},
-            {'portal': 'who.int', 'count': 1, 'disease_count': 1}
+            {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kemenkes.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'bps.go.id', 'news_count': 2, 'disease_count': 1},
+            {'portal': 'bpjs.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kemenhub.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'who.int', 'news_count': 1, 'disease_count': 1}
         ]
         self.mock_service_instance.get_healthcare_news_statistics.return_value = mock_data
 
@@ -239,8 +239,8 @@ class NewsAPITest(TestCase):
     # Service Tests
     def test_get_healthcare_news_statistics_service(self):
         expected_data = [
-            {'portal': 'detik.com', 'count': 1, 'disease_count': 1},
-            {'portal': 'kompas.com', 'count': 1, 'disease_count': 1}
+            {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1}
         ]
         self.mock_repository.get_healthcare_news_statistics.return_value = expected_data
         
