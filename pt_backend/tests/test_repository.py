@@ -179,14 +179,47 @@ class NewsRepositoryTestCase(BaseTestCase):
         self.news2 = News.objects.create(
             id=uuid.uuid4(), portal="detik.com", type="Kesehatan", title="SARS Detected in Jakarta", content="SARS case detected in Medan...", url="https://www.detik.com/sars-jakarta", author="Dr. Sari", case=self.case2
         )
+        self.news3 = News.objects.create(
+            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news4 = News.objects.create(
+            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="SARS Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case2
+        )
+        self.news5 = News.objects.create(
+            id=uuid.uuid4(), portal="WHO International", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news6 = News.objects.create(
+            id=uuid.uuid4(), portal="Kemenkes.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news7 = News.objects.create(
+            id=uuid.uuid4(), portal="bps.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news8 = News.objects.create(
+            id=uuid.uuid4(), portal="bps.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news9 = News.objects.create(
+            id=uuid.uuid4(), portal="bpjs.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+        self.news10 = News.objects.create(
+            id=uuid.uuid4(), portal="kemenhub.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        )
+
 
     def test_get_healthcare_news_statistics(self):
         result = self.repository.get_healthcare_news_statistics()
-        self.assertEqual(result, [{'portal': 'detik.com', 'news_count': 1, 'disease_count': 1}, {'portal': 'kompas.com', 'news_count': 1, 'disease_count': 1}])
-
+        self.maxDiff = None
+        self.assertEqual(result, [
+            {'portal': 'Kemenkes.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'WHO International', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'bpjs.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'bps.go.id', 'news_count': 2, 'disease_count': 1},
+            {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kemenhub.go.id', 'news_count': 1, 'disease_count': 1},
+            {'portal': 'kompas.com', 'news_count': 3, 'disease_count': 2}
+        ])
     def test_get_top_healthcare_news_portal(self):
         result = self.repository.get_top_healthcare_news_portal()
-        self.assertEqual(result, [{'portal': 'detik.com', 'count': 1}, {'portal': 'kompas.com', 'count': 1}])
+        self.assertEqual(result, [{'portal': 'kompas.com', 'count': 3}, {'portal': 'bps.go.id', 'count': 2}, {'portal': 'kemenhub.go.id', 'count': 1}, {'portal': 'detik.com', 'count': 1}, {'portal': 'bpjs.go.id', 'count': 1}])
 
     def test_get_top_healthcare_news_portal_empty(self):
         News.objects.all().delete()
