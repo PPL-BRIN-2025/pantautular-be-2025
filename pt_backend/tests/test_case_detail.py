@@ -49,7 +49,7 @@ class CaseDetailFormatterTest(TestCase):
         self.assertEqual(result["url"], "https://example.com/protocol/1")
 
     def test_gender_formatter(self):
-        self.assertEqual(self.gender_formatter.format("Male"), "Laki-laki")
+        self.assertEqual(self.gender_formatter.format("Male"), "Pria")
         self.assertEqual(self.gender_formatter.format("Female"), "Perempuan")
         self.assertEqual(self.gender_formatter.format("Other"), "Other")
 
@@ -137,7 +137,7 @@ class CaseDetailServiceTest(TestCase):
 
        self.assertEqual(result["id"], case.id)
        self.assertEqual(result["location"], "Jakarta")
-       self.assertEqual(result["gender"], "Laki-laki")
+       self.assertEqual(result["gender"], "Pria")
        self.assertEqual(result["age"], 25)
        self.assertEqual(result["level_of_alertness"], 3)
        self.assertEqual(
@@ -241,7 +241,7 @@ class CaseDetailViewTest(APITestCase):
        mock_data = {
            "id": str(self.case_id),  
            "location": "Jakarta",
-           "gender": "Laki-laki",
+           "gender": "Pria",
            "age": 25
        }
        self.mock_service.get_case_detail.return_value = mock_data
