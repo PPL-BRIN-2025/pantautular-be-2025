@@ -2,8 +2,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 from pt_backend.models import Case, Location, Disease
-from pt_backend.services import CacheService, CaseService
-from pt_backend.repositories import CaseRepository
+from pt_backend.services import CacheService, CaseService, NewsService
+from pt_backend.repositories import CaseRepository, NewsRepository
 import uuid
 import os
 from unittest.mock import patch, Mock
@@ -184,3 +184,67 @@ class GenderDistAPITest(TestCase):
         response = self.client.get('/api/cases/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+
+class NewsAPITest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+
+        # Setup for API tests
+        self.patcher = patch('pt_backend.views.NewsService')
+        self.mock_service_class = self.patcher.start()
+        self.mock_service_instance = Mock()
+        self.mock_service_class.return_value = self.mock_service_instance
+
+        # Setup for service tests
+        self.mock_repository = Mock(spec=NewsRepository)
+        self.service = NewsService(self.mock_repository)
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    # API Tests
+    def test_get_healthcare_news_statistics_api(self):
+        mock_data = [
+            {'portal': 'detik.com', 'count': 1, 'disease_count': 1},
+            {'portal': 'kompas.com', 'count': 1, 'disease_count': 1},
+            {'portal': 'kemenkes.go.id', 'count': 1, 'disease_count': 1},
+            {'portal': 'bps.go.id', 'count': 2, 'disease_count': 1},
+            {'portal': 'bpjs.go.id', 'count': 1, 'disease_count': 1},
+            {'portal': 'kemenhub.go.id', 'count': 1, 'disease_count': 1},
+            {'portal': 'who.int', 'count': 1, 'disease_count': 1}
+        ]
+        self.mock_service_instance.get_healthcare_news_statistics.return_value = mock_data
+
+        response = self.client.get('/api/healthcare-news/statistics/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), mock_data)
+        self.mock_service_instance.get_healthcare_news_statistics.assert_called_once()
+    
+    def test_get_healthcare_news_statistics_empty_api(self):
+        self.mock_service_instance.get_healthcare_news_statistics.return_value = []
+
+        response = self.client.get('/api/healthcare-news/statistics/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])
+
+    def test_get_healthcare_news_statistics_exception_api(self):
+        self.mock_service_instance.get_healthcare_news_statistics.side_effect = Exception("Database error")
+
+        response = self.client.get('/api/healthcare-news/statistics/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "Error retrieving news statistics"})
+
+    # Service Tests
+    def test_get_healthcare_news_statistics_service(self):
+        expected_data = [
+            {'portal': 'detik.com', 'count': 1, 'disease_count': 1},
+            {'portal': 'kompas.com', 'count': 1, 'disease_count': 1}
+        ]
+        self.mock_repository.get_healthcare_news_statistics.return_value = expected_data
+        
+        result = self.service.get_healthcare_news_statistics()
+        
+        self.assertEqual(result, expected_data)
+        self.mock_repository.get_healthcare_news_statistics.assert_called_once()
