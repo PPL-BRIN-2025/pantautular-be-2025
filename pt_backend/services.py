@@ -1,4 +1,4 @@
-from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
+from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface, NewsRepositoryInterface
 from django.core.cache import cache
 
 class CaseService(CaseRetrievalInterface):
@@ -28,3 +28,10 @@ class CacheService(CacheInterface):
 
     def delete(self, key):
         cache.delete(key)
+
+class NewsService:
+    def __init__(self, repository: NewsRepositoryInterface):
+        self.repository = repository
+
+    def get_healthcare_news_statistics(self):
+        return self.repository.get_healthcare_news_statistics()
