@@ -248,3 +248,47 @@ class NewsAPITest(TestCase):
         
         self.assertEqual(result, expected_data)
         self.mock_repository.get_healthcare_news_statistics.assert_called_once()
+
+    def test_get_top_healthcare_news_portal_service(self):
+        expected_data = [
+            {'portal': 'detik.com', 'count': 1},
+            {'portal': 'kompas.com', 'count': 1},
+            {'portal': 'kemenkes.go.id', 'count': 1},
+            {'portal': 'bps.go.id', 'count': 2},
+            {'portal': 'bpjs.go.id', 'count': 1}
+        ]
+        self.mock_repository.get_top_healthcare_news_portal.return_value = expected_data
+        
+        result = self.service.get_top_healthcare_news_portal()
+        
+        self.assertEqual(result, expected_data)
+        self.mock_repository.get_top_healthcare_news_portal.assert_called_once()
+
+    def test_get_top_healthcare_news_portal_api(self):
+        mock_data = [
+            {'portal': 'detik.com', 'count': 1},
+            {'portal': 'kompas.com', 'count': 1},
+            {'portal': 'kemenkes.go.id', 'count': 1},
+            {'portal': 'bps.go.id', 'count': 2},
+            {'portal': 'bpjs.go.id', 'count': 1}
+        ]
+        self.mock_service_instance.get_top_healthcare_news_portal.return_value = mock_data
+
+        response = self.client.get('/api/healthcare-news/top-portal/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), mock_data)
+        self.mock_service_instance.get_top_healthcare_news_portal.assert_called_once()
+
+    def test_get_top_healthcare_news_portal_empty_api(self):
+        self.mock_service_instance.get_top_healthcare_news_portal.return_value = []
+
+        response = self.client.get('/api/healthcare-news/top-portal/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])
+
+    def test_get_top_healthcare_news_portal_exception_api(self):
+        self.mock_service_instance.get_top_healthcare_news_portal.side_effect = Exception("Database error")
+
+        response = self.client.get('/api/healthcare-news/top-portal/')
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
