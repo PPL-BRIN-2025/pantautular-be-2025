@@ -14,3 +14,7 @@ class PortalStatisticsSerializer(serializers.Serializer):
     portal = serializers.CharField()
     news_count = serializers.IntegerField()
     disease_count = serializers.IntegerField()
+
+class TopPortalSerializer(serializers.Serializer):
+    portal = serializers.CharField()
+    count = serializers.IntegerField()

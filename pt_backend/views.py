@@ -115,3 +115,17 @@ class HealthcareNewsStatisticsView(APIView):
         except Exception as e:
             logger.error(f"Error in get method: {e}", exc_info=True)
             return Response({"error": "Error retrieving news statistics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class TopHealthcareNewsPortalView(APIView):
+    serializer_class = TopPortalSerializer
+
+    def get(self, request):
+        news_repository = NewsRepository()
+        service = NewsService(news_repository)
+        try:
+            top_portal = service.get_top_healthcare_news_portal()
+            serialized_data = self.serializer_class(top_portal, many=True)
+            return Response(serialized_data.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error in get method: {e}", exc_info=True)
+            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -35,3 +35,6 @@ class NewsService:
 
     def get_healthcare_news_statistics(self):
         return self.repository.get_healthcare_news_statistics()
+    
+    def get_top_healthcare_news_portal(self):
+        return self.repository.get_top_healthcare_news_portal()
