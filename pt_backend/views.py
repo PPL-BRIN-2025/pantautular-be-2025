@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer, GenderDistributionSerializer, PortalStatisticsSerializer
+from .serializers import CaseLocationSerializer, GenderDistributionSerializer, PortalStatisticsSerializer, TopPortalSerializer
 from .services import CacheService, CaseService, NewsService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository

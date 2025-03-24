@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AllCaseLocationsView, FiltersView, CaseGenderView, HealthcareNewsStatisticsView
+from .views import AllCaseLocationsView, FiltersView, CaseGenderView, HealthcareNewsStatisticsView, TopHealthcareNewsPortalView
 
 urlpatterns = [
     path('cases/locations/', AllCaseLocationsView.as_view(), name='all-case-locations'),
