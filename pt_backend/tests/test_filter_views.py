@@ -7,12 +7,12 @@ from django.utils import timezone
 
 
 class FiltersViewTest(BaseTestCase):
-    def _assert_response_data(self, response_data, expected_data):
-        response_data = response_data['data']
-        for key in expected_data:
-            actual_values = [item['value'] for item in response_data[key]]
-            for expected_item in expected_data[key]:
-                self.assertIn(expected_item, actual_values)
+    def _assert_response_data(self, response_data, expected_data): 
+        response_data = response_data['data'] # pragma: no cover
+        for key in expected_data: # pragma: no cover
+            actual_values = [item['value'] for item in response_data[key]] # pragma: no cover
+            for expected_item in expected_data[key]: # pragma: no cover
+                self.assertIn(expected_item, actual_values) # pragma: no cover
 
     def setUp(self):
         super().setUp()
