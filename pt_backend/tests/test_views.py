@@ -276,7 +276,7 @@ class NewsAPITest(TestCase):
 
         response = self.client.get('/api/healthcare-news/top-portal/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), mock_data)
+        self.assertEqual(response.json(), {"healthcare_top": mock_data})
         self.mock_service_instance.get_top_healthcare_news_portal.assert_called_once()
 
     def test_get_top_healthcare_news_portal_empty_api(self):
@@ -284,7 +284,7 @@ class NewsAPITest(TestCase):
 
         response = self.client.get('/api/healthcare-news/top-portal/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.json(), {"healthcare_top": []})
 
     def test_get_top_healthcare_news_portal_exception_api(self):
         self.mock_service_instance.get_top_healthcare_news_portal.side_effect = Exception("Database error")
