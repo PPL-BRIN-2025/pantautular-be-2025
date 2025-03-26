@@ -123,7 +123,7 @@ class NewsRepositoryTestCase(BaseTestCase):
 
     def test_get_all_news_name(self):
         news = self.repository.get_all_news_name()
-        expected = ["kompas.com", "detik.com"]
+        expected = ["kompas.com", "detik.com", "Kemenkes.go.id", "bps.go.id", "bpjs.go.id", "kemenhub.go.id", "WHO International"]
         for news_item in news:
             self.assertIn(news_item, expected)
         self.assertEqual(len(news), len(expected))
