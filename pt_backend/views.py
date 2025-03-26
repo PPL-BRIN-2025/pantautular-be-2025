@@ -97,7 +97,10 @@ class CaseGenderView(APIView):
         try:
             gender_distribution = self.service.get_gender_dist()
             serialized_data = GenderDistributionSerializer(gender_distribution)
-            return Response(serialized_data.data, status=status.HTTP_200_OK)
+            response_data = {
+                "gender_distribution": serialized_data.data
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Error in get method: {e}", exc_info=True)
             return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
