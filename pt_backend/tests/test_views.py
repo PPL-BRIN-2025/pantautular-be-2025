@@ -155,13 +155,13 @@ class GenderDistAPITest(TestCase):
     def test_get_gender_dist(self):
         response = self.client.get('/api/cases/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'male': 2, 'female': 1})
+        self.assertEqual(response.json(), {'gender_distribution': {'male': 2, 'female': 1}})
     
     def test_get_gender_dist_if_invalid_gender(self):
         Case.objects.create(gender='BLABLA', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
         response = self.client.get('/api/cases/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'male':2, 'female':1}) #buat cek klo ada yg ga valid masi return gender yg valid atau nggak
+        self.assertEqual(response.json(), {'gender_distribution': {'male': 2, 'female': 1}}) #buat cek klo ada yg ga valid masi return gender yg valid atau nggak
 
     @patch('pt_backend.services.CaseService.get_gender_dist')
     def test_get_gender_dist_exception(self, mock_get_gender_dist):
@@ -172,9 +172,11 @@ class GenderDistAPITest(TestCase):
 
         response = self.client.get('/api/cases/gender-distribution/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, {
-            'male': 2,
-            'female': 1
+        self.assertEqual(response.json(), {
+            'gender_distribution': {
+                'male': 2,
+                'female': 1
+            }
         })
 
     @patch('pt_backend.services.CaseService.get_gender_dist')
