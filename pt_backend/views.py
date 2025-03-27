@@ -6,6 +6,7 @@ from .services import CacheService, CaseService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
+from .statistics import PrevalenceStatistics
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -76,26 +77,48 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)     
-        
-class PrevalenceView(APIView):
+
+class DiseaseCaseInfoView(APIView):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.repository = CaseRepository()
+        # Initialize other needed repositories here
+        self.prevalence_statistics = PrevalenceStatistics(self.repository)
+        # Initialize other statistics here
+    
+    def check_statistics_errors(self, stats_data):
+        for component_name, data in stats_data.items():
+            if isinstance(data, dict) and "error" in data:
+                error_message = data["error"]                
+                if "not available" in error_message:
+                    status_code = status.HTTP_404_NOT_FOUND
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+                    
+                return True, Response(
+                    {"error": error_message, "component": component_name}, 
+                    status=status_code
+                )        
+        return False, None
+    
     def get(self, request):
-        try:    
-            repository = CaseRepository()
-            result = repository.get_prevalence()
+        try:
+            # Get all query parameters, assuming filters are passed as query parameters
+            start_date = request.query_params.get('start_date')
+            # Add other query parameters here
             
-            if "error" in result:
-                return Response(
-                    {"error": result["error"]}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
+            # Collect statistics from all components
+            stats_data = {
+                "prevalence_statistics": self.prevalence_statistics.get_prevalence_statistics(start_date),
+                # Add other statistics components here
+            }
             
-            serializer = PrevalenceSerializer(data=result)
-            if serializer.is_valid():
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Check for errors in any of the statistics components
+            has_error, error_response = self.check_statistics_errors(stats_data)
+            if has_error:
+                return error_response
             
-        except ValueError as e:
-            return Response(
-                {"error": str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response(stats_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

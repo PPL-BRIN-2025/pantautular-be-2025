@@ -37,40 +37,20 @@ class NewsRepository:
             return {"error": "Error retrieving news"}
 
 class CaseRepository(CaseRepositoryInterface):
+    def get_all_cases(self):
+        return Case.objects.all().values(
+            "id",
+            "location__province",
+            "location__city",
+            "news__portal",
+            "severity",
+            "news__date_published"
+        )
     def get_all_locations(self):
         return Case.get_all_locations()
-    def get_prevalence(self, year=None):
-        POPULATION_DATA = {
-            2019: 266911.9,
-            2020: 270203.9,
-            2021: 272682.5,
-            2022: 275773.8,  
-            2023: 278696.2,  
-            2024: 281603.8,   
-        }
+    
+    def get_cases_by_year(self, year):
+        return Case.objects.filter(
+            news__date_published__year=year
+        ).distinct()
         
-        if year is None:
-            year = 2024
-            
-        try:
-            total_cases = Case.objects.filter(
-                news__date_published__year=year
-            ).distinct().count()
-            
-            population = POPULATION_DATA.get(year)
-            if not population:
-                return {"error": f"Population data not available for year {year}"}
-            
-            population = int(population * 1_000)  
-            
-            prevalence = (total_cases / population) * 100
-            
-            return {
-                "year": year,
-                "total_cases": total_cases,
-                "population": population,
-                "prevalence": prevalence
-            }
-            
-        except Exception as e:
-            return {"error": f"Error calculating prevalence: {str(e)}"}
