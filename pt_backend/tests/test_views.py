@@ -11,6 +11,7 @@ import uuid
 import os
 from unittest.mock import patch, Mock
 import json
+from ..views import DiseaseCaseInfoView
 
 class CaseAPITest(TestCase):
     def setUp(self):
@@ -168,91 +169,86 @@ class CaseFilterPostTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data, {"error": "Test exception in filters"})
     
-class PrevalenceViewTestCase(TestCase):
+
+class DiseaseCaseInfoViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse('prevalence')
-        
         # Create test data
         self.disease = Disease.objects.create(
-            name="COVID-19", 
-            level_of_alertness=5
+            name="Test Disease",
+            level_of_alertness=1
         )
+        
         self.location = Location.objects.create(
-            latitude=-6.9175, 
-            longitude=107.6191, 
-            city="Bandung"
+            latitude=0.0,
+            longitude=0.0,
+            city="Test City",
+            province="Test Province"
         )
+        
         self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Male",
-            age=30,
-            city="Bandung",
-            status="active",
+            gender="M",
+            age=25,
+            city="Test City",
+            status="minimal",
+            severity="insiden",
             disease=self.disease,
             location=self.location
         )
+        
         self.news = News.objects.create(
-            id=uuid.uuid4(), 
-            portal="kompas.com", 
-            type="health", 
-            title="COVID-19 Case", 
-            content="A new COVID-19 case detected...", 
-            url="https://www.kompas.com/covid-case", 
-            date_published=timezone.make_aware(datetime(2024, 1, 1)), 
-            author="Dr. Smith", 
+            portal="Test Portal",
+            title="Test News",
+            type="Test Type",
+            content="Test Content",
+            url="http://test.com",
+            author="Test Author",
+            date_published=timezone.make_aware(datetime(2023, 1, 1, 11, 15, 0)),
             case=self.case
         )
-    
-    # Positive Test Case
-    def test_get_prevalence_success(self):
-        response = self.client.get(self.url)
+
+    def test_get_disease_case_info_success(self):
+        url = reverse('disease-case-info')
+        response = self.client.get(url)
+        
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('year', response.data)
-        self.assertIn('total_cases', response.data)
-        self.assertIn('population', response.data)
-        self.assertIn('prevalence', response.data)
-        self.assertEqual(response.data['year'], 2024)
-        self.assertEqual(response.data['total_cases'], 1)  
-        self.assertEqual(response.data['population'], 281603800)  
-        self.assertGreater(response.data['prevalence'], 0)
-    
-    # Negative Test Case
-    @patch('pt_backend.repositories.CaseRepository.get_prevalence')
-    def test_get_prevalence_with_repository_error(self, mock_get_prevalence):
-        mock_get_prevalence.return_value = {"error": "Test error message"}
-        response = self.client.get(self.url)
+        self.assertIn('prevalence_statistics', response.data)
+        self.assertEqual(response.data['prevalence_statistics']['year'], 2024)
+        self.assertEqual(response.data['prevalence_statistics']['total_cases'], 0)
+        self.assertIsInstance(response.data['prevalence_statistics']['prevalence'], float)
+
+    def test_get_disease_case_info_with_dates(self):
+        url = reverse('disease-case-info')
+        response = self.client.get(f"{url}?start_date=2023-01-01")
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['prevalence_statistics']['year'], 2023)
+        self.assertEqual(response.data['prevalence_statistics']['total_cases'], 1)
+        self.assertIsInstance(response.data['prevalence_statistics']['prevalence'], float)
+
+    def test_get_disease_case_info_invalid_year(self):
+        url = reverse('disease-case-info')
+        response = self.client.get(f"{url}?start_date=2000-01-01")
+        
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertIn('error', response.data)
-        self.assertEqual(response.data['error'], "Test error message")
-    
-    # Another Negative Test Case
-    @patch('pt_backend.repositories.CaseRepository.get_prevalence')
-    def test_get_prevalence_with_serializer_validation_error(self, mock_get_prevalence):
-        mock_get_prevalence.return_value = {
-            "year": "invalid",  
-            "total_cases": 10,
-            "population": 1000000,
-            "prevalence": 0.001
-        }
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('year', response.data)  
-    
-    # Corner Case 1: No cases in the database
-    def test_get_prevalence_with_no_cases(self):
-        News.objects.all().delete()
-        response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['year'], 2024)
-        self.assertEqual(response.data['total_cases'], 0)
-        self.assertEqual(response.data['prevalence'], 0.0)
-    
-    # Corner Case 2: ValueError exception handling
-    @patch('pt_backend.repositories.CaseRepository.get_prevalence')
-    def test_get_prevalence_with_value_error(self, mock_get_prevalence):
-        mock_get_prevalence.side_effect = ValueError("Test ValueError")
-        response = self.client.get(self.url)
+        self.assertEqual(response.data['error'], "Population data not available for year 2000")
+        self.assertEqual(response.data['component'], "prevalence_statistics")
+
+    def test_get_disease_case_info_invalid_date_format(self):
+        url = reverse('disease-case-info')
+        response = self.client.get(f"{url}?start_date=invalid-date")
+        
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('error', response.data)
-        self.assertEqual(response.data['error'], "Test ValueError") 
+        self.assertTrue("Error calculating prevalence" in response.data['error'])
+        self.assertEqual(response.data['component'], "prevalence_statistics")
+
+    def test_internal_server_error(self):
+        with patch('pt_backend.views.PrevalenceStatistics.get_prevalence_statistics', side_effect=Exception("Test exception")):
+            url = reverse('disease-case-info')
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.assertEqual(response.data['error'], "Test exception")
+
+

@@ -158,6 +158,15 @@ class CaseRepositoryTestCase(TestCase):
             author="Dr. Joko", 
             case= self.case
         )
+    
+    def test_get_all_cases(self):
+        cases = self.repository.get_all_cases()
+        self.assertEqual(cases.count(), 1)
+    
+    def test_get_all_cases_empty(self):
+        Case.objects.all().delete()
+        cases = self.repository.get_all_cases()
+        self.assertFalse(cases.exists())
         
     def test_get_all_case_locations(self):
         locations = self.repository.get_all_locations()
@@ -173,38 +182,20 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
+
+    def test_get_cases_by_year(self):
+        cases = self.repository.get_cases_by_year(2023)
+        self.assertEqual(cases.count(), 1)
+        self.assertEqual(cases.first().id, self.case.id)
+     
+    def test_get_cases_by_year_empty(self):
+        Case.objects.all().delete()
+        cases = self.repository.get_cases_by_year(2023)
+        self.assertFalse(cases.exists())
     
-    def test_get_prevalence_with_valid_year(self):
-        result = self.repository.get_prevalence(2023)
-        self.assertIsInstance(result, dict)
-        self.assertEqual(result["year"], 2023)
-        self.assertEqual(result["total_cases"], 1)
-        self.assertEqual(result["population"], 278696200)
-        self.assertGreater(result["prevalence"], 0)
-    
-    def test_get_prevalence_default_year(self):
-        result = self.repository.get_prevalence()
-        self.assertIsInstance(result, dict)
-        self.assertEqual(result["year"], 2024)
-        self.assertEqual(result["total_cases"], 0)
-        self.assertEqual(result["population"], 281603800) 
-        self.assertEqual(result["prevalence"], 0)
-    
-    def test_get_prevalence_with_invalid_year(self):    
-        result = self.repository.get_prevalence(1990)
-        self.assertIsInstance(result, dict)
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], f"Population data not available for year {1990}")
+
         
-    def test_get_prevalence_with_negative_year(self):
-        result = self.repository.get_prevalence(-2023)
-        self.assertIsInstance(result, dict)
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], f"Error calculating prevalence: year {-2023} is out of range")
         
-    def test_get_prevalence_with_future_year(self):
-        result = self.repository.get_prevalence(2300)
-        self.assertIsInstance(result, dict)
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], f"Population data not available for year {2300}") 
+     
+     
         
