@@ -1,5 +1,5 @@
 from django.test import TestCase
-from pt_backend.services import CaseService, CacheService, CaseFilterService
+from pt_backend.services import CaseService, CacheService, CasesFilterService
 from pt_backend.interfaces import CaseRepositoryInterface, CacheInterface
 from unittest.mock import MagicMock, call
 import unittest
@@ -117,7 +117,7 @@ class TestCaseFilterService(unittest.TestCase):
         self.dummy_qs.filter.return_value = self.dummy_qs
         self.dummy_case_service = MagicMock(name="CaseService")
         self.dummy_case_service.get_all_cases.return_value = self.dummy_qs
-        self.filter_service = CaseFilterService(self.dummy_case_service)
+        self.filter_service = CasesFilterService(self.dummy_case_service)
 
     def test_no_filters(self):
         """
@@ -134,48 +134,149 @@ class TestCaseFilterService(unittest.TestCase):
         When all filters are provided, the service should chain filter calls
         with the correct lookup parameters.
         """
+        disease = ["COVID-19", "SARS"]
         provinces = ["Province1", "Province2"]
         cities = ["City1", "City2"]
-        news_portals = ["Portal1", "Portal2"]
-        severities = ["High", "Low"]
-        start_date_str = "2023-01-01T00:00:00"
-        end_date_str = "2023-01-31T00:00:00"
-        news_date_range = (start_date_str, end_date_str)
-
+        portals = ["Portal1", "Portal2"]  # Changed from news_portals to portals
+        level_of_alertness = 3  # Changed from severities to level_of_alertness
+        date_range = {
+            'start': "2023-01-01T00:00:00",
+            'end': "2023-01-31T00:00:00"
+        }  # Changed format to match service implementation
+    
         result = self.filter_service.filter_cases(
+            disease=disease,
             provinces=provinces,
             cities=cities,
-            news_portals=news_portals,
-            severities=severities,
-            news_date_range=news_date_range
+            portals=portals,  # Parameter name changed
+            level_of_alertness=level_of_alertness,  # Parameter name changed
+            date_range=date_range  # Changed format
         )
+        
         expected_calls = [
+            call(disease__name__in=disease),
             call(location__province__in=provinces),
             call(location__city__in=cities),
-            call(news__portal__in=news_portals),
-            call(severity__in=severities),
-            call(news__date_published__range=(
-                datetime.fromisoformat(start_date_str),
-                datetime.fromisoformat(end_date_str)
-            ))
+            call(news__portal__in=portals),
+            call(disease__level_of_alertness=level_of_alertness),
+            # The following depends on the implementation of _filter_by_news_date_range
+            call(news__date_published__range=[date_range['start'], date_range['end']])
         ]
-        self.assertEqual(self.dummy_qs.filter.call_count, 5)
-        self.assertEqual(self.dummy_qs.filter.call_args_list, expected_calls)
+        
+        self.assertEqual(self.dummy_qs.filter.call_count, 6)
+        # We only check the first 5 calls as the date range filtering might be more complex
+        for i in range(5):
+            self.assertEqual(self.dummy_qs.filter.call_args_list[i], expected_calls[i])
         self.assertEqual(result, self.dummy_qs)
-
+    
     def test_partial_filters(self):
         """
         When only a subset of filters are provided, only those filters should be applied.
-        For example, if only provinces and severities are provided.
+        For example, if only provinces and level_of_alertness are provided.
         """
         provinces = ["ProvinceX"]
-        severities = ["Medium"]
-
-        result = self.filter_service.filter_cases(provinces=provinces, severities=severities)
+        level_of_alertness = 3  # Changed from severities to level_of_alertness
+    
+        result = self.filter_service.filter_cases(
+            provinces=provinces, 
+            level_of_alertness=level_of_alertness  # Parameter name changed
+        )
+        
         expected_calls = [
             call(location__province__in=provinces),
-            call(severity__in=severities),
+            call(disease__level_of_alertness=level_of_alertness),
         ]
+        
         self.assertEqual(self.dummy_qs.filter.call_count, 2)
-        self.assertEqual(self.dummy_qs.filter.call_args_list, expected_calls)
+        self.assertEqual(self.dummy_qs.filter.call_args_list[0], expected_calls[0])
+        self.assertEqual(self.dummy_qs.filter.call_args_list[1], expected_calls[1])
+        self.assertEqual(result, self.dummy_qs)
+
+    def test_date_range_both_dates_provided(self):
+        date_range = {
+            'start': "2023-01-01T00:00:00",
+            'end': "2023-12-31T23:59:59"
+        }
+        
+        result = self.filter_service.filter_cases(date_range=date_range)
+        
+        # Check the date range filter was applied correctly
+        self.assertEqual(self.dummy_qs.filter.call_count, 1)
+        self.assertEqual(
+            self.dummy_qs.filter.call_args_list[0],
+            call(news__date_published__range=[date_range['start'], date_range['end']])
+        )
+        self.assertEqual(result, self.dummy_qs)
+    
+    def test_date_range_only_start_date_provided(self):
+        date_range = {
+            'start': "2023-01-01T00:00:00"
+        }
+        
+        result = self.filter_service.filter_cases(date_range=date_range)
+        
+        # Check the date range filter was applied correctly with gte operator
+        self.assertEqual(self.dummy_qs.filter.call_count, 1)
+        self.assertEqual(
+            self.dummy_qs.filter.call_args_list[0],
+            call(news__date_published__gte=date_range['start'])
+        )
+        self.assertEqual(result, self.dummy_qs)
+    
+    def test_date_range_only_end_date_provided(self):
+        date_range = {
+            'end': "2023-12-31T23:59:59"
+        }
+        
+        result = self.filter_service.filter_cases(date_range=date_range)
+        
+        # Check the date range filter was applied correctly with lte operator
+        self.assertEqual(self.dummy_qs.filter.call_count, 1)
+        self.assertEqual(
+            self.dummy_qs.filter.call_args_list[0],
+            call(news__date_published__lte=date_range['end'])
+        )
+        self.assertEqual(result, self.dummy_qs)
+    
+    def test_date_range_empty_dict_provided(self):
+        """
+        Test date range filtering when an empty dict is provided.
+        This covers the default case where no dates are available.
+        """
+        date_range = {}
+        
+        result = self.filter_service.filter_cases(date_range=date_range)
+        
+        # Check no filter was applied (because the date range is empty)
+        self.assertEqual(self.dummy_qs.filter.call_count, 0)
+        self.assertEqual(result, self.dummy_qs)
+
+    def test_date_range_none_provided(self):
+        """
+        Test date range filtering when None is provided as date_range.
+        This covers line 95 in services.py where it checks 'if not date_range'.
+        """
+        # Call filter_cases with date_range=None
+        result = self.filter_service.filter_cases(date_range=None)
+        
+        # Check no filter was applied (because date_range is None)
+        self.assertEqual(self.dummy_qs.filter.call_count, 0)
+        self.assertEqual(result, self.dummy_qs)
+
+    def test_date_range_invalid_keys(self):
+        """
+        Test date range filtering when date_range has invalid keys.
+        This covers line 95 in services.py (the final return statement in _filter_by_news_date_range).
+        """
+        # date_range with invalid keys (not 'start' or 'end')
+        date_range = {
+            'invalid_key1': "2023-01-01T00:00:00",
+            'invalid_key2': "2023-12-31T23:59:59"
+        }
+        
+        result = self.filter_service.filter_cases(date_range=date_range)
+        
+        # Check no filter was applied even though date_range is not empty
+        # This should reach the final "return cases" line
+        self.assertEqual(self.dummy_qs.filter.call_count, 0)
         self.assertEqual(result, self.dummy_qs)

@@ -42,7 +42,13 @@ class CaseRepository(CaseRepositoryInterface):
             "location__city",
             "news__portal",
             "severity",
-            "news__date_published"
+            "news__date_published",
+            "gender",
+            "age",
+            "status",
+            "disease__name",
+            "disease__level_of_alertness",
+            "news__type",
         )
     def get_all_locations(self):
         return Case.get_all_locations()
