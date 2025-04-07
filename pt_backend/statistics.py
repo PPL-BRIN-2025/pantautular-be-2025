@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import datetime
 
 class SeverityGroupingReport:
  
@@ -69,3 +70,33 @@ class AgeGroupingReport:
                 age_groups["above_45"] += 1
 
         return age_groups
+
+class SeverityDatesCountReport:
+    def generate_report(self, filtered_cases=None):
+        """Generate severity dates count report"""
+        severity_dates = {}
+        
+        if not filtered_cases:
+            return severity_dates
+        
+        for case in filtered_cases:
+            severity = case.get("severity")
+            date_published = case.get("news__date_published")
+            if isinstance(date_published, datetime):
+                date_published = date_published.strftime('%Y-%m-%d')
+            
+            if severity not in severity_dates:
+                severity_dates[severity] = {}
+            
+            if date_published not in severity_dates[severity]:
+                severity_dates[severity][date_published] = 0
+            
+            severity_dates[severity][date_published] += 1
+
+        result = {}
+
+        for severity, dates in severity_dates.items():
+            result[severity] = [
+                {"date": date, "count": count} for date, count in dates.items()
+            ]
+        return result
