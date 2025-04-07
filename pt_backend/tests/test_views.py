@@ -6,6 +6,7 @@ from pt_backend.services import CacheService
 import uuid
 import os
 from unittest.mock import patch, Mock
+from django.core.cache import cache
 
 
 class CaseAPITest(TestCase):
@@ -53,7 +54,7 @@ class CaseAPITest(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
-        self.cache_service.delete("all_case_locations")
+        cache.clear()
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found"})
@@ -118,7 +119,6 @@ class CaseFilterPostTest(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found matching the filters"})
-
 
 
     def test_post_filter_missing_api_key(self):

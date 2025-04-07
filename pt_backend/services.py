@@ -4,6 +4,7 @@ from datetime import datetime
 
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
+    CAHCE_KEY_ALL_CASES_LOCATIONS = "all_cases_locations"
     CACHE_TIMEOUT = 300 
 
     def __init__(self, repository: CaseRepositoryInterface, cache_service: CacheInterface):
@@ -18,10 +19,10 @@ class CaseService(CaseRetrievalInterface):
         return cases if cases else []
     
     def get_all_case_locations(self):
-        locations = self.cache_service.get(self.CACHE_KEY)
+        locations = self.cache_service.get(self.CAHCE_KEY_ALL_CASES_LOCATIONS)
         if locations is None:
             locations = self.repository.get_all_locations()
-            self.cache_service.set(self.CACHE_KEY, locations, timeout=self.CACHE_TIMEOUT)
+            self.cache_service.set(self.CAHCE_KEY_ALL_CASES_LOCATIONS, locations, timeout=self.CACHE_TIMEOUT)
         return locations if locations else []
 
 
