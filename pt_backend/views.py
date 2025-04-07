@@ -68,6 +68,7 @@ class FiltersView(APIView):
             locations = [{"value": l, "label": l} for l in location_repository.get_all_locations_name()]
             news = [{"value": n, "label": n} for n in news_repository.get_all_news_name()]
 
+
             response_data = {
                 "data": {
                     "diseases": diseases,
