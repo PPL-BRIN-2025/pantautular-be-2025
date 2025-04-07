@@ -80,3 +80,17 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class SeverityDatesView(APIView):
+    def get(self, request):
+        news_repository = NewsRepository()
+        try:
+            severity_dates = news_repository.get_all_severities_dates()
+            for item in severity_dates:
+                if 'date_published' in item:
+                    item['date_published'] = item['date_published'].date()
+            if len(severity_dates) == 0:
+                return Response({"error": "No severity dates found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"data": severity_dates}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
