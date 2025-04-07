@@ -113,6 +113,7 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
+
         self.location = Location.objects.create(
             latitude=0.0,
             longitude=0.0,
@@ -123,6 +124,7 @@ class CaseRepositoryTestCase(TestCase):
             name="Test Disease",
             level_of_alertness=1
         )
+
         self.repository = CaseRepository()
 
     def test_get_all_case_locations(self):
@@ -139,6 +141,7 @@ class CaseRepositoryTestCase(TestCase):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
+
     
     def test_positive_case(self):
         """

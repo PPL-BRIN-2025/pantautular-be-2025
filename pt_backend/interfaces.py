@@ -6,7 +6,7 @@ class CaseRetrievalInterface(ABC):
         pass
     @abstractmethod
     def get_all_case_locations(self):
-        pass
+        pass # pragma: no cover
 
 class CaseRepositoryInterface(ABC):
     @abstractmethod
@@ -15,17 +15,17 @@ class CaseRepositoryInterface(ABC):
     
     @abstractmethod
     def get_all_locations(self):
-        pass
+        pass # pragma: no cover
 
 class CacheInterface(ABC):
     @abstractmethod
     def get(self, key):
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def set(self, key, value, timeout):
-        pass
+        pass # pragma: no cover
 
     @abstractmethod
     def delete(self, key):
-        pass
+        pass # pragma: no cover

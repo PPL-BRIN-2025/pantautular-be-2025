@@ -68,6 +68,7 @@ class FiltersView(APIView):
             locations = [{"value": l, "label": l} for l in location_repository.get_all_locations_name()]
             news = [{"value": n, "label": n} for n in news_repository.get_all_news_name()]
 
+
             response_data = {
                 "data": {
                     "diseases": diseases,
@@ -79,5 +80,3 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-

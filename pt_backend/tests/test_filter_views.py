@@ -111,3 +111,4 @@ class FiltersViewTest(BaseTestCase):
             }
         }
         self.assertEqual(response.json(), expected_empty_data)
+
