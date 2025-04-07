@@ -1,5 +1,5 @@
 from django.test import TestCase
-from pt_backend.statistics import AgeGroupingReport, SeverityGroupingReport
+from pt_backend.statistics import AgeGroupingReport, NationalNewsStatisticsReport, SeverityGroupingReport
 from unittest.mock import MagicMock, call
 import unittest
 
@@ -204,3 +204,251 @@ class TestAgeGroupingReport(unittest.TestCase):
         self.assertEqual(report["12_25"], 0)
         self.assertEqual(report["26_45"], 0)
         self.assertEqual(report["above_45"], 1)
+
+class TestNationalNewsStatisticsReport(unittest.TestCase):
+    def setUp(self):
+        """Set up test environment for NationalNewsStatisticsReport"""
+        self.report_service = NationalNewsStatisticsReport()
+
+    def test_empty_cases(self):
+        """
+        Unhappy path: when no cases are provided,
+        the report should return empty lists.
+        """
+        # Test with None
+        report = self.report_service.generate_report(filtered_cases=None)
+        self.assertEqual(report["top_national"], [])
+        self.assertEqual(report["all_national"], [])
+        
+        # Test with empty list
+        report = self.report_service.generate_report(filtered_cases=[])
+        self.assertEqual(report["top_national"], [])
+        self.assertEqual(report["all_national"], [])
+
+    def test_cases_with_national_news(self):
+        """
+        Happy path: when cases with national news are provided,
+        the report should correctly count them by portal.
+        """
+        cases = [
+            {
+                "id": "1",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "2",
+                "news__portal": "detik.com",
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "3",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": "Dengue"
+            },
+            {
+                "id": "4",
+                "news__portal": "cnn.com",
+                "news__type": "Nasional",
+                "disease__name": "Malaria"
+            }
+        ]
+        
+        report = self.report_service.generate_report(filtered_cases=cases)
+        
+        # Check top_national format and sorting
+        self.assertEqual(len(report["top_national"]), 3)  # 3 unique portals
+        self.assertEqual(report["top_national"][0]["portal"], "kompas.com")
+        self.assertEqual(report["top_national"][0]["count"], 2)  # kompas has 2 news
+        
+        # Check all_national format and content
+        self.assertEqual(len(report["all_national"]), 3)  # 3 unique portals
+        
+        # Find kompas.com entry
+        kompas_entry = next(entry for entry in report["all_national"] if entry["portal"] == "kompas.com")
+        self.assertEqual(kompas_entry["news_count"], 2)  # 2 news articles
+        self.assertEqual(kompas_entry["disease_count"], 2)  # 2 unique diseases (COVID-19, Dengue)
+        
+        # Find detik.com entry
+        detik_entry = next(entry for entry in report["all_national"] if entry["portal"] == "detik.com")
+        self.assertEqual(detik_entry["news_count"], 1)  # 1 news article
+        self.assertEqual(detik_entry["disease_count"], 1)  # 1 unique disease (COVID-19)
+        
+        # Find cnn.com entry
+        cnn_entry = next(entry for entry in report["all_national"] if entry["portal"] == "cnn.com")
+        self.assertEqual(cnn_entry["news_count"], 1)  # 1 news article
+        self.assertEqual(cnn_entry["disease_count"], 1)  # 1 unique disease (Malaria)
+
+    def test_filtering_non_national_news(self):
+        """
+        Edge case: when cases include both national and non-national news,
+        only the national news should be counted.
+        """
+        cases = [
+            {
+                "id": "1",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "2",
+                "news__portal": "detik.com",
+                "news__type": "Regional",  # Not national
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "3",
+                "news__portal": "kompas.com",
+                "news__type": "International",  # Not national
+                "disease__name": "Dengue"
+            },
+            {
+                "id": "4",
+                "news__portal": "cnn.com",
+                "news__type": "Nasional",
+                "disease__name": "Malaria"
+            }
+        ]
+        
+        report = self.report_service.generate_report(filtered_cases=cases)
+        
+        # Only 2 national news should be counted (from kompas.com and cnn.com)
+        self.assertEqual(len(report["top_national"]), 2)
+        
+        # Check portals in top_national - only kompas.com and cnn.com should be there (both with 1 news)
+        portals = [item["portal"] for item in report["top_national"]]
+        self.assertIn("kompas.com", portals)
+        self.assertIn("cnn.com", portals)
+        self.assertNotIn("detik.com", portals)  # Should not be included
+
+    def test_missing_portal_or_news_type(self):
+        """
+        Edge case: when cases are missing portal or news_type,
+        they should be handled gracefully.
+        """
+        cases = [
+            {
+                "id": "1",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "2",
+                "news__portal": None,  # Missing portal
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "3",
+                "news__portal": "kompas.com",
+                "news__type": None,  # Missing news type
+                "disease__name": "Dengue"
+            },
+            {
+                "id": "4",  # Missing both portal and news type
+                "disease__name": "Malaria"
+            }
+        ]
+        
+        report = self.report_service.generate_report(filtered_cases=cases)
+        
+        # Only 1 valid national news (kompas.com)
+        self.assertEqual(len(report["top_national"]), 1)
+        self.assertEqual(report["top_national"][0]["portal"], "kompas.com")
+        self.assertEqual(report["top_national"][0]["count"], 1)
+
+    def test_missing_disease_name(self):
+        """
+        Edge case: when cases are missing disease name,
+        they should still be counted but with zero disease count.
+        """
+        cases = [
+            {
+                "id": "1",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": "COVID-19"
+            },
+            {
+                "id": "2",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional",
+                "disease__name": None  # Missing disease
+            },
+            {
+                "id": "3",
+                "news__portal": "kompas.com",
+                "news__type": "Nasional"
+                # Missing disease key entirely
+            }
+        ]
+        
+        report = self.report_service.generate_report(filtered_cases=cases)
+        
+        # kompas.com should have 3 news but only 1 disease
+        self.assertEqual(len(report["top_national"]), 1)
+        self.assertEqual(report["top_national"][0]["portal"], "kompas.com")
+        self.assertEqual(report["top_national"][0]["count"], 3)
+        
+        self.assertEqual(report["all_national"][0]["news_count"], 3)
+        self.assertEqual(report["all_national"][0]["disease_count"], 1)
+
+    def test_sorting_by_count(self):
+        """
+        Edge case: verify that results are properly sorted by news count.
+        """
+        cases = [
+            {
+                "id": "1",
+                "news__portal": "low-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease1"
+            },
+            {
+                "id": "2",
+                "news__portal": "high-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease1"
+            },
+            {
+                "id": "3",
+                "news__portal": "mid-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease2"
+            },
+            {
+                "id": "4",
+                "news__portal": "high-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease2"
+            },
+            {
+                "id": "5",
+                "news__portal": "high-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease3"
+            },
+            {
+                "id": "6",
+                "news__portal": "mid-count.com",
+                "news__type": "Nasional",
+                "disease__name": "Disease1"
+            }
+        ]
+        
+        report = self.report_service.generate_report(filtered_cases=cases)
+        
+        # Should be sorted: high-count (3), mid-count (2), low-count (1)
+        self.assertEqual(report["top_national"][0]["portal"], "high-count.com")
+        self.assertEqual(report["top_national"][0]["count"], 3)
+        
+        self.assertEqual(report["top_national"][1]["portal"], "mid-count.com")
+        self.assertEqual(report["top_national"][1]["count"], 2)
+        
+        self.assertEqual(report["top_national"][2]["portal"], "low-count.com")
+        self.assertEqual(report["top_national"][2]["count"], 1)
