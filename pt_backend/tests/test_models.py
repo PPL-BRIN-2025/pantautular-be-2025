@@ -194,5 +194,4 @@ class NewsModelTest(TestCase):
             case=self.case
         )
 
-    def test_str_representation(self):
         self.assertEqual(str(self.news), "Test News") 

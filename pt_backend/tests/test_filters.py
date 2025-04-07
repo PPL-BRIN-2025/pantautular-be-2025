@@ -252,3 +252,4 @@ class CaseFilterServiceTest(TestCase):
         self.assertEqual(result, ['mocked_result'])
         
         self.filter_service.filters = original_filters
+

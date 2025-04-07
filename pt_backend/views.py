@@ -1,12 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer, GenderDistributionSerializer, PortalStatisticsSerializer, TopPortalSerializer
-from .services import CacheService, CaseService, NewsService
+from .serializers import CaseLocationSerializer
+from .services import CacheService, CaseService, CaseDetailService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
-import logging
+from django.http import Http404
+from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
 logger = logging.getLogger(__name__)
 INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
@@ -71,6 +72,7 @@ class FiltersView(APIView):
             locations = [{"value": l, "label": l} for l in location_repository.get_all_locations_name()]
             news = [{"value": n, "label": n} for n in news_repository.get_all_news_name()]
 
+
             response_data = {
                 "data": {
                     "diseases": diseases,
@@ -83,49 +85,25 @@ class FiltersView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class CaseGenderView(APIView):
+
+class CaseDetailView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
-
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         repository = CaseRepository()
         cache_service = CacheService()
-        self.service = CaseService(repository, cache_service)
-    
-    def get(self, request):
-        try:
-            gender_distribution = self.service.get_gender_dist()
-            serialized_data = GenderDistributionSerializer(gender_distribution)
-            return Response(serialized_data.data, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error in get method: {e}", exc_info=True)
-            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.case_service = CaseDetailService(
+            repository=repository,
+            cache_service=cache_service,
+            news_formatter=CaseNewsDetailFormatter(),
+            protocol_formatter=CaseHealthProtocolDetailFormatter(),
+            gender_formatter=CaseGenderDetailFormatter()
+        )
 
-class HealthcareNewsStatisticsView(APIView):
-    serializer_class = PortalStatisticsSerializer
-
-    def get(self, request):
-        news_repository = NewsRepository()
-        service = NewsService(news_repository)
-        try:
-            statistics = service.get_healthcare_news_statistics()
-            serialized_data = self.serializer_class(statistics, many=True)
-            return Response(serialized_data.data, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error in get method: {e}", exc_info=True)
-            return Response({"error": "Error retrieving news statistics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class TopHealthcareNewsPortalView(APIView):
-    serializer_class = TopPortalSerializer
-
-    def get(self, request):
-        news_repository = NewsRepository()
-        service = NewsService(news_repository)
-        try:
-            top_portal = service.get_top_healthcare_news_portal()
-            serialized_data = self.serializer_class(top_portal, many=True)
-            return Response({"healthcare_top": serialized_data.data}, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error in get method: {e}", exc_info=True)
-            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    def get(self, request, case_id):
+        case_data = self.case_service.get_case_detail(case_id)
+        if not case_data:
+            raise Http404("Case not found")
+        return Response(case_data)
