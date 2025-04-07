@@ -38,7 +38,7 @@ class PrevalenceStatisticsTest(TestCase):
                 title="Test News",
                 type="Test Type",
                 content="Test Content",
-                url="http://test.com",
+                url="https://test.com",
                 author="Test Author",
                 date_published=timezone.make_aware(datetime(year, 1, 1, 11, 15, 0)),
                 case=case
