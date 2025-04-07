@@ -142,12 +142,15 @@ class CaseRepositoryTestCase(TestCase):
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
 
-    
     def test_positive_case(self):
         """
         A case with one related news record should appear in the results
         with the expected fields.
         """
+        # First clear all existing cases and news
+        News.objects.all().delete()
+        Case.objects.all().delete()
+        
         # Create a case
         case = Case.objects.create(
             gender="M",
@@ -188,6 +191,10 @@ class CaseRepositoryTestCase(TestCase):
         """
         When no cases exist in the database, the repository should return an empty queryset.
         """
+        # Clear all cases and news first
+        News.objects.all().delete()
+        Case.objects.all().delete()
+        
         repository = CaseRepository()
         qs = repository.get_all_cases()
         results = list(qs)
@@ -198,6 +205,10 @@ class CaseRepositoryTestCase(TestCase):
         A case with multiple news records should return one row per news item.
         Shared fields such as case id, location, and severity should be identical.
         """
+        # Clear all existing cases and news first
+        News.objects.all().delete()
+        Case.objects.all().delete()
+        
         case = Case.objects.create(
             gender="M",
             age=40,
