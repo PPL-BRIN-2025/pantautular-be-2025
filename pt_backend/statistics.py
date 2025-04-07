@@ -69,3 +69,64 @@ class AgeGroupingReport:
                 age_groups["above_45"] += 1
 
         return age_groups
+    
+class NationalNewsStatisticsReport:
+    """Generates statistics about national news portals"""
+    
+    def generate_report(self, filtered_cases=None):
+        """Generate national news statistics report"""
+        if not filtered_cases:
+            return {
+                "top_national": [],
+                "all_national": []
+            }
+        
+        # Dictionary to track news portals and their counts
+        portal_counts = {}
+        
+        # Dictionary to track unique diseases per portal
+        portal_diseases = {}
+        
+        # Process all cases
+        for case in filtered_cases:
+            portal = case.get("news__portal")
+            news_type = case.get("news__type")
+            disease = case.get("disease__name")
+            
+            # Only process national news
+            if news_type == "Nasional" and portal:
+                # Initialize if this is first time seeing this portal
+                if portal not in portal_counts:
+                    portal_counts[portal] = 0
+                    portal_diseases[portal] = set()
+                
+                # Increment count for this portal
+                portal_counts[portal] += 1
+                
+                # Add disease to set of diseases for this portal
+                if disease:
+                    portal_diseases[portal].add(disease)
+        
+        # Format for top_national return
+        top_national = [
+            {"portal": portal, "count": count}
+            for portal, count in portal_counts.items()
+        ]
+        
+        # Sort by count descending
+        top_national.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Format for all_national return
+        all_national = [
+            {
+                "portal": portal,
+                "news_count": count,
+                "disease_count": len(portal_diseases.get(portal, []))
+            }
+            for portal, count in portal_counts.items()
+        ]
+        
+        return {
+            "top_national": top_national,
+            "all_national": all_national
+        }
