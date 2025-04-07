@@ -1,5 +1,5 @@
 from django.test import TestCase
-from pt_backend.statistics import AgeGroupingReport, SeverityGroupingReport, GenderGroupingReport
+from pt_backend.statistics import GenderGroupingReport, SeverityGroupingReport
 from unittest.mock import MagicMock, call
 import unittest
 
@@ -136,35 +136,3 @@ class GenderGroupingReportTestCase(TestCase):
         cases = [{"id": i, "gender": "male" if i % 2 == 0 else "female"} for i in range(1, 10001)]
         result = self.report.generate_report(cases)
         self.assertEqual(result, {"male": 5000, "female": 5000})
-
-class StatisticsCoordinator:
-    """Coordinates statistics calculation with shared filtered data"""
-    
-    def __init__(self, case_filter_service=None):
-        self.case_filter_service = case_filter_service
-        
-        # Initialize statistic classes
-        self.age_report = AgeGroupingReport()
-        self.gender_report = GenderGroupingReport()
-        
-    def generate_comprehensive_report(self, **filter_params):
-        """Generate all statistics with single filtered dataset"""
-        # Filter data once
-        filtered_cases = None
-        
-        if self.case_filter_service:
-            filtered_cases = self.case_filter_service.filter_cases(**filter_params)
-            
-        # Generate reports using the filtered data
-        result = {}
-        
-        # Add statistics
-        result["age_statistics"] = self.age_report.generate_report(
-            filtered_cases=filtered_cases
-        )
-        result["gender_statistics"] = self.gender_report.generate_report(
-            filtered_cases=filtered_cases
-        )
-                
-        # Return combined result
-        return result
