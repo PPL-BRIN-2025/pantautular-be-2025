@@ -6,3 +6,4 @@ urlpatterns = [
     path('api/filters/', FiltersView.as_view(), name='filters'),
     path('api/cases/gender-distribution/', CaseGenderView.as_view(), name='gender-distribution')
 ]
+

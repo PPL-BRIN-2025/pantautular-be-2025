@@ -36,15 +36,24 @@ class NewsRepository:
             return {"error": "Error retrieving news"}
 
 class CaseRepository(CaseRepositoryInterface):
+    def get_all_cases(self):
+        return Case.objects.all().values(
+            "id",
+            "location__province",
+            "location__city",
+            "news__portal",
+            "severity",
+            "news__date_published",
+            "gender",
+            "age",
+            "status",
+            "disease__name",
+            "disease__level_of_alertness",
+            "news__type",
+        )
     def get_all_locations(self):
         return Case.get_all_locations()
+
     
-    def get_gender_distribution(self):
-        gender_counts = Case.objects.values('gender').annotate(count=Count('id'))
-        distribution = {'male': 0, 'female': 0}
-        for gender_count in gender_counts:
-            if gender_count['gender'].lower() == 'male':
-                distribution['male'] = gender_count['count']
-            elif gender_count['gender'].lower() == 'female':
-                distribution['female'] = gender_count['count']
-        return distribution
+    
+
