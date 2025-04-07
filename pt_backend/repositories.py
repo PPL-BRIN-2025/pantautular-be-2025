@@ -35,6 +35,21 @@ class NewsRepository:
             return {"error": "Error retrieving news"}
 
 class CaseRepository(CaseRepositoryInterface):
+    def get_all_cases(self):
+        return Case.objects.all().values(
+            "id",
+            "location__province",
+            "location__city",
+            "news__portal",
+            "severity",
+            "news__date_published",
+            "gender",
+            "age",
+            "status",
+            "disease__name",
+            "disease__level_of_alertness",
+            "news__type",
+        )
     def get_all_locations(self):
         return Case.get_all_locations()
     
