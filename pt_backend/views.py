@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer, GenderDistributionSerializer
+from .serializers import CaseLocationSerializer
 from .services import CacheService, CaseService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
@@ -83,25 +83,3 @@ class FiltersView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class CaseGenderView(APIView):
-    authentication_classes = [APIKeyAuthentication]
-    permission_classes = []
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        repository = CaseRepository()
-        cache_service = CacheService()
-        self.service = CaseService(repository, cache_service)
-    
-    def get(self, request):
-        try:
-            gender_distribution = self.service.get_gender_dist()
-            serialized_data = GenderDistributionSerializer(gender_distribution)
-            response_data = {
-                "gender_distribution": serialized_data.data
-            }
-            return Response(response_data, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error in get method: {e}", exc_info=True)
-            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
