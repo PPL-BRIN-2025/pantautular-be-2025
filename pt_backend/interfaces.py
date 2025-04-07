@@ -13,6 +13,10 @@ class CaseRetrievalInterface(ABC):
     
 class CaseRepositoryInterface(ABC):
     @abstractmethod
+    def get_all_cases(self):
+        pass
+    
+    @abstractmethod
     def get_all_locations(self):
         pass # pragma: no cover
 

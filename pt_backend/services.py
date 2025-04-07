@@ -1,8 +1,10 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
+from .repositories import NewsRepository
 from django.core.cache import cache
+from datetime import datetime
 
 class CaseService(CaseRetrievalInterface):
-    CACHE_KEY = "all_case_locations"
+    CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_TIMEOUT = 300 
 
     def __init__(self, repository: CaseRepositoryInterface, cache_service: CacheInterface):
@@ -39,6 +41,11 @@ class CacheService(CacheInterface):
 
     def delete(self, key):
         cache.delete(key)
+
+class NewsService:
+    def get_severities_dates(self):
+        return NewsRepository().get_all_severities_dates()
+
 
 class CasesFilterService:
     def __init__(self, case_service):

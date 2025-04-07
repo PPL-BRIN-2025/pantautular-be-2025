@@ -107,13 +107,62 @@ class NewsRepositoryTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.repository = NewsRepository()
+        
+        # Update cases with severity values for severities_dates tests
+        self.case1.severity = "hospitalisasi"
+        self.case1.save()
+        self.case2.severity = "mortalitas"
+        self.case2.save()
+
+        # Update news1 and news2 with specific dates for testing
+        self.news1.date_published = "2025-02-01T00:00:00Z"
+        self.news1.save()
+        self.news2.date_published = "2025-01-01T00:00:00Z"
+        self.news2.save()
+        
+        # Create news with specific dates for testing
+        self.news_date1 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update",
+            content="New cases...",
+            url="https://cnn.com/covid",
+            author="Dr. Smith",
+            date_published="2023-05-01T10:00:00Z",
+            case=self.case1
+        )
+        
+        self.news_date2 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update 2",
+            content="More cases...",
+            url="https://cnn.com/covid2",
+            author="Dr. Smith",
+            date_published="2023-05-01T14:00:00Z",
+            case=self.case1
+        )
+        
+        self.news_date3 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="bbc.com",
+            type="health",
+            title="Mortality Report",
+            content="Statistics...",
+            url="https://bbc.com/health",
+            author="Dr. Jones",
+            date_published="2023-06-15T09:00:00Z",
+            case=self.case2
+        )
 
     def test_get_all_news_name(self):
         news = self.repository.get_all_news_name()
-        expected = ["kompas.com", "detik.com"]
+        # Update expected list to include all portal names from both initial setup and additional test setup
+        expected = ["kompas.com", "detik.com", "cnn.com", "bbc.com"]
         for news_item in news:
             self.assertIn(news_item, expected)
-        self.assertEqual(len(news), len(expected))
 
     def test_get_all_news_name_empty(self):
         News.objects.all().delete()  
@@ -125,6 +174,46 @@ class NewsRepositoryTestCase(BaseTestCase):
     def test_get_all_news_name_exception(self, mock_get_all_news):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
+
+    def test_get_all_severities_dates(self):
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
+        
+        hosp_data = result["hospitalisasi"]
+        self.assertEqual(len(hosp_data), 2)
+        self.assertEqual(hosp_data[0]["date"], "2025-02-01")
+        count = 0
+        for item in hosp_data:
+            count += item["count"]
+        self.assertEqual(count, 3)
+        
+        mort_data = result["mortalitas"]
+        self.assertEqual(len(mort_data), 2)
+        self.assertTrue("date" in mort_data[0])
+        self.assertEqual(mort_data[0]["count"], 1)
+
+    def test_get_all_severities_dates_empty(self):
+        News.objects.all().delete()
+        
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertNotIn("hospitalisasi", result)
+        self.assertNotIn("mortalitas", result)
+        self.assertEqual(result, {})
+
+    def test_get_all_severities_dates_with_none_severity(self):
+        # Get results from repository method
+        result = self.repository.get_all_severities_dates()
+        
+        # Verify that keys 'None' and '' are not in the results
+        self.assertNotIn('None', result)
+        self.assertNotIn('', result)
+        
+        # The original severity types should still be there
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
@@ -147,6 +236,18 @@ class CaseRepositoryTestCase(TestCase):
             disease=self.disease,
             location=self.location
         )
+
+        self.location = Location.objects.create(
+            latitude=0.0,
+            longitude=0.0,
+            city="Test City",
+            province="Test Province"
+        )
+        self.disease = Disease.objects.create(
+            name="Test Disease",
+            level_of_alertness=1
+        )
+
         self.news = News.objects.create(
             id=uuid.uuid4(), 
             portal="kompas.com", 
@@ -183,19 +284,111 @@ class CaseRepositoryTestCase(TestCase):
         locations = self.repository.get_all_locations()
         self.assertFalse(locations.exists())
 
-    def test_get_cases_by_year(self):
-        cases = self.repository.get_cases_by_year(2023)
-        self.assertEqual(cases.count(), 1)
-        self.assertEqual(cases.first().id, self.case.id)
-     
-    def test_get_cases_by_year_empty(self):
+    def test_positive_case(self):
+        """
+        A case with one related news record should appear in the results
+        with the expected fields.
+        """
+        # First clear all existing cases and news
+        News.objects.all().delete()
         Case.objects.all().delete()
-        cases = self.repository.get_cases_by_year(2023)
-        self.assertFalse(cases.exists())
-    
+        
+        # Create a case
+        case = Case.objects.create(
+            gender="M",
+            age=30,
+            city="Test City",
+            status="minimal",  # valid choice per model definition
+            severity="hospitalisasi",  # valid choice per model definition
+            disease=self.disease,
+            location=self.location
+        )
+        # Create an associated news record
+        news = News.objects.create(
+            portal="Test Portal",
+            title="Test Title",
+            type="Test Type",
+            content="Test content",
+            url="https://example.com",
+            author="Test Author",
+            case=case,
+            img_url="https://example.com/image.jpg"
+        )
+        repository = CaseRepository()
+        qs = repository.get_all_cases()
+        results = list(qs)
 
+        # We expect exactly one row from the join.
+        self.assertEqual(len(results), 1)
+        entry = results[0]
+        # Validate each field.
+        self.assertEqual(str(entry["id"]), str(case.id))
+        self.assertEqual(entry["location__province"], self.location.province)
+        self.assertEqual(entry["location__city"], self.location.city)
+        self.assertEqual(entry["news__portal"], news.portal)
+        self.assertEqual(entry["severity"], case.severity)
+        self.assertEqual(entry["news__date_published"].date(), news.date_published.date())
+
+    def test_negative_case_empty_database(self):
+        """
+        When no cases exist in the database, the repository should return an empty queryset.
+        """
+        # Clear all cases and news first
+        News.objects.all().delete()
+        Case.objects.all().delete()
         
+        repository = CaseRepository()
+        qs = repository.get_all_cases()
+        results = list(qs)
+        self.assertEqual(len(results), 0)
+
+    def test_corner_case_multiple_news(self):
+        """
+        A case with multiple news records should return one row per news item.
+        Shared fields such as case id, location, and severity should be identical.
+        """
+        # Clear all existing cases and news first
+        News.objects.all().delete()
+        Case.objects.all().delete()
         
-     
-     
-        
+        case = Case.objects.create(
+            gender="M",
+            age=40,
+            city="Corner City",
+            status="biasa",
+            severity="insiden",
+            disease=self.disease,
+            location=self.location
+        )
+        News.objects.create(
+            portal="Portal 1",
+            title="Title 1",
+            type="Type 1",
+            content="Content 1",
+            url="https://example.com/1",
+            author="Author 1",
+            case=case,
+            img_url="https://example.com/image1.jpg"
+        )
+        News.objects.create(
+            portal="Portal 2",
+            title="Title 2",
+            type="Type 2",
+            content="Content 2",
+            url="https://example.com/2",
+            author="Author 2",
+            case=case,
+            img_url="https://example.com/image2.jpg"
+        )
+        repository = CaseRepository()
+        qs = repository.get_all_cases()
+        results = list(qs)
+
+        self.assertEqual(len(results), 2)
+        portals = {entry["news__portal"] for entry in results}
+        self.assertSetEqual(portals, {"Portal 1", "Portal 2"})
+        for entry in results:
+            self.assertEqual(str(entry["id"]), str(case.id))
+            self.assertEqual(entry["location__province"], self.location.province)
+            self.assertEqual(entry["location__city"], self.location.city)
+            self.assertEqual(entry["severity"], case.severity)

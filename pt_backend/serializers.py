@@ -10,3 +10,14 @@ class PrevalenceSerializer(serializers.Serializer):
     total_cases = serializers.IntegerField()
     population = serializers.IntegerField()
     prevalence = serializers.FloatField()
+class MonthlyCountSerializer(serializers.Serializer):
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    count = serializers.IntegerField()
+
+class SeverityCountSerializer(serializers.Serializer):
+    def to_representation(self, obj):
+        result = {}
+        for severity_key, month_data in obj.items():
+            result[severity_key] = MonthlyCountSerializer(month_data, many=True).data
+        return result

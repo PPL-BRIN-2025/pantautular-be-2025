@@ -1,3 +1,4 @@
+from datetime import datetime
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -268,6 +269,3 @@ class StatisticsViewTest(TestCase):
         # Verify the response contains the expected data
         self.assertIn("prevalence_statistics", response.data)
         self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
-
-
-
