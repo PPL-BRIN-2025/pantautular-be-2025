@@ -47,3 +47,35 @@ class PrevalenceStatistics:
             
         except Exception as e:
             return {"error": f"Error calculating prevalence: {str(e)}"}
+
+class StatisticsCoordinator:
+    """
+    Coordinates the generation of various statistics reports.
+    This class acts as a facade for the statistics layer, providing a single entry point
+    for generating comprehensive reports that include multiple statistics components.
+    """
+    
+    def __init__(self, case_filter_service):
+        self.case_filter_service = case_filter_service
+        self.prevalence = PrevalenceStatistics(case_filter_service.repository)
+        # Add other statistics components here as needed
+    
+    def generate_comprehensive_report(self, **filter_params):
+        # Filter data once
+        filtered_cases = None
+        
+        if self.case_filter_service:
+            filtered_cases = self.case_filter_service.filter_cases(**filter_params)
+
+        result = {}
+        
+        # Extract date parameters from filter_params
+        date_range = filter_params.get('date_range', {})
+        start_date = date_range.get('start') if date_range else None
+        
+        # Generate prevalence statistics with date parameters
+        result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
+        
+        # Add more statistics components here as needed
+        
+        return result

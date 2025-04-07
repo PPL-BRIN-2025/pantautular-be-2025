@@ -39,3 +39,61 @@ class CacheService(CacheInterface):
 
     def delete(self, key):
         cache.delete(key)
+
+class CasesFilterService:
+    def __init__(self, case_service):
+        self.case_service = case_service
+
+    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, level_of_alertness=None, date_range=None):
+        cases = self.case_service.get_all_cases()
+        cases = self._filter_by_disease(cases, disease)
+        cases = self._filter_by_provinces(cases, provinces)
+        cases = self._filter_by_cities(cases, cities)
+        cases = self._filter_by_news_portals(cases, portals)
+        cases = self._filter_by_disease_alertness(cases, level_of_alertness)
+        cases = self._filter_by_news_date_range(cases, date_range)
+        return cases
+    
+    def _filter_by_disease(self, cases, disease):
+        if disease:
+            return cases.filter(disease__name__in=disease)
+        return cases
+
+    def _filter_by_provinces(self, cases, provinces):
+        if provinces:
+            return cases.filter(location__province__in=provinces)
+        return cases
+
+    def _filter_by_cities(self, cases, cities):
+        if cities:
+            return cases.filter(location__city__in=cities)
+        return cases
+
+    def _filter_by_news_portals(self, cases, news_portals):
+        if news_portals:
+            return cases.filter(news__portal__in=news_portals)
+        return cases
+
+    def _filter_by_disease_alertness(self, cases, alertness):
+        if alertness:
+            return cases.filter(disease__level_of_alertness=alertness)
+        return cases
+
+    def _filter_by_news_date_range(self, cases, date_range):
+        if not date_range:
+            return cases
+        
+        start_date = date_range.get('start')
+        end_date = date_range.get('end')
+        
+        if start_date and end_date:
+            # Both dates provided
+            return cases.filter(news__date_published__range=[start_date, end_date])
+        elif start_date:
+            # Only start date provided
+            return cases.filter(news__date_published__gte=start_date)
+        elif end_date:
+            # Only end date provided
+            return cases.filter(news__date_published__lte=end_date)
+        
+        return cases
