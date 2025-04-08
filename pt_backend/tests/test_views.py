@@ -1,3 +1,4 @@
+from datetime import datetime
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
@@ -133,3 +134,51 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
+
+
+class SeverityDatesViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.patcher = patch('pt_backend.views.NewsRepository')
+        self.mock_news_repository = self.patcher.start()
+        self.mock_repo_instance = Mock()
+        self.mock_news_repository.return_value = self.mock_repo_instance
+
+    def tearDown(self):
+        self.patcher.stop()
+
+    def test_get_severity_dates_success(self):
+        # Mock data with datetime objects that need to be converted to date
+        mock_dates = [
+            {'id': '1', 'severity': 'High', 'date_published': datetime(2023, 5, 10)},
+            {'id': '2', 'severity': 'Medium', 'date_published': datetime(2023, 5, 11)},
+            {'id': '3', 'severity': 'Low', 'date_published': datetime(2023, 5, 12)}
+        ]
+        self.mock_repo_instance.get_all_severities_dates.return_value = mock_dates
+
+        response = self.client.get('/api/severity-dates/')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
+        
+        response_data = response.json()['data']
+        self.assertEqual(len(response_data), 3)
+        self.assertEqual(response_data[0]['date_published'], '2023-05-10')
+        self.assertEqual(response_data[1]['date_published'], '2023-05-11')
+        self.assertEqual(response_data[2]['date_published'], '2023-05-12')
+
+    def test_get_severity_dates_empty(self):
+        self.mock_repo_instance.get_all_severities_dates.return_value = []
+        
+        response = self.client.get('/api/severity-dates/')
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_severity_dates_exception(self):
+        self.mock_repo_instance.get_all_severities_dates.side_effect = Exception("Database error")
+        
+        response = self.client.get('/api/severity-dates/')
+        
+        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.json(), {"error": "Database error"})

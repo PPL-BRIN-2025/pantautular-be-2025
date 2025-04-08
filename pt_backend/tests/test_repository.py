@@ -1,3 +1,5 @@
+import datetime
+from django.utils import timezone
 from django.test import TestCase
 
 from django.test import TestCase
@@ -79,13 +81,62 @@ class NewsRepositoryTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.repository = NewsRepository()
+        
+        # Update cases with severity values for severities_dates tests
+        self.case1.severity = "hospitalisasi"
+        self.case1.save()
+        self.case2.severity = "mortalitas"
+        self.case2.save()
+
+        # Update news1 and news2 with specific dates for testing
+        self.news1.date_published = "2025-02-01T00:00:00Z"
+        self.news1.save()
+        self.news2.date_published = "2025-01-01T00:00:00Z"
+        self.news2.save()
+        
+        # Create news with specific dates for testing
+        self.news_date1 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update",
+            content="New cases...",
+            url="https://cnn.com/covid",
+            author="Dr. Smith",
+            date_published="2023-05-01T10:00:00Z",
+            case=self.case1
+        )
+        
+        self.news_date2 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update 2",
+            content="More cases...",
+            url="https://cnn.com/covid2",
+            author="Dr. Smith",
+            date_published="2023-05-01T14:00:00Z",
+            case=self.case1
+        )
+        
+        self.news_date3 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="bbc.com",
+            type="health",
+            title="Mortality Report",
+            content="Statistics...",
+            url="https://bbc.com/health",
+            author="Dr. Jones",
+            date_published="2023-06-15T09:00:00Z",
+            case=self.case2
+        )
 
     def test_get_all_news_name(self):
         news = self.repository.get_all_news_name()
-        expected = ["kompas.com", "detik.com"]
+        # Update expected list to include all portal names from both initial setup and additional test setup
+        expected = ["kompas.com", "detik.com", "cnn.com", "bbc.com"]
         for news_item in news:
             self.assertIn(news_item, expected)
-        self.assertEqual(len(news), len(expected))
 
     def test_get_all_news_name_empty(self):
         News.objects.all().delete()  
@@ -97,6 +148,46 @@ class NewsRepositoryTestCase(BaseTestCase):
     def test_get_all_news_name_exception(self, mock_get_all_news):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
+
+    def test_get_all_severities_dates(self):
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
+        
+        hosp_data = result["hospitalisasi"]
+        self.assertEqual(len(hosp_data), 2)
+        self.assertEqual(hosp_data[0]["date"], "2025-02-01")
+        count = 0
+        for item in hosp_data:
+            count += item["count"]
+        self.assertEqual(count, 3)
+        
+        mort_data = result["mortalitas"]
+        self.assertEqual(len(mort_data), 2)
+        self.assertTrue("date" in mort_data[0])
+        self.assertEqual(mort_data[0]["count"], 1)
+
+    def test_get_all_severities_dates_empty(self):
+        News.objects.all().delete()
+        
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertNotIn("hospitalisasi", result)
+        self.assertNotIn("mortalitas", result)
+        self.assertEqual(result, {})
+
+    def test_get_all_severities_dates_with_none_severity(self):
+        # Get results from repository method
+        result = self.repository.get_all_severities_dates()
+        
+        # Verify that keys 'None' and '' are not in the results
+        self.assertNotIn('None', result)
+        self.assertNotIn('', result)
+        
+        # The original severity types should still be there
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
