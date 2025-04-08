@@ -8,7 +8,10 @@ from .repositories import CaseRepository, DiseaseRepository, LocationRepository,
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
+import logging
 
+logger = logging.getLogger(__name__)
+INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -32,7 +35,7 @@ class AllCaseLocationsView(APIView):
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
-            return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
         try:
@@ -44,7 +47,7 @@ class AllCaseLocationsView(APIView):
 
             if not cases:
                 return Response(
-                    {"error": "No case locations found matching the filters"},
+                    {"error": INTERNAL_ERROR_MESSAGE},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
@@ -54,7 +57,7 @@ class AllCaseLocationsView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": "An unexpected error occurred. Please try again later."},
+                {"error": INTERNAL_ERROR_MESSAGE},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

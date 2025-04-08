@@ -138,7 +138,7 @@ class TestCaseFilterService(unittest.TestCase):
         provinces = ["Province1", "Province2"]
         cities = ["City1", "City2"]
         portals = ["Portal1", "Portal2"]  # Changed from news_portals to portals
-        level_of_alertness = 3  # Changed from severities to level_of_alertness
+        disease_alertness = 3  # Changed from level_of_alertness to disease_alertness
         date_range = {
             'start': "2023-01-01T00:00:00",
             'end': "2023-01-31T00:00:00"
@@ -148,9 +148,9 @@ class TestCaseFilterService(unittest.TestCase):
             disease=disease,
             provinces=provinces,
             cities=cities,
-            portals=portals,  # Parameter name changed
-            level_of_alertness=level_of_alertness,  # Parameter name changed
-            date_range=date_range  # Changed format
+            portals=portals,
+            disease_alertness=disease_alertness,  # Changed parameter name
+            date_range=date_range
         )
         
         expected_calls = [
@@ -158,7 +158,7 @@ class TestCaseFilterService(unittest.TestCase):
             call(location__province__in=provinces),
             call(location__city__in=cities),
             call(news__portal__in=portals),
-            call(disease__level_of_alertness=level_of_alertness),
+            call(disease__level_of_alertness=disease_alertness),
             # The following depends on the implementation of _filter_by_news_date_range
             call(news__date_published__range=[date_range['start'], date_range['end']])
         ]
@@ -172,19 +172,19 @@ class TestCaseFilterService(unittest.TestCase):
     def test_partial_filters(self):
         """
         When only a subset of filters are provided, only those filters should be applied.
-        For example, if only provinces and level_of_alertness are provided.
+        For example, if only provinces and disease_alertness are provided.
         """
         provinces = ["ProvinceX"]
-        level_of_alertness = 3  # Changed from severities to level_of_alertness
+        disease_alertness = 3  # Changed from level_of_alertness to disease_alertness
     
         result = self.filter_service.filter_cases(
             provinces=provinces, 
-            level_of_alertness=level_of_alertness  # Parameter name changed
+            disease_alertness=disease_alertness  # Changed parameter name
         )
         
         expected_calls = [
             call(location__province__in=provinces),
-            call(disease__level_of_alertness=level_of_alertness),
+            call(disease__level_of_alertness=disease_alertness),
         ]
         
         self.assertEqual(self.dummy_qs.filter.call_count, 2)
