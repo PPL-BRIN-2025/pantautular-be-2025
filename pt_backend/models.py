@@ -137,7 +137,7 @@ class News(models.Model):
     content = models.TextField()
     url = models.URLField()
     author = models.CharField(max_length=255)
-    date_published = models.DateTimeField(auto_now_add=True)
+    date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
 

@@ -1,15 +1,16 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer
-from .services import CacheService, CaseService, CaseDetailService
+from .serializers import CaseLocationSerializer, PrevalenceSerializer
+from .services import CacheService, CaseService, CaseDetailService, CasesFilterService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 import logging
-
+from .statistics import StatisticsCoordinator
+logger = logging.getLogger(__name__)
 INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
 
 class AllCaseLocationsView(APIView):
@@ -28,13 +29,14 @@ class AllCaseLocationsView(APIView):
     def get(self, request):
         try:
             cases = self.service.get_all_case_locations()
-            if not cases:
-                return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
             serialized_data = self.serializer_class(cases, many=True).data
+            if not serialized_data:
+                return Response({"error": "No case locations found"}, status=status.HTTP_404_NOT_FOUND)
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
             return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
     def post(self, request):
         try:
@@ -60,8 +62,6 @@ class AllCaseLocationsView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
-
 class FiltersView(APIView):
     def get(self, request):
         disease_repository = DiseaseRepository()
@@ -83,7 +83,7 @@ class FiltersView(APIView):
 
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)     
 
 class SeverityDatesView(APIView):
     def get(self, request):
@@ -122,15 +122,88 @@ class CaseDetailView(APIView):
         return Response(case_data)
 
 class SeverityDatesView(APIView):
+class StatisticsView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Setup services
+        cache_service = CacheService()
+        case_repository = CaseRepository()
+        
+        case_service = CaseService(case_repository, cache_service)
+        case_filter_service = CasesFilterService(case_service)
+        
+        # Create coordinator
+        self.statistics_coordinator = StatisticsCoordinator(
+            case_filter_service=case_filter_service
+        )
+    
     def get(self, request):
-        news_repository = NewsRepository()
+        """Get all statistics without applying any filters"""
         try:
-            severity_dates = news_repository.get_all_severities_dates()
-            for item in severity_dates:
-                if 'date_published' in item:
-                    item['date_published'] = item['date_published'].date()
-            if len(severity_dates) == 0:
-                return Response({"error": "No severity dates found"}, status=status.HTTP_404_NOT_FOUND)
-            return Response({"data": severity_dates}, status=status.HTTP_200_OK)
+            # Generate comprehensive report without filters
+            statistics = self.statistics_coordinator.generate_comprehensive_report()
+            
+            return Response(statistics, status=status.HTTP_200_OK)
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            import traceback
+            print(f"Statistics GET error: {str(e)}")
+            print(traceback.format_exc())
+            return Response(
+                {"error": f"An error occurred while fetching statistics: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def post(self, request):
+        try:
+            # Process the request data to match expected filter format
+            filter_params = {}
+            
+            # Handle diseases
+            if 'diseases' in request.data and request.data['diseases']:
+                filter_params['disease'] = request.data['diseases']
+            
+            # Handle locations - map to provinces and cities based on your data model
+            if 'locations' in request.data and request.data['locations']:
+                # In this example, we're treating all locations as provinces
+                # You may need to adjust this based on your actual data structure
+                filter_params['provinces'] = request.data['locations']
+            
+            # Handle portals
+            if 'portals' in request.data and request.data['portals']:
+                filter_params['portals'] = request.data['portals']
+            
+            # Handle alertness level
+            if 'level_of_alertness' in request.data and request.data['level_of_alertness'] is not None:
+                alertness = int(request.data['level_of_alertness'])
+                if alertness > 0:
+                    # Option 1: Use the level to filter diseases directly
+                    filter_params['disease_alertness'] = alertness
+            
+            # Handle date range
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            
+            if start_date or end_date:
+                # Create a date range even if one value is None
+                filter_params['date_range'] = {
+                    'start': start_date,
+                    'end': end_date
+                }
+            
+            # Generate comprehensive report with processed filters
+            statistics = self.statistics_coordinator.generate_comprehensive_report(**filter_params)
+            
+            return Response(statistics, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            print(f"Statistics error: {str(e)}")
+            print(traceback.format_exc())
+            return Response(
+                {"error": f"An error occurred while fetching statistics: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

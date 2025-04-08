@@ -4,6 +4,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Count, Case
 from .models import Case
 from .interfaces import CaseRepositoryInterface
+from django.utils import timezone
+from datetime import datetime
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from collections import defaultdict
@@ -97,3 +99,9 @@ class CaseRepository(CaseRepositoryInterface):
         except (Case.DoesNotExist, Exception) as e: 
             print(f"Error getting case detail: {str(e)}")  
             return None
+        
+    def get_cases_by_year(self, year):
+        return Case.objects.filter(
+            news__date_published__year=year
+        ).distinct()
+        

@@ -8,6 +8,8 @@ from decimal import Decimal
 import uuid
 import secrets
 import string
+from datetime import datetime
+from django.utils import timezone
 
 # Define test constants at module level
 TEST_PASSWORD = "test_password_123"  # Only used for testing
@@ -191,6 +193,7 @@ class NewsModelTest(TestCase):
             content="Test Content",
             url="https://example.com",
             author="Test Author",
+            date_published=timezone.now(),
             case=self.case
         )
 

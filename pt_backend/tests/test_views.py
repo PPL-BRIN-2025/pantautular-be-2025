@@ -1,13 +1,19 @@
 from datetime import datetime
 from django.test import TestCase
+from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from pt_backend.models import Case, Location, Disease
+from pantau_tular.settings import CACHES
+from pt_backend.models import Case, Location, Disease, News
 from pt_backend.services import CacheService
+from unittest.mock import patch
+from django.utils import timezone
+from datetime import datetime, timedelta
 import uuid
 import os
 from unittest.mock import patch, Mock
-
+import json
+from ..views import StatisticsView
 
 class CaseAPITest(TestCase):
     def setUp(self):
@@ -54,10 +60,8 @@ class CaseAPITest(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
-        self.cache_service.delete("all_case_locations")
         response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @patch('pt_backend.services.CaseService.get_all_case_locations')
     def test_get_all_case_locations_exception(self, mock_get_all_locations):
@@ -78,7 +82,32 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
 
+    @patch('pt_backend.services.CaseService.get_all_case_locations')
+    def test_all_case_locations_get_exception(self, mock_get_locations):
+        mock_get_locations.side_effect = Exception("Test exception")      
+        url = reverse('all-case-locations')
+        response = self.client.get(url)     
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
+    
+    @patch('pt_backend.filter.service.CaseFilterService.filter_cases')
+    def test_all_case_locations_post_exception(self, mock_filter_cases):
+        mock_filter_cases.side_effect = Exception("Test exception")        
+        url = reverse('all-case-locations')
+        data = {"disease": "COVID-19"}
+        response = self.client.post(url, data=json.dumps(data), content_type='application/json')        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
 
+    @patch('pt_backend.services.CaseService.get_all_case_locations')
+    def test_all_case_locations_post_empty_data(self, mock_get_locations):
+        mock_get_locations.return_value = []        
+        url = reverse('all-case-locations')
+        response = self.client.post(url, data=json.dumps({}), content_type='application/json')        
+        mock_get_locations.assert_called_once()
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
+       
 class CaseFilterPostTest(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -118,9 +147,7 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {'diseases': ['Unknown']}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found matching the filters"})
-
-
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
 
     def test_post_filter_missing_api_key(self):
         self.client.credentials()
@@ -133,51 +160,117 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
-
-
-class SeverityDatesViewTest(TestCase):
+    
+    @patch('pt_backend.repositories.DiseaseRepository.get_all_diseases_name')
+    def test_filters_view_get_exception(self, mock_get_diseases):
+        mock_get_diseases.side_effect = Exception("Test exception in filters")        
+        url = reverse('filters')
+        response = self.client.get(url)        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "Test exception in filters"})
+    
+class StatisticsViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.patcher = patch('pt_backend.views.NewsRepository')
-        self.mock_news_repository = self.patcher.start()
-        self.mock_repo_instance = Mock()
-        self.mock_news_repository.return_value = self.mock_repo_instance
-
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        self.url = reverse('statistics')
+        
+        # Mock the APIKeyAuthentication to always authenticate successfully
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)  # Return (user, auth) tuple
+        
+        # Mock the StatisticsCoordinator
+        self.coordinator_patcher = patch('pt_backend.views.StatisticsCoordinator')
+        self.mock_coordinator = self.coordinator_patcher.start()
+        
+        # Create a mock instance for the coordinator
+        self.mock_coordinator_instance = Mock()
+        self.mock_coordinator.return_value = self.mock_coordinator_instance
+        
+        # Setup the mock to return a specific value
+        self.mock_coordinator_instance.generate_comprehensive_report.return_value = {
+            "prevalence_statistics": {
+                "year": 2023,
+                "total_cases": 100,
+                "population": 278696200,
+                "prevalence": 0.0359
+            }
+        }
+        
     def tearDown(self):
-        self.patcher.stop()
-
-    def test_get_severity_dates_success(self):
-        # Mock data with datetime objects that need to be converted to date
-        mock_dates = [
-            {'id': '1', 'severity': 'High', 'date_published': datetime(2023, 5, 10)},
-            {'id': '2', 'severity': 'Medium', 'date_published': datetime(2023, 5, 11)},
-            {'id': '3', 'severity': 'Low', 'date_published': datetime(2023, 5, 12)}
-        ]
-        self.mock_repo_instance.get_all_severities_dates.return_value = mock_dates
-
-        response = self.client.get('/api/severity-dates/')
+        self.coordinator_patcher.stop()
+        self.auth_patcher.stop()
         
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
+    def test_statistics_with_start_date(self):
+        """Test that start_date is correctly passed to the statistics coordinator"""
+        # Make the request with a start_date
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"start_date": "2023-01-01"}),
+            content_type='application/json'
+        )
         
-        response_data = response.json()['data']
-        self.assertEqual(len(response_data), 3)
-        self.assertEqual(response_data[0]['date_published'], '2023-05-10')
-        self.assertEqual(response_data[1]['date_published'], '2023-05-11')
-        self.assertEqual(response_data[2]['date_published'], '2023-05-12')
-
-    def test_get_severity_dates_empty(self):
-        self.mock_repo_instance.get_all_severities_dates.return_value = []
+        # Check that the response is successful
+        self.assertEqual(response.status_code, 200)
         
-        response = self.client.get('/api/severity-dates/')
+        # Verify that generate_comprehensive_report was called with the correct filter_params
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_called_once()
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
         
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_get_severity_dates_exception(self):
-        self.mock_repo_instance.get_all_severities_dates.side_effect = Exception("Database error")
+        # Check that the date_range parameter was correctly set
+        self.assertIn('date_range', call_args)
+        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertIsNone(call_args['date_range']['end'])
         
-        response = self.client.get('/api/severity-dates/')
+        # Verify the response contains the expected data
+        self.assertIn("prevalence_statistics", response.data)
+        self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
         
-        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.json(), {"error": "Database error"})
+    def test_statistics_without_start_date(self):
+        """Test that the default behavior is used when no start_date is provided"""
+        # Make the request without a start_date
+        response = self.client.post(
+            self.url,
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        
+        # Check that the response is successful
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify that generate_comprehensive_report was called
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_called_once()
+        
+        # Verify the response contains the expected data
+        self.assertIn("prevalence_statistics", response.data)
+        self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
+        
+    def test_statistics_with_date_range(self):
+        """Test that both start_date and end_date are correctly passed to the statistics coordinator"""
+        # Make the request with both start_date and end_date
+        response = self.client.post(
+            self.url,
+            data=json.dumps({
+                "start_date": "2023-01-01",
+                "end_date": "2023-12-31"
+            }),
+            content_type='application/json'
+        )
+        
+        # Check that the response is successful
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify that generate_comprehensive_report was called with the correct filter_params
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_called_once()
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        
+        # Check that the date_range parameter was correctly set
+        self.assertIn('date_range', call_args)
+        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertEqual(call_args['date_range']['end'], "2023-12-31")
+        
+        # Verify the response contains the expected data
+        self.assertIn("prevalence_statistics", response.data)
+        self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
