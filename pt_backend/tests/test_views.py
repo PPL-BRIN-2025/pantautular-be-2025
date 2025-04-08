@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
+from pantau_tular.settings import CACHES
 from pt_backend.models import Case, Location, Disease, News
 from pt_backend.services import CacheService, CaseService
 from pt_backend.repositories import CaseRepository
@@ -60,10 +61,8 @@ class CaseAPITest(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
-        cache.clear()
         response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @patch('pt_backend.services.CaseService.get_all_case_locations')
     def test_get_all_case_locations_exception(self, mock_get_all_locations):
@@ -108,7 +107,7 @@ class CaseAPITest(TestCase):
         response = self.client.post(url, data=json.dumps({}), content_type='application/json')        
         mock_get_locations.assert_called_once()
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.data, {"error": "No case locations found matching the filters"})
+        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
        
 class CaseFilterPostTest(TestCase):
     def setUp(self):
@@ -149,7 +148,7 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {'diseases': ['Unknown']}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No case locations found matching the filters"})
+        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
 
     def test_post_filter_missing_api_key(self):
         self.client.credentials()

@@ -10,11 +10,12 @@ class SeverityGroupingReport:
         severity_counts = Counter()
         total_cases = 0
         
-        for case in filtered_cases:
-            total_cases += 1
-            severity = case.get("severity")
-            if severity is not None:
-                severity_counts[severity] += 1
+        if filtered_cases:
+            for case in filtered_cases:
+                total_cases += 1
+                severity = case.get("severity")
+                if severity is not None:
+                    severity_counts[severity] += 1
         
         return {
             "total_cases": total_cases,
@@ -114,7 +115,6 @@ class GenderGroupingReport:
             "female": gender_counts.get("female", 0),
         }
 
-
 class PrevalenceStatistics:
     def __init__(self, repository: CaseRepositoryInterface):
         self.repository = repository
@@ -134,7 +134,7 @@ class PrevalenceStatistics:
                 start_date = datetime.strptime(start_date, '%Y-%m-%d')
                 year = start_date.year 
 
-            cases = self.repository.get_cases_by_year(self.repository, year)
+            cases = self.repository.get_cases_by_year(year)
             total_cases = cases.count()
             
             population = self.POPULATION_DATA.get(year)
@@ -166,6 +166,8 @@ class StatisticsCoordinator:
         self.case_filter_service = case_filter_service
         self.prevalence = PrevalenceStatistics(CaseRepository)
         self.age_report = AgeGroupingReport()
+        self.gender_report = GenderGroupingReport()
+        self.severity_dates_report = SeverityDatesCountReport()
         # Add other statistics components here as needed
     
     def generate_comprehensive_report(self, **filter_params):
@@ -187,7 +189,12 @@ class StatisticsCoordinator:
             result["age_statistics"] = self.age_report.generate_report(
                 filtered_cases=filtered_cases
             )
-            
+            result["gender_statistics"] = self.gender_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            result["severity_dates_statistics"] = self.severity_dates_report.generate_report(
+                filtered_cases=filtered_cases
+            )
             # Add more statistics components here as needed
             
             return result

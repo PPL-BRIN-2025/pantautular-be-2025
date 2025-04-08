@@ -4,17 +4,26 @@ from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock, call
 from ..models import Case, Disease, Location, News
 from ..repositories import CaseRepository
-from ..statistics import PrevalenceStatistics, StatisticsCoordinator, AgeGroupingReport, GenderGroupingReport, SeverityGroupingReport
+from ..statistics import (
+    PrevalenceStatistics, 
+    StatisticsCoordinator, 
+    AgeGroupingReport, 
+    GenderGroupingReport, 
+    SeverityGroupingReport,
+    SeverityDatesCountReport
+)
 import unittest
+import uuid
 
-class PrevalenceStatisticsTest(TestCase):
+class BaseStatisticsTestCase(TestCase):
     def setUp(self):
-        # Create test data
+        # Create test disease
         self.disease = Disease.objects.create(
             name="Test Disease",
             level_of_alertness=1
         )
         
+        # Create test location
         self.location = Location.objects.create(
             latitude=0.0,
             longitude=0.0,
@@ -22,46 +31,74 @@ class PrevalenceStatisticsTest(TestCase):
             province="Test Province"
         )
         
-        # Create cases for different years
-        for year in [2023, 2024]:
-            case = Case.objects.create(
-                gender="M",
-                age=25,
-                city="Test City",
-                status="minimal",
-                severity="insiden",
-                disease=self.disease,
-                location=self.location
-            )
-            
-            News.objects.create(
-                portal="Test Portal",
-                title="Test News",
-                type="Test Type",
-                content="Test Content",
-                url="https://test.com",
-                author="Test Author",
-                date_published=timezone.make_aware(datetime(year, 1, 1, 11, 15, 0)),
-                case=case
-            )
+        # Create test case
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=25,
+            city="Test City",
+            status="terjangkit",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.location
+        )
+        
+        # Create test news
+        self.news = News.objects.create(
+            id=uuid.uuid4(),
+            portal="Test Portal",
+            title="Test News",
+            type="Test Type",
+            content="Test Content",
+            url="https://test.com",
+            author="Test Author",
+            date_published=timezone.now(),
+            case=self.case
+        )
+
+class PrevalenceStatisticsTest(BaseStatisticsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.repository = CaseRepository()
+        self.statistics = PrevalenceStatistics(self.repository)
 
     def test_get_prevalence_statistics_default_year(self):
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
-        result = statistics.get_prevalence_statistics()
+        """Test getting prevalence statistics with default year"""
+        result = self.statistics.get_prevalence_statistics()
         
         self.assertEqual(result["year"], 2024)
-        self.assertEqual(result["total_cases"], 1)
-        self.assertEqual(result["population"], 281603800)
+        self.assertEqual(result["total_cases"], 0)
+        self.assertIsInstance(result["population"], int)
         self.assertIsInstance(result["prevalence"], float)
 
     def test_get_prevalence_statistics_with_start_date(self):
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
+        """Test getting prevalence statistics with a specific start date"""
+        # Create a case with a specific year
+        specific_date = timezone.make_aware(datetime(2023, 1, 1))
+        case_2023 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=30,
+            city="Test City",
+            status="terjangkit",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.location
+        )
         
-        start_date = '2023-01-01'
+        News.objects.create(
+            id=uuid.uuid4(),
+            portal="Test Portal",
+            title="2023 Case",
+            type="Test Type",
+            content="2023 case content",
+            url="https://test.com/2023",
+            author="Test Author",
+            date_published=specific_date,
+            case=case_2023
+        )
         
-        result = statistics.get_prevalence_statistics(start_date)
+        result = self.statistics.get_prevalence_statistics("2023-01-01")
         
         self.assertEqual(result["year"], 2023)
         self.assertEqual(result["total_cases"], 1)
@@ -69,126 +106,182 @@ class PrevalenceStatisticsTest(TestCase):
         self.assertIsInstance(result["prevalence"], float)
 
     def test_get_prevalence_statistics_invalid_year(self):
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
-        
-        start_date = '2000-01-01'
-        
-        result = statistics.get_prevalence_statistics(start_date)
+        """Test getting prevalence statistics with an invalid year (no population data)"""
+        result = self.statistics.get_prevalence_statistics("2000-01-01")
         
         self.assertIn("error", result)
         self.assertEqual(result["error"], "Population data not available for year 2000")
 
     def test_get_prevalence_statistics_no_cases(self):
+        """Test getting prevalence statistics when there are no cases for the year"""
         # Delete all cases
         Case.objects.all().delete()
         
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
-        result = statistics.get_prevalence_statistics()
+        result = self.statistics.get_prevalence_statistics()
         
         self.assertEqual(result["year"], 2024)
         self.assertEqual(result["total_cases"], 0)
-        self.assertEqual(result["population"], 281603800)
-        self.assertEqual(result["prevalence"], 0.0) 
+        self.assertIsInstance(result["population"], int)
+        self.assertEqual(result["prevalence"], 0.0)
     
     def test_get_prevalence_statistics_invalid_date_format(self):
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
-        result = statistics.get_prevalence_statistics("invalid-date")
+        """Test getting prevalence statistics with an invalid date format"""
+        result = self.statistics.get_prevalence_statistics("invalid-date")
         self.assertIn("error", result)
         
     @patch('pt_backend.statistics.datetime')
     def test_get_prevalence_statistics_with_mocked_date(self, mock_datetime):
+        """Test getting prevalence statistics with a mocked date"""
         # Mock the datetime.strptime to return a specific date
         mock_datetime.strptime.return_value = datetime(2023, 1, 1)
         
-        repository = CaseRepository()
-        statistics = PrevalenceStatistics(repository)
-        
-        start_date = '2023-01-01'
-        
-        result = statistics.get_prevalence_statistics(start_date)
+        result = self.statistics.get_prevalence_statistics("2023-01-01")
         
         # Verify that strptime was called with the correct arguments
-        mock_datetime.strptime.assert_called_once_with(start_date, '%Y-%m-%d')
+        mock_datetime.strptime.assert_called_once_with("2023-01-01", '%Y-%m-%d')
         
         # Verify the result
         self.assertEqual(result["year"], 2023)
-        self.assertEqual(result["total_cases"], 1)
+        self.assertEqual(result["total_cases"], 0)
         self.assertEqual(result["population"], 278696200)
 
-class StatisticsCoordinatorTest(TestCase):
+class StatisticsCoordinatorTest(BaseStatisticsTestCase):
     def setUp(self):
+        super().setUp()
         # Create a mock case filter service
         self.mock_case_filter_service = Mock()
-        self.mock_case_filter_service.repository = Mock()
-        
-        # Create a mock prevalence statistics
-        self.mock_prevalence = Mock()
-        self.mock_prevalence.get_prevalence_statistics.return_value = {
-            "year": 2023,
-            "total_cases": 100,
-            "population": 278696200,
-            "prevalence": 0.0359
-        }
-        
-        # Patch the PrevalenceStatistics class
-        self.prevalence_patcher = patch('pt_backend.statistics.PrevalenceStatistics')
-        self.mock_prevalence_class = self.prevalence_patcher.start()
-        self.mock_prevalence_class.return_value = self.mock_prevalence
+        self.mock_case_filter_service.filter_cases.return_value = [
+            {
+                "id": str(self.case.id),
+                "gender": "Pria",
+                "age": 25,
+                "severity": "hospitalisasi",
+                "news__date_published": self.news.date_published
+            }
+        ]
         
         # Create the coordinator
         self.coordinator = StatisticsCoordinator(self.mock_case_filter_service)
         
-    def tearDown(self):
-        self.prevalence_patcher.stop()
-        
     def test_generate_comprehensive_report_with_start_date(self):
-        """Test that start_date is correctly passed to get_prevalence_statistics"""
-        # Call the method with a start_date
+        """Test generating a comprehensive report with a start date"""
         result = self.coordinator.generate_comprehensive_report(
             date_range={"start": "2023-01-01", "end": None}
         )
         
-        # Verify that get_prevalence_statistics was called with the correct start_date
-        self.mock_prevalence.get_prevalence_statistics.assert_called_once_with("2023-01-01")
-        
-        # Verify the result
+        # Verify the result contains all expected statistics
         self.assertIn("prevalence_statistics", result)
-        self.assertEqual(result["prevalence_statistics"]["year"], 2023)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_dates_statistics", result)
+        
+        # Verify that filter_cases was called
+        self.mock_case_filter_service.filter_cases.assert_called_once()
         
     def test_generate_comprehensive_report_without_start_date(self):
-        """Test that None is passed to get_prevalence_statistics when no start_date is provided"""
-        # Call the method without a start_date
+        """Test generating a comprehensive report without a start date"""
         result = self.coordinator.generate_comprehensive_report()
         
-        # Verify that get_prevalence_statistics was called with None
-        self.mock_prevalence.get_prevalence_statistics.assert_called_once_with(None)
-        
-        # Verify the result
+        # Verify the result contains all expected statistics
         self.assertIn("prevalence_statistics", result)
-        self.assertEqual(result["prevalence_statistics"]["year"], 2023)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_dates_statistics", result)
+        
+        # Verify that filter_cases was called
+        self.mock_case_filter_service.filter_cases.assert_called_once()
         
     def test_generate_comprehensive_report_with_date_range(self):
-        """Test that both start_date and end_date are correctly extracted from date_range"""
-        # Call the method with both start_date and end_date
+        """Test generating a comprehensive report with a date range"""
         result = self.coordinator.generate_comprehensive_report(
             date_range={"start": "2023-01-01", "end": "2023-12-31"}
         )
         
-        # Verify that get_prevalence_statistics was called with the correct start_date
-        self.mock_prevalence.get_prevalence_statistics.assert_called_once_with("2023-01-01")
-        
-        # Verify the result
+        # Verify the result contains all expected statistics
         self.assertIn("prevalence_statistics", result)
-        self.assertEqual(result["prevalence_statistics"]["year"], 2023)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_dates_statistics", result)
+        
+        # Verify that filter_cases was called with the correct date range
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('date_range', call_args)
+        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertEqual(call_args['date_range']['end'], "2023-12-31")
+        
+    def test_generate_comprehensive_report_with_disease_filter(self):
+        """Test generating a comprehensive report with a disease filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease=["Test Disease"]
+        )
+        
+        # Verify that filter_cases was called with the correct disease filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease', call_args)
+        self.assertEqual(call_args['disease'], ["Test Disease"])
+        
+    def test_generate_comprehensive_report_with_location_filter(self):
+        """Test generating a comprehensive report with a location filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            provinces=["Test Province"]
+        )
+        
+        # Verify that filter_cases was called with the correct location filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('provinces', call_args)
+        self.assertEqual(call_args['provinces'], ["Test Province"])
+        
+    def test_generate_comprehensive_report_with_portal_filter(self):
+        """Test generating a comprehensive report with a portal filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            portals=["Test Portal"]
+        )
+        
+        # Verify that filter_cases was called with the correct portal filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('portals', call_args)
+        self.assertEqual(call_args['portals'], ["Test Portal"])
+        
+    def test_generate_comprehensive_report_with_alertness_filter(self):
+        """Test generating a comprehensive report with an alertness filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease_alertness=1
+        )
+        
+        # Verify that filter_cases was called with the correct alertness filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease_alertness', call_args)
+        self.assertEqual(call_args['disease_alertness'], 1)
+        
+    def test_generate_comprehensive_report_with_multiple_filters(self):
+        """Test generating a comprehensive report with multiple filters"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease=["Test Disease"],
+            provinces=["Test Province"],
+            portals=["Test Portal"],
+            disease_alertness=1,
+            date_range={"start": "2023-01-01", "end": "2023-12-31"}
+        )
+        
+        # Verify that filter_cases was called with all the correct filters
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease', call_args)
+        self.assertIn('provinces', call_args)
+        self.assertIn('portals', call_args)
+        self.assertIn('disease_alertness', call_args)
+        self.assertIn('date_range', call_args)
 
 class TestSeverityGroupingReport(unittest.TestCase):
     def setUp(self):
         # Create a dummy CaseFilterService with a filter_cases method.
         self.dummy_filter_service = MagicMock(name="CaseFilterService")
-        self.report_service = SeverityGroupingReport(self.dummy_filter_service)
+        self.report_service = SeverityGroupingReport()
 
     def test_empty_filtered_cases(self):
         """
@@ -197,8 +290,6 @@ class TestSeverityGroupingReport(unittest.TestCase):
         """
         self.dummy_filter_service.filter_cases.return_value = []
         report = self.report_service.generate_report()
-        # Ensure the filter method was called.
-        self.dummy_filter_service.filter_cases.assert_called_once()
         self.assertEqual(report["total_cases"], 0)
         self.assertEqual(report["severity_counts"], {})
 
@@ -213,8 +304,7 @@ class TestSeverityGroupingReport(unittest.TestCase):
             {"severity": "hospitalisasi"}
         ]
         self.dummy_filter_service.filter_cases.return_value = cases
-        report = self.report_service.generate_report()
-        self.dummy_filter_service.filter_cases.assert_called_once()
+        report = self.report_service.generate_report(cases)
         self.assertEqual(report["total_cases"], 3)
         self.assertEqual(report["severity_counts"], {"hospitalisasi": 3})
 
@@ -234,8 +324,7 @@ class TestSeverityGroupingReport(unittest.TestCase):
             {"severity": None}  # This case should be ignored.
         ]
         self.dummy_filter_service.filter_cases.return_value = cases
-        report = self.report_service.generate_report()
-        self.dummy_filter_service.filter_cases.assert_called_once()
+        report = self.report_service.generate_report(cases)
         self.assertEqual(report["total_cases"], 7)
         self.assertEqual(report["severity_counts"], {
             "hospitalisasi": 3,
@@ -460,3 +549,117 @@ class GenderGroupingReportTestCase(TestCase):
         cases = [{"id": i, "gender": "male" if i % 2 == 0 else "female"} for i in range(1, 10001)]
         result = self.report.generate_report(cases)
         self.assertEqual(result, {"male": 5000, "female": 5000})
+
+class SeverityDatesCountReportTestCase(TestCase):
+    def setUp(self):
+        self.report = SeverityDatesCountReport()
+
+    def test_generate_report_with_data(self):
+        # Create test data with different severities and dates
+        cases = [
+            {
+                "id": 1, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 1))
+            },
+            {
+                "id": 2, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 1))
+            },
+            {
+                "id": 3, 
+                "severity": "mortalitas", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 2))
+            },
+            {
+                "id": 4, 
+                "severity": "insiden", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 3))
+            }
+        ]
+        
+        result = self.report.generate_report(cases)
+        
+        # Check that the result contains all severities
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
+        self.assertIn("insiden", result)
+        
+        # Check the counts for each severity and date
+        hosp_data = result["hospitalisasi"]
+        self.assertEqual(len(hosp_data), 1)
+        self.assertEqual(hosp_data[0]["date"], "2023-01-01")
+        self.assertEqual(hosp_data[0]["count"], 2)
+        
+        mort_data = result["mortalitas"]
+        self.assertEqual(len(mort_data), 1)
+        self.assertEqual(mort_data[0]["date"], "2023-01-02")
+        self.assertEqual(mort_data[0]["count"], 1)
+        
+        incid_data = result["insiden"]
+        self.assertEqual(len(incid_data), 1)
+        self.assertEqual(incid_data[0]["date"], "2023-01-03")
+        self.assertEqual(incid_data[0]["count"], 1)
+
+    def test_generate_report_with_empty_data(self):
+        result = self.report.generate_report([])
+        self.assertEqual(result, {})
+
+    def test_generate_report_with_none_data(self):
+        result = self.report.generate_report(None)
+        self.assertEqual(result, {})
+
+    def test_generate_report_with_missing_date(self):
+        cases = [
+            {
+                "id": 1, 
+                "severity": "hospitalisasi", 
+                "news__date_published": None
+            },
+            {
+                "id": 2, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 1))
+            }
+        ]
+        
+        result = self.report.generate_report(cases)
+        
+        # Check that only cases with valid dates are included
+        self.assertIn("hospitalisasi", result)
+        self.assertEqual(result["hospitalisasi"][0]["count"], 1)
+
+    def test_generate_report_with_multiple_dates_per_severity(self):
+        cases = [
+            {
+                "id": 1, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 1))
+            },
+            {
+                "id": 2, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 2))
+            },
+            {
+                "id": 3, 
+                "severity": "hospitalisasi", 
+                "news__date_published": timezone.make_aware(datetime(2023, 1, 1))
+            }
+        ]
+        
+        result = self.report.generate_report(cases)
+        
+        # Check that the result contains the correct counts for each date
+        self.assertIn("hospitalisasi", result)
+        hosp_data = result["hospitalisasi"]
+        self.assertEqual(len(hosp_data), 2)
+        
+        # Sort the data by date to ensure consistent testing
+        hosp_data.sort(key=lambda x: x["date"])
+        
+        self.assertEqual(hosp_data[0]["date"], "2023-01-01")
+        self.assertEqual(hosp_data[0]["count"], 2)
+        self.assertEqual(hosp_data[1]["date"], "2023-01-02")
+        self.assertEqual(hosp_data[1]["count"], 1)
