@@ -4,6 +4,57 @@ from datetime import datetime
 from .interfaces import CaseRepositoryInterface
 from .repositories import CaseRepository
 
+class StatisticsCoordinator:
+    """
+    Coordinates the generation of various statistics reports.
+    This class acts as a facade for the statistics layer, providing a single entry point
+    for generating comprehensive reports that include multiple statistics components.
+    """
+    
+    def __init__(self, case_filter_service):
+        self.case_filter_service = case_filter_service
+        self.prevalence = PrevalenceStatistics(CaseRepository())
+        self.age_report = AgeGroupingReport()
+        self.gender_report = GenderGroupingReport()
+        self.severity_report = SeverityGroupingReport()
+        self.severity_dates_count_report = SeverityDatesCountReport()
+        # Add other statistics components here as needed
+    
+    def generate_comprehensive_report(self, **filter_params):
+        try:
+            # Filter data once
+            filtered_cases = None
+            
+            if self.case_filter_service:
+                filtered_cases = self.case_filter_service.filter_cases(**filter_params)
+
+            result = {}
+            
+            # Extract date parameters from filter_params
+            date_range = filter_params.get('date_range', {})
+            start_date = date_range.get('start') if date_range else None
+            
+            # Generate prevalence statistics with date parameters
+            result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
+            result["age_statistics"] = self.age_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            result["gender_statistics"] = self.gender_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            result["severity_statistics"] = self.severity_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            result["severity_dates_count_statistics"] = self.severity_dates_count_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            # Add more statistics components here as needed
+            
+            return result
+        
+        except Exception as e:
+            print(e)
+
 class SeverityGroupingReport:
  
     def generate_report(self, filtered_cases = None):
@@ -154,58 +205,6 @@ class PrevalenceStatistics:
             
         except Exception as e:
             return {"error": f"Error calculating prevalence: {str(e)}"}
-
-class StatisticsCoordinator:
-    """
-    Coordinates the generation of various statistics reports.
-    This class acts as a facade for the statistics layer, providing a single entry point
-    for generating comprehensive reports that include multiple statistics components.
-    """
-    
-    def __init__(self, case_filter_service):
-        self.case_filter_service = case_filter_service
-        self.prevalence = PrevalenceStatistics(CaseRepository())
-        self.age_report = AgeGroupingReport()
-        self.gender_report = GenderGroupingReport()
-        self.severity_report = SeverityGroupingReport()
-        self.severity_dates_count_report = SeverityDatesCountReport()
-        # Add other statistics components here as needed
-    
-    def generate_comprehensive_report(self, **filter_params):
-        try:
-            # Filter data once
-            filtered_cases = None
-            
-            if self.case_filter_service:
-                filtered_cases = self.case_filter_service.filter_cases(**filter_params)
-
-            result = {}
-            
-            # Extract date parameters from filter_params
-            date_range = filter_params.get('date_range', {})
-            start_date = date_range.get('start') if date_range else None
-            
-            # Generate prevalence statistics with date parameters
-            result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
-            result["age_statistics"] = self.age_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["gender_statistics"] = self.gender_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["severity_statistics"] = self.severity_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["severity_dates_count_statistics"] = self.severity_dates_count_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            # Add more statistics components here as needed
-            
-            return result
-        
-        except Exception as e:
-            print(e)
-
     
 class NationalNewsStatisticsReport:
     """Generates statistics about national news portals"""
