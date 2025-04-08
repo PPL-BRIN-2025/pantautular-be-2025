@@ -29,3 +29,8 @@ class CacheInterface(ABC):
     @abstractmethod
     def delete(self, key):
         pass # pragma: no cover
+
+class NewsRepositoryInterface(ABC):
+    @abstractmethod
+    def get_healthcare_news_statistics(self):
+        pass # pragma: no cover
