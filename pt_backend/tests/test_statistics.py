@@ -173,7 +173,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertIn("prevalence_statistics", result)
         self.assertIn("age_statistics", result)
         self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_statistics", result)
+        self.assertIn("severity_dates_count_statistics", result)
         
         # Verify that filter_cases was called
         self.mock_case_filter_service.filter_cases.assert_called_once()
@@ -186,7 +186,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertIn("prevalence_statistics", result)
         self.assertIn("age_statistics", result)
         self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_statistics", result)
+        self.assertIn("severity_dates_count_statistics", result)
         
         # Verify that filter_cases was called
         self.mock_case_filter_service.filter_cases.assert_called_once()
@@ -201,7 +201,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertIn("prevalence_statistics", result)
         self.assertIn("age_statistics", result)
         self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_statistics", result)
+        self.assertIn("severity_dates_count_statistics", result)
         
         # Verify that filter_cases was called with the correct date range
         self.mock_case_filter_service.filter_cases.assert_called_once()

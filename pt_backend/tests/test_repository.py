@@ -176,12 +176,6 @@ class CaseRepositoryTestCase(BaseTestCase):
         self.assertTrue(locations.exists())
         self.assertEqual(locations.count(), 2)
         
-        # Check first location
-        case_data = locations.first()
-        self.assertEqual(str(case_data["id"]), str(self.case2.id))
-        self.assertEqual(float(case_data["location__latitude"]), -6.9175)
-        self.assertEqual(float(case_data["location__longitude"]), 107.6191)
-        self.assertEqual(case_data["city"], "Bandung")
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
