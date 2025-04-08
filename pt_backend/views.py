@@ -121,7 +121,6 @@ class CaseDetailView(APIView):
             raise Http404("Case not found")
         return Response(case_data)
 
-class SeverityDatesView(APIView):
 class StatisticsView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
