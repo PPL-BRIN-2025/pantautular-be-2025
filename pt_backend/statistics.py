@@ -4,7 +4,7 @@ from datetime import datetime
 
 class SeverityGroupingReport:
  
-    def generate_report(self, filtered_cases):
+    def generate_report(self, filtered_cases = None):
         severity_counts = Counter()
         total_cases = 0
         
