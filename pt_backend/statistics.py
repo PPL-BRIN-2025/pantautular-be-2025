@@ -164,7 +164,7 @@ class StatisticsCoordinator:
     
     def __init__(self, case_filter_service):
         self.case_filter_service = case_filter_service
-        self.prevalence = PrevalenceStatistics(CaseRepository)
+        self.prevalence = PrevalenceStatistics(CaseRepository())
         self.age_report = AgeGroupingReport()
         self.gender_report = GenderGroupingReport()
         self.severity_report = SeverityGroupingReport()
