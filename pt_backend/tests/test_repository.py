@@ -233,8 +233,8 @@ class CaseRepositoryTestCase(TestCase):
             age=25,
             city="Bandung",
             status="recovered",
-            disease=self.disease,
-            location=self.location
+            disease=disease,
+            location=location
         )
 
         self.location = Location.objects.create(
@@ -274,36 +274,33 @@ class CaseRepositoryTestCase(TestCase):
         self.assertTrue(locations.exists())
         self.assertEqual(locations.count(), 3)
         case_data = locations.first()
-        self.assertEqual(str(case_data["id"]), str(self.case.id))
+        self.assertEqual(str(case_data["id"]), str(case.id))
         self.assertEqual(float(case_data["location__latitude"]), -6.9175)
         self.assertEqual(float(case_data["location__longitude"]), 107.6191)
         self.assertEqual(case_data["city"], "Bandung")
 
     def test_get_all_case_locations_empty(self):
-        Case.objects.all().delete()
-        locations = self.repository.get_all_locations()
+        repository = CaseRepository()
+        locations = repository.get_all_locations()
         self.assertFalse(locations.exists())
 
     def test_positive_case(self):
-        """
-        A case with one related news record should appear in the results
-        with the expected fields.
-        """
-        # First clear all existing cases and news
-        News.objects.all().delete()
-        Case.objects.all().delete()
-        
-        # Create a case
+
+        location = Location.objects.create(
+            latitude=0.0, longitude=0.0, city="Test City", province="Test Province"
+        )
+        disease = Disease.objects.create(name="Test Disease", level_of_alertness=1)
+
         case = Case.objects.create(
             gender="M",
             age=30,
             city="Test City",
-            status="minimal",  # valid choice per model definition
-            severity="hospitalisasi",  # valid choice per model definition
-            disease=self.disease,
-            location=self.location
+            status="minimal",
+            severity="hospitalisasi",
+            disease=disease,
+            location=location
         )
-        # Create an associated news record
+
         news = News.objects.create(
             portal="Test Portal",
             title="Test Title",
@@ -314,52 +311,40 @@ class CaseRepositoryTestCase(TestCase):
             case=case,
             img_url="https://example.com/image.jpg"
         )
-        repository = CaseRepository()
-        qs = repository.get_all_cases()
-        results = list(qs)
 
-        # We expect exactly one row from the join.
+        repository = CaseRepository()
+        results = list(repository.get_all_cases())
+
         self.assertEqual(len(results), 1)
         entry = results[0]
-        # Validate each field.
         self.assertEqual(str(entry["id"]), str(case.id))
-        self.assertEqual(entry["location__province"], self.location.province)
-        self.assertEqual(entry["location__city"], self.location.city)
+        self.assertEqual(entry["location__province"], location.province)
+        self.assertEqual(entry["location__city"], location.city)
         self.assertEqual(entry["news__portal"], news.portal)
         self.assertEqual(entry["severity"], case.severity)
         self.assertEqual(entry["news__date_published"].date(), news.date_published.date())
 
     def test_negative_case_empty_database(self):
-        """
-        When no cases exist in the database, the repository should return an empty queryset.
-        """
-        # Clear all cases and news first
-        News.objects.all().delete()
-        Case.objects.all().delete()
-        
         repository = CaseRepository()
-        qs = repository.get_all_cases()
-        results = list(qs)
+        results = list(repository.get_all_cases())
         self.assertEqual(len(results), 0)
 
     def test_corner_case_multiple_news(self):
-        """
-        A case with multiple news records should return one row per news item.
-        Shared fields such as case id, location, and severity should be identical.
-        """
-        # Clear all existing cases and news first
-        News.objects.all().delete()
-        Case.objects.all().delete()
-        
+        location = Location.objects.create(
+            latitude=1.0, longitude=1.0, city="Corner City", province="Corner Province"
+        )
+        disease = Disease.objects.create(name="Corner Disease", level_of_alertness=2)
+
         case = Case.objects.create(
             gender="M",
             age=40,
             city="Corner City",
             status="biasa",
             severity="insiden",
-            disease=self.disease,
-            location=self.location
+            disease=disease,
+            location=location
         )
+
         News.objects.create(
             portal="Portal 1",
             title="Title 1",
@@ -370,6 +355,7 @@ class CaseRepositoryTestCase(TestCase):
             case=case,
             img_url="https://example.com/image1.jpg"
         )
+
         News.objects.create(
             portal="Portal 2",
             title="Title 2",
@@ -380,15 +366,16 @@ class CaseRepositoryTestCase(TestCase):
             case=case,
             img_url="https://example.com/image2.jpg"
         )
+
         repository = CaseRepository()
-        qs = repository.get_all_cases()
-        results = list(qs)
+        results = list(repository.get_all_cases())
 
         self.assertEqual(len(results), 2)
         portals = {entry["news__portal"] for entry in results}
         self.assertSetEqual(portals, {"Portal 1", "Portal 2"})
+
         for entry in results:
             self.assertEqual(str(entry["id"]), str(case.id))
-            self.assertEqual(entry["location__province"], self.location.province)
-            self.assertEqual(entry["location__city"], self.location.city)
+            self.assertEqual(entry["location__province"], location.province)
+            self.assertEqual(entry["location__city"], location.city)
             self.assertEqual(entry["severity"], case.severity)

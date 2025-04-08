@@ -60,7 +60,7 @@ class CaseAPITest(TestCase):
 
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
-        self.cache_service.delete("all_case_locations")
+        cache.clear()
         response = self.client.get('/cases/locations/')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.json(), {"error": "No case locations found"})
