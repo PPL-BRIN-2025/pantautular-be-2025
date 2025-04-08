@@ -1,4 +1,6 @@
-from collections import Counter, defaultdict
+from asyncio.log import logger
+from collections import Counter, defaultdict, defaultdict
+from datetime import datetime
 
 class SeverityGroupingReport:
  
@@ -29,46 +31,74 @@ class SeverityGroupingReport:
         }
 
 class AgeGroupingReport:
-     """Generates age grouping statistics"""
-     
-     def generate_report(self, filtered_cases=None):
-         """Generate age grouping report"""
-         age_groups = {
-             "under_12": 0,
-             "12_25": 0,
-             "26_45": 0,
-             "above_45": 0
-         }
- 
-         if not filtered_cases:
-             return age_groups
-         
-         # Track cases we've already counted
-         counted_cases = set()
-         
-         for case in filtered_cases:
-             case_id = case.get("id")
-             
-             # Skip if we've already counted this case
-             if case_id in counted_cases:
-                 continue
-                 
-             counted_cases.add(case_id)
-             
-             age = case.get("age")
-             if age is None:
-                 continue
-                 
-             if age < 12:
-                 age_groups["under_12"] += 1
-             elif 12 <= age <= 25:
-                 age_groups["12_25"] += 1
-             elif 26 <= age <= 45:
-                 age_groups["26_45"] += 1
-             else:
-                 age_groups["above_45"] += 1
- 
-         return age_groups
+    """Generates age grouping statistics"""
+    
+    def generate_report(self, filtered_cases=None):
+        """Generate age grouping report"""
+        age_groups = {
+            "under_12": 0,
+            "12_25": 0,
+            "26_45": 0,
+            "above_45": 0
+        }
+
+        if not filtered_cases:
+            return age_groups
+        
+        # Track cases we've already counted
+        counted_cases = set()
+        
+        for case in filtered_cases:
+            case_id = case.get("id")
+            
+            # Skip if we've already counted this case
+            if case_id in counted_cases:
+                continue
+                
+            counted_cases.add(case_id)
+            
+            age = case.get("age")
+            if age is None:
+                continue
+                
+            if age < 12:
+                age_groups["under_12"] += 1
+            elif 12 <= age <= 25:
+                age_groups["12_25"] += 1
+            elif 26 <= age <= 45:
+                age_groups["26_45"] += 1
+            else:
+                age_groups["above_45"] += 1
+
+        return age_groups
+
+class SeverityDatesCountReport:
+    def generate_report(self, filtered_cases=None):
+        """Generate severity dates count report"""
+        if not filtered_cases:
+            logger.info("No filtered cases provided. Returning empty report.")
+            return {}
+
+        severity_dates = defaultdict(lambda: defaultdict(int))
+
+        for case in filtered_cases:
+            severity = case.get("severity")
+            date_published = case.get("news__date_published")
+
+            # Safely format the date
+            if isinstance(date_published, datetime):
+                date_published = date_published.strftime('%Y-%m-%d')
+            else:
+                logger.warning(f"Invalid or missing date_published in case: {case}")
+                continue
+
+            severity_dates[severity][date_published] += 1
+
+        # Transform to the desired output format
+        return {
+            severity: [{"date": date, "count": count} for date, count in dates.items()]
+            for severity, dates in severity_dates.items()
+        }
 
 class GenderGroupingReport:
     """Generates gender distribution statistics"""

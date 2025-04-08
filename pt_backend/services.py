@@ -7,7 +7,7 @@ from datetime import datetime
 
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
-    CACHE_KEY_ALL_LOCATIONS = "all_case_locations"
+    CACHE_KEY_ALL_LOCATIONS = "all_locations"
     CACHE_TIMEOUT = 300 
 
     def __init__(self, repository: CaseRepositoryInterface, cache_service: CacheInterface):
