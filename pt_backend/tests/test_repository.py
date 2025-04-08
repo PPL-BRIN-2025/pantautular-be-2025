@@ -165,6 +165,8 @@ class CaseRepositoryTestCase(BaseTestCase):
         self.assertEqual(cases.count(), 2)
     
     def test_get_all_cases_empty(self):
+        # Clear all cases first
+        News.objects.all().delete()
         Case.objects.all().delete()
         cases = self.repository.get_all_cases()
         self.assertFalse(cases.exists())

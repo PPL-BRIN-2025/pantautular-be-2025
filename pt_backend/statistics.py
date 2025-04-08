@@ -167,7 +167,8 @@ class StatisticsCoordinator:
         self.prevalence = PrevalenceStatistics(CaseRepository)
         self.age_report = AgeGroupingReport()
         self.gender_report = GenderGroupingReport()
-        self.severity_dates_report = SeverityDatesCountReport()
+        self.severity_report = SeverityGroupingReport()
+        self.severity_dates_count_report = SeverityDatesCountReport()
         # Add other statistics components here as needed
     
     def generate_comprehensive_report(self, **filter_params):
@@ -192,7 +193,10 @@ class StatisticsCoordinator:
             result["gender_statistics"] = self.gender_report.generate_report(
                 filtered_cases=filtered_cases
             )
-            result["severity_dates_statistics"] = self.severity_dates_report.generate_report(
+            result["severity_statistics"] = self.severity_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            result["severity_dates_count_statistics"] = self.severity_dates_count_report.generate_report(
                 filtered_cases=filtered_cases
             )
             # Add more statistics components here as needed
