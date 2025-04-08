@@ -6,7 +6,10 @@ from .services import CacheService, CaseService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
+import logging
 
+logger = logging.getLogger(__name__)
+INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -31,7 +34,7 @@ class AllCaseLocationsView(APIView):
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
-            return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
     def post(self, request):
@@ -44,7 +47,7 @@ class AllCaseLocationsView(APIView):
 
             if not cases:
                 return Response(
-                    {"error": "No case locations found matching the filters"},
+                    {"error": INTERNAL_ERROR_MESSAGE},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
@@ -54,7 +57,7 @@ class AllCaseLocationsView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": "An unexpected error occurred. Please try again later."},
+                {"error": INTERNAL_ERROR_MESSAGE},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -80,5 +83,19 @@ class FiltersView(APIView):
             }
 
             return Response(response_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class SeverityDatesView(APIView):
+    def get(self, request):
+        news_repository = NewsRepository()
+        try:
+            severity_dates = news_repository.get_all_severities_dates()
+            for item in severity_dates:
+                if 'date_published' in item:
+                    item['date_published'] = item['date_published'].date()
+            if len(severity_dates) == 0:
+                return Response({"error": "No severity dates found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"data": severity_dates}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
