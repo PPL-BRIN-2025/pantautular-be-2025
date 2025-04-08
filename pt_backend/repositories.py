@@ -1,6 +1,8 @@
 from django.utils import timezone
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Count, Case
+from .models import Case
 from .interfaces import CaseRepositoryInterface
 from django.db.models import Count
 from django.db.models.functions import TruncDate

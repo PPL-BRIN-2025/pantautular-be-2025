@@ -24,7 +24,9 @@ class CaseService(CaseRetrievalInterface):
             locations = self.repository.get_all_locations()
             self.cache_service.set(self.CACHE_KEY, locations, timeout=self.CACHE_TIMEOUT)
         return locations if locations else []
-
+    
+    def get_gender_dist(self):
+        return self.repository.get_gender_distribution()
 
 class CacheService(CacheInterface):
     def get(self, key):
@@ -45,13 +47,13 @@ class CasesFilterService:
     def __init__(self, case_service):
         self.case_service = case_service
 
-    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, level_of_alertness=None, date_range=None):
+    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, disease_alertness=None, date_range=None):
         cases = self.case_service.get_all_cases()
         cases = self._filter_by_disease(cases, disease)
         cases = self._filter_by_provinces(cases, provinces)
         cases = self._filter_by_cities(cases, cities)
         cases = self._filter_by_news_portals(cases, portals)
-        cases = self._filter_by_disease_alertness(cases, level_of_alertness)
+        cases = self._filter_by_disease_alertness(cases, disease_alertness)
         cases = self._filter_by_news_date_range(cases, date_range)
         return cases
     

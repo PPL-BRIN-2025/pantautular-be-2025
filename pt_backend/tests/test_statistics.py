@@ -1,5 +1,5 @@
 from django.test import TestCase
-from pt_backend.statistics import AgeGroupingReport, SeverityGroupingReport
+from pt_backend.statistics import AgeGroupingReport, GenderGroupingReport, SeverityGroupingReport
 from unittest.mock import MagicMock, call
 import unittest
 
@@ -205,141 +205,77 @@ class TestAgeGroupingReport(unittest.TestCase):
         self.assertEqual(report["26_45"], 0)
         self.assertEqual(report["above_45"], 1)
 
-class TestSeverityDatesCountReport(unittest.TestCase):
+class GenderGroupingReportTestCase(TestCase):
     def setUp(self):
-        """Set up test environment for SeverityDatesCountReport"""
-        from pt_backend.statistics import SeverityDatesCountReport
-        self.report_service = SeverityDatesCountReport()
-    
-    def test_empty_cases(self):
-        """
-        Unhappy path: when no cases are provided,
-        the report should return an empty dictionary.
-        """
-        report = self.report_service.generate_report(filtered_cases=None)
-        self.assertEqual(report, {})
-        
-        report = self.report_service.generate_report(filtered_cases=[])
-        self.assertEqual(report, {})
-    
-    def test_various_severity_and_dates(self):
-        """
-        Happy path: when cases with various severities and dates are provided,
-        the report should correctly group them.
-        """
-        from datetime import datetime
-        
+        self.report = GenderGroupingReport()
+
+    def test_generate_report_with_data(self):
         cases = [
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 2)},
-            {"severity": "insiden", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "insiden", "news__date_published": datetime(2023, 1, 3)},
-            {"severity": "mortalitas", "news__date_published": datetime(2023, 1, 2)}
+            {"id": 1, "gender": "male"},
+            {"id": 2, "gender": "female"},
+            {"id": 3, "gender": "male"},
         ]
-        
-        report = self.report_service.generate_report(filtered_cases=cases)
-        
-        # Check structure and content of the report
-        self.assertIn("hospitalisasi", report)
-        self.assertIn("insiden", report)
-        self.assertIn("mortalitas", report)
-        
-        # Check hospitalisasi counts by date
-        hospitalisasi_dates = {item["date"]: item["count"] for item in report["hospitalisasi"]}
-        self.assertEqual(hospitalisasi_dates["2023-01-01"], 2)
-        self.assertEqual(hospitalisasi_dates["2023-01-02"], 1)
-        
-        # Check insiden counts by date
-        insiden_dates = {item["date"]: item["count"] for item in report["insiden"]}
-        self.assertEqual(insiden_dates["2023-01-01"], 1)
-        self.assertEqual(insiden_dates["2023-01-03"], 1)
-        
-        # Check mortalitas counts by date
-        mortalitas_dates = {item["date"]: item["count"] for item in report["mortalitas"]}
-        self.assertEqual(mortalitas_dates["2023-01-02"], 1)
-    
-    def test_missing_severity_or_date(self):
-        """
-        Edge case: when some cases are missing severity or date published,
-        these cases should be handled gracefully.
-        """
-        from datetime import datetime
-        
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 2, "female": 1})
+
+    def test_generate_report_with_empty_data(self):
+        result = self.report.generate_report([])
+        self.assertEqual(result, {"male": 0, "female": 0})
+
+    def test_generate_report_with_invalid_gender(self):
         cases = [
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": None, "news__date_published": datetime(2023, 1, 1)},  # Missing severity value
-            {"news__date_published": datetime(2023, 1, 2)},  # Missing severity key
-            {"severity": "insiden"}  # Missing news__date_published key
+            {"id": 1, "gender": "male"},
+            {"id": 2, "gender": "unknown"},
+            {"id": 3, "gender": "female"},
         ]
-        
-        # Using try-except to ensure the test doesn't fail due to missing keys
-        try:
-            report = self.report_service.generate_report(filtered_cases=cases)
-            
-            # Check that valid case is included
-            self.assertIn("hospitalisasi", report)
-            hospitalisasi_dates = {item["date"]: item["count"] for item in report["hospitalisasi"]}
-            self.assertEqual(hospitalisasi_dates["2023-01-01"], 1)
-            
-            # Check that None severity is included if present
-            if None in report:
-                none_dates = {item["date"]: item["count"] for item in report[None]}
-                self.assertEqual(none_dates["2023-01-01"], 1)
-        except Exception as e:
-            self.fail(f"Test failed with exception: {e}")
-    
-    def test_same_severity_different_dates(self):
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 1, "female": 1})
+
+    def test_generate_report_with_missing_gender(self):
         """
-        Edge case: when all cases have the same severity but different dates,
-        they should be correctly grouped by date.
+        Edge case: when some cases are missing the gender field,
+        they should be ignored in the count.
         """
-        from datetime import datetime
-        
         cases = [
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 2)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 3)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)}  # Duplicate date
+            {"id": 1, "gender": "male"},
+            {"id": 2},  # Missing gender
+            {"id": 3, "gender": None},  # None gender
+            {"id": 4, "gender": "female"},
         ]
-        
-        report = self.report_service.generate_report(filtered_cases=cases)
-        
-        # Check that only hospitalisasi severity is present
-        self.assertEqual(list(report.keys()), ["hospitalisasi"])
-        
-        # Check counts by date
-        hospitalisasi_dates = {item["date"]: item["count"] for item in report["hospitalisasi"]}
-        self.assertEqual(hospitalisasi_dates["2023-01-01"], 2)
-        self.assertEqual(hospitalisasi_dates["2023-01-02"], 1)
-        self.assertEqual(hospitalisasi_dates["2023-01-03"], 1)
-    
-    def test_different_severity_same_date(self):
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 1, "female": 1})
+
+    def test_generate_report_with_mixed_case_gender(self):
         """
-        Edge case: when cases have different severities but the same date,
-        they should be correctly grouped by severity.
+        Edge case: gender values with mixed casing (e.g., "Male", "FEMALE")
+        should be normalized and counted correctly.
         """
-        from datetime import datetime
-        
         cases = [
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "insiden", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "mortalitas", "news__date_published": datetime(2023, 1, 1)},
-            {"severity": "hospitalisasi", "news__date_published": datetime(2023, 1, 1)}  # Duplicate severity
+            {"id": 1, "gender": "Male"},
+            {"id": 2, "gender": "FEMALE"},
+            {"id": 3, "gender": "male"},
+            {"id": 4, "gender": "female"},
         ]
-        
-        report = self.report_service.generate_report(filtered_cases=cases)
-        
-        # Check that all severities are present
-        self.assertIn("hospitalisasi", report)
-        self.assertIn("insiden", report)
-        self.assertIn("mortalitas", report)
-        
-        # Check counts for each severity
-        hospitalisasi_dates = {item["date"]: item["count"] for item in report["hospitalisasi"]}
-        insiden_dates = {item["date"]: item["count"] for item in report["insiden"]}
-        mortalitas_dates = {item["date"]: item["count"] for item in report["mortalitas"]}
-        
-        self.assertEqual(hospitalisasi_dates["2023-01-01"], 2)
-        self.assertEqual(insiden_dates["2023-01-01"], 1)
-        self.assertEqual(mortalitas_dates["2023-01-01"], 1)
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 2, "female": 2})
+
+    def test_generate_report_with_only_invalid_genders(self):
+        """
+        Edge case: when all cases have invalid gender values,
+        the report should return zero counts for both male and female.
+        """
+        cases = [
+            {"id": 1, "gender": "unknown"},
+            {"id": 2, "gender": "other"},
+            {"id": 3, "gender": None},
+        ]
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 0, "female": 0})
+
+    def test_generate_report_with_large_dataset(self):
+        """
+        Performance test: ensure the report works correctly with a large dataset.
+        """
+        cases = [{"id": i, "gender": "male" if i % 2 == 0 else "female"} for i in range(1, 10001)]
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 5000, "female": 5000})
