@@ -183,7 +183,7 @@ class HealthcareNewsStatisticsReport:
             disease = case.get("disease__name")
 
             # Skip non-healthcare or missing portal news
-            if not (portal and news_type == "kesehatan"):
+            if not (portal and news_type and news_type.lower() == "kesehatan"):
                 continue
 
             # Count this news article
