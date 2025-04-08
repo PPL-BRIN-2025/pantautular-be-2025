@@ -210,3 +210,34 @@ class HealthcareNewsStatisticsReport:
         ]
 
         return {"top_healthcare": top_healthcare, "all_healthcare": all_healthcare}
+
+class LocalPortalStatisticsReport:
+    """Generates local portal statistics"""
+
+    def generate_report(self, filtered_cases=None):
+        local_portal_stats = {}
+
+        if not filtered_cases:
+            return local_portal_stats
+
+        for case in filtered_cases:
+            if case.get("news__type") == "Lokal":
+                portal = case.get("news__portal")
+                disease = case.get("disease__name")
+                if portal and disease:
+                    if portal not in local_portal_stats:
+                        local_portal_stats[portal] = {
+                            "news_count": 0,
+                            "disease_count": set()
+                        }
+                    local_portal_stats[portal]["news_count"] += 1
+                    local_portal_stats[portal]["disease_count"].add(disease)
+
+        result = {}
+
+        for portal, stats in local_portal_stats.items():
+            result[portal] = {
+                "news_count": stats["news_count"],
+                "disease_count": len(stats["disease_count"])
+            }
+        return result
