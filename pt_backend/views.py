@@ -9,7 +9,6 @@ from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
-logger = logging.getLogger(__name__)
 INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
 
 class AllCaseLocationsView(APIView):
