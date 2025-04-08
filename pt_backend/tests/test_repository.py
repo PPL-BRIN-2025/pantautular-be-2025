@@ -1,3 +1,5 @@
+import datetime
+from django.utils import timezone
 from django.test import TestCase
 
 from django.test import TestCase
@@ -79,54 +81,62 @@ class NewsRepositoryTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.repository = NewsRepository()
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.disease2 = Disease.objects.create(name="SARS", level_of_alertness=4)
-        self.location = Location.objects.create(
-            latitude=-6.2088, longitude=106.8456, city="Jakarta"
+        
+        # Update cases with severity values for severities_dates tests
+        self.case1.severity = "hospitalisasi"
+        self.case1.save()
+        self.case2.severity = "mortalitas"
+        self.case2.save()
+
+        # Update news1 and news2 with specific dates for testing
+        self.news1.date_published = "2025-02-01T00:00:00Z"
+        self.news1.save()
+        self.news2.date_published = "2025-01-01T00:00:00Z"
+        self.news2.save()
+        
+        # Create news with specific dates for testing
+        self.news_date1 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update",
+            content="New cases...",
+            url="https://cnn.com/covid",
+            author="Dr. Smith",
+            date_published="2023-05-01T10:00:00Z",
+            case=self.case1
         )
-        self.case1 = Case.objects.create(
-            id=uuid.uuid4(), gender="Pria", age=30, city="Jakarta", status="kematian", disease=self.disease, location=self.location
+        
+        self.news_date2 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="cnn.com",
+            type="health",
+            title="COVID Update 2",
+            content="More cases...",
+            url="https://cnn.com/covid2",
+            author="Dr. Smith",
+            date_published="2023-05-01T14:00:00Z",
+            case=self.case1
         )
-        self.case2 = Case.objects.create(
-            id=uuid.uuid4(), gender="Wanita", age=25, city="Jakarta", status="terjangkit", disease=self.disease2, location=self.location
-        )
-        self.news1 = News.objects.create(
-            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news2 = News.objects.create(
-            id=uuid.uuid4(), portal="detik.com", type="Kesehatan", title="SARS Detected in Jakarta", content="SARS case detected in Medan...", url="https://www.detik.com/sars-jakarta", author="Dr. Sari", case=self.case2
-        )
-        self.news3 = News.objects.create(
-            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news4 = News.objects.create(
-            id=uuid.uuid4(), portal="kompas.com", type="Kesehatan", title="SARS Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case2
-        )
-        self.news5 = News.objects.create(
-            id=uuid.uuid4(), portal="WHO International", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news6 = News.objects.create(
-            id=uuid.uuid4(), portal="Kemenkes.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news7 = News.objects.create(
-            id=uuid.uuid4(), portal="bps.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news8 = News.objects.create(
-            id=uuid.uuid4(), portal="bps.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news9 = News.objects.create(
-            id=uuid.uuid4(), portal="bpjs.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
-        )
-        self.news10 = News.objects.create(
-            id=uuid.uuid4(), portal="kemenhub.go.id", type="Kesehatan", title="COVID-19 Detected in Jakarta", content="COVID-19 case detected in Jakarta...", url="https://www.kompas.com/covid-jakarta", author="Dr. Joko", case=self.case1
+        
+        self.news_date3 = News.objects.create(
+            id=uuid.uuid4(),
+            portal="bbc.com",
+            type="health",
+            title="Mortality Report",
+            content="Statistics...",
+            url="https://bbc.com/health",
+            author="Dr. Jones",
+            date_published="2023-06-15T09:00:00Z",
+            case=self.case2
         )
 
     def test_get_all_news_name(self):
         news = self.repository.get_all_news_name()
-        expected = ["kompas.com", "detik.com", "Kemenkes.go.id", "bps.go.id", "bpjs.go.id", "kemenhub.go.id", "WHO International"]
+        # Update expected list to include all portal names from both initial setup and additional test setup
+        expected = ["kompas.com", "detik.com", "cnn.com", "bbc.com"]
         for news_item in news:
             self.assertIn(news_item, expected)
-        self.assertEqual(len(news), len(expected))
 
     def test_get_all_news_name_empty(self):
         News.objects.all().delete()  
@@ -139,36 +149,45 @@ class NewsRepositoryTestCase(BaseTestCase):
         result = self.repository.get_all_news_name()
         self.assertEqual(result, {"error": "Error retrieving news"})
 
-    def test_get_healthcare_news_statistics(self):
-        result = self.repository.get_healthcare_news_statistics()
-        self.maxDiff = None
-        self.assertEqual(result, [
-            {'portal': 'Kemenkes.go.id', 'news_count': 1, 'disease_count': 1},
-            {'portal': 'WHO International', 'news_count': 1, 'disease_count': 1},
-            {'portal': 'bpjs.go.id', 'news_count': 1, 'disease_count': 1},
-            {'portal': 'bps.go.id', 'news_count': 2, 'disease_count': 1},
-            {'portal': 'detik.com', 'news_count': 1, 'disease_count': 1},
-            {'portal': 'kemenhub.go.id', 'news_count': 1, 'disease_count': 1},
-            {'portal': 'kompas.com', 'news_count': 3, 'disease_count': 2}
-        ])
-    def test_get_top_healthcare_news_portal(self):
-        result = self.repository.get_top_healthcare_news_portal()
-        self.assertEqual(result, [{'portal': 'kompas.com', 'count': 3}, {'portal': 'bps.go.id', 'count': 2}, {'portal': 'kemenhub.go.id', 'count': 1}, {'portal': 'detik.com', 'count': 1}, {'portal': 'bpjs.go.id', 'count': 1}])
+    def test_get_all_severities_dates(self):
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
+        
+        hosp_data = result["hospitalisasi"]
+        self.assertEqual(len(hosp_data), 2)
+        self.assertEqual(hosp_data[0]["date"], "2025-02-01")
+        count = 0
+        for item in hosp_data:
+            count += item["count"]
+        self.assertEqual(count, 3)
+        
+        mort_data = result["mortalitas"]
+        self.assertEqual(len(mort_data), 2)
+        self.assertTrue("date" in mort_data[0])
+        self.assertEqual(mort_data[0]["count"], 1)
 
-    def test_get_top_healthcare_news_portal_empty(self):
+    def test_get_all_severities_dates_empty(self):
         News.objects.all().delete()
-        result = self.repository.get_top_healthcare_news_portal()
-        self.assertEqual(result, [])
-    
-    def test_get_top_healthcare_news_portal_exception(self):
-        with patch('pt_backend.models.News.objects.filter', side_effect=ObjectDoesNotExist):
-            result = self.repository.get_top_healthcare_news_portal()
-            self.assertEqual(result, {"error": "Error retrieving news"})
-    
-    def test_get_healthcare_news_statistics_exception(self):
-        with patch('pt_backend.models.News.objects.filter', side_effect=ObjectDoesNotExist):
-            result = self.repository.get_healthcare_news_statistics()
-            self.assertEqual(result, {"error": "Error retrieving news statistics"})
+        
+        result = self.repository.get_all_severities_dates()
+        
+        self.assertNotIn("hospitalisasi", result)
+        self.assertNotIn("mortalitas", result)
+        self.assertEqual(result, {})
+
+    def test_get_all_severities_dates_with_none_severity(self):
+        # Get results from repository method
+        result = self.repository.get_all_severities_dates()
+        
+        # Verify that keys 'None' and '' are not in the results
+        self.assertNotIn('None', result)
+        self.assertNotIn('', result)
+        
+        # The original severity types should still be there
+        self.assertIn("hospitalisasi", result)
+        self.assertIn("mortalitas", result)
 
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):

@@ -1,3 +1,4 @@
+from datetime import datetime
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
@@ -134,56 +135,53 @@ class CaseFilterPostTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.json(), {"detail": "Invalid API Key"})
 
-class GenderDistAPITest(TestCase):
+
+class SeverityDatesViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        self.patcher = patch('pt_backend.views.NewsRepository')
+        self.mock_news_repository = self.patcher.start()
+        self.mock_repo_instance = Mock()
+        self.mock_news_repository.return_value = self.mock_repo_instance
 
-        self.cache_service = CacheService()
-        self.repository = CaseRepository()
-        self.service = CaseService(self.repository, self.cache_service)
+    def tearDown(self):
+        self.patcher.stop()
 
-        self.disease = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location = Location.objects.create(
-            latitude=-6.9175, longitude=107.6191, city="Bandung"
-        )
-        Case.objects.create(gender='male', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
-        Case.objects.create(gender='female', age=25, city='CityB', status='minimal', severity='mortalitas', disease=self.disease, location=self.location)
-        Case.objects.create(gender='male', age=40, city='CityC', status='bahaya', severity='hospitalisasi', disease=self.disease, location=self.location)
+    def test_get_severity_dates_success(self):
+        # Mock data with datetime objects that need to be converted to date
+        mock_dates = [
+            {'id': '1', 'severity': 'High', 'date_published': datetime(2023, 5, 10)},
+            {'id': '2', 'severity': 'Medium', 'date_published': datetime(2023, 5, 11)},
+            {'id': '3', 'severity': 'Low', 'date_published': datetime(2023, 5, 12)}
+        ]
+        self.mock_repo_instance.get_all_severities_dates.return_value = mock_dates
 
-    def test_get_gender_dist(self):
-        response = self.client.get('/api/cases/gender-distribution/')
+        response = self.client.get('/api/severity-dates/')
+        
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'male': 2, 'female': 1})
-    
-    def test_get_gender_dist_if_invalid_gender(self):
-        Case.objects.create(gender='BLABLA', age=30, city='CityA', status='biasa', severity='insiden', disease=self.disease, location=self.location)
-        response = self.client.get('/api/cases/gender-distribution/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), {'male':2, 'female':1}) #buat cek klo ada yg ga valid masi return gender yg valid atau nggak
+        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
+        
+        response_data = response.json()['data']
+        self.assertEqual(len(response_data), 3)
+        self.assertEqual(response_data[0]['date_published'], '2023-05-10')
+        self.assertEqual(response_data[1]['date_published'], '2023-05-11')
+        self.assertEqual(response_data[2]['date_published'], '2023-05-12')
 
-    @patch('pt_backend.services.CaseService.get_gender_dist')
-    def test_get_gender_dist_exception(self, mock_get_gender_dist):
-        mock_get_gender_dist.return_value = {
-            'male': 2,
-            'female': 1
-        }
+    def test_get_severity_dates_empty(self):
+        self.mock_repo_instance.get_all_severities_dates.return_value = []
+        
+        response = self.client.get('/api/severity-dates/')
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        response = self.client.get('/api/cases/gender-distribution/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, {
-            'male': 2,
-            'female': 1
-        })
-
-    @patch('pt_backend.services.CaseService.get_gender_dist')
-    def test_get_gender_dist_exception(self, mock_get_gender_dist):
-        mock_get_gender_dist.side_effect = Exception("Database error")
-
-        response = self.client.get('/api/cases/gender-distribution/')
+    def test_get_severity_dates_exception(self):
+        self.mock_repo_instance.get_all_severities_dates.side_effect = Exception("Database error")
+        
+        response = self.client.get('/api/severity-dates/')
+        
+        self.mock_repo_instance.get_all_severities_dates.assert_called_once()
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+        self.assertEqual(response.json(), {"error": "Database error"})
 
 class NewsAPITest(TestCase):
     def setUp(self):

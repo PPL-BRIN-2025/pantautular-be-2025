@@ -1,8 +1,12 @@
+from django.utils import timezone
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Count, Case
 from .models import Case
 from .interfaces import CaseRepositoryInterface
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+from collections import defaultdict
 
 class DiseaseRepository:
     def get_all_diseases_name(self):
@@ -34,50 +38,29 @@ class NewsRepository:
             return list(news)
         except ObjectDoesNotExist:
             return {"error": "Error retrieving news"}
-        
-    def get_healthcare_news_statistics(self):
+
+    def get_all_severities_dates(self):
         try:
-            news_stats = News.objects.filter(type="Kesehatan") \
-                .values('portal') \
-                .annotate(
-                    news_count=Count('id'),
-                    disease_count=Count('case__disease', distinct=True)
-                )
+            date_counts = (
+                News.objects
+                .annotate(date=TruncDate('date_published'))
+                .values('case__severity', 'date')
+                .annotate(count=Count('id'))
+                .order_by('case__severity', 'date')
+            )
 
-            results = []
-            for stat in news_stats:
-                results.append({
-                    'portal': stat['portal'],
-                    'news_count': stat['news_count'], 
-                    'disease_count': stat['disease_count']
-                })
-            return results
+            result = defaultdict(list)
+            for item in date_counts:
+                severity_key = str(item['case__severity'])
+                if severity_key and severity_key != 'None':
+                    result[severity_key].append({
+                        "date": item['date'].strftime('%Y-%m-%d'),
+                        "count": item['count']
+                    })
 
-        except ObjectDoesNotExist:
-            return {"error": "Error retrieving news statistics"}
-
-    def get_top_healthcare_news_portal(self):
-        try:
-            news_stats = News.objects.filter(type="Kesehatan") \
-                .values('portal') \
-                .annotate(
-                    news_count=Count('id')
-                ) \
-                .order_by('-news_count')[:5]
-
-            if not news_stats:
-                return []
-
-            results = []
-            for stat in news_stats:
-                results.append({
-                    'portal': stat['portal'],
-                    'count': stat['news_count']
-                })
-            return results
-
-        except ObjectDoesNotExist:
-            return {"error": "Error retrieving news"}
+            return dict(result)
+        except Exception as e:
+            return {"error": str(e)}
 
 class CaseRepository(CaseRepositoryInterface):
     def get_all_cases(self):
