@@ -17,3 +17,12 @@ class SeverityCountSerializer(serializers.Serializer):
         for severity_key, month_data in obj.items():
             result[severity_key] = MonthlyCountSerializer(month_data, many=True).data
         return result
+
+class PortalStatisticsSerializer(serializers.Serializer):
+    portal = serializers.CharField()
+    news_count = serializers.IntegerField()
+    disease_count = serializers.IntegerField()
+
+class TopPortalSerializer(serializers.Serializer):
+    portal = serializers.CharField()
+    count = serializers.IntegerField()

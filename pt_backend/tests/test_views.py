@@ -3,8 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 from pt_backend.models import Case, Location, Disease
-from pt_backend.services import CacheService, CaseService
-from pt_backend.repositories import CaseRepository
+from pt_backend.services import CacheService
 import uuid
 import os
 from unittest.mock import patch, Mock
