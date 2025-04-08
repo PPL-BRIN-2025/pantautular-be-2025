@@ -86,10 +86,6 @@ class DiseaseRepositoryTestCase(TestCase):
     def test_get_disease_severity_stats(self):
         """Test that disease severity stats are correctly calculated"""
         results = self.repository.get_disease_severity_stats()
-        # print("\nRESULT: ")
-        # for result in results:
-        #     print(result)
-        # print()
         
         # Check we got results for both diseases
         self.assertEqual(len(results), 3)
@@ -135,7 +131,7 @@ class DiseaseRepositoryTestCase(TestCase):
         
         # We should now have 17 diseases total (2 original + 15 new)
         results = self.repository.get_disease_severity_stats()
-        
+
         # Check that only 12 are returned
         self.assertEqual(len(results), 12)
         

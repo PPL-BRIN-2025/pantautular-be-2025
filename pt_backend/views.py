@@ -33,7 +33,7 @@ class AllCaseLocationsView(APIView):
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
-            return Response({"error": "An unexpected error occurred. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
         try:
@@ -55,7 +55,7 @@ class AllCaseLocationsView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": "An unexpected error occurred. Please try again later."},
+                {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
