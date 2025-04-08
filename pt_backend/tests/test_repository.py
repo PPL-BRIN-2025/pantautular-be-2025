@@ -218,36 +218,45 @@ class NewsRepositoryTestCase(BaseTestCase):
 class CaseRepositoryTestCase(TestCase):
     def setUp(self):
         self.repository = CaseRepository()
-        self.disease = Disease.objects.create(
+        
+        # Create test disease
+        self.disease1 = Disease.objects.create(
             name="COVID-19", 
             level_of_alertness=5
         )
-        self.location = Location.objects.create(
+        
+        # Create test location
+        self.location1 = Location.objects.create(
             latitude=-6.9175, 
             longitude=107.6191, 
             city="Bandung"
         )
+        
+        # Create test case
         self.case = Case.objects.create(
             id=uuid.uuid4(),
             gender="Female",
             age=25,
             city="Bandung",
             status="recovered",
-            disease=disease,
-            location=location
+            disease=self.disease1,
+            location=self.location1
         )
 
-        self.location = Location.objects.create(
+        # Create additional test objects
+        self.location2 = Location.objects.create(
             latitude=0.0,
             longitude=0.0,
             city="Test City",
             province="Test Province"
         )
-        self.disease = Disease.objects.create(
+        
+        self.disease2 = Disease.objects.create(
             name="Test Disease",
             level_of_alertness=1
         )
 
+        # Create test news
         self.news = News.objects.create(
             id=uuid.uuid4(), 
             portal="kompas.com", 
@@ -257,7 +266,7 @@ class CaseRepositoryTestCase(TestCase):
             url="https://www.kompas.com/covid-jakarta", 
             date_published=timezone.make_aware(datetime(2023, 1, 1, 11, 15, 0)),            
             author="Dr. Joko", 
-            case= self.case
+            case=self.case
         )
     
     def test_get_all_cases(self):
@@ -265,6 +274,8 @@ class CaseRepositoryTestCase(TestCase):
         self.assertEqual(cases.count(), 1)
     
     def test_get_all_cases_empty(self):
+        # Clear all cases first
+        News.objects.all().delete()
         Case.objects.all().delete()
         cases = self.repository.get_all_cases()
         self.assertFalse(cases.exists())
@@ -272,20 +283,25 @@ class CaseRepositoryTestCase(TestCase):
     def test_get_all_case_locations(self):
         locations = self.repository.get_all_locations()
         self.assertTrue(locations.exists())
-        self.assertEqual(locations.count(), 3)
+        self.assertEqual(locations.count(), 1)
         case_data = locations.first()
-        self.assertEqual(str(case_data["id"]), str(case.id))
+        self.assertEqual(str(case_data["id"]), str(self.case.id))
         self.assertEqual(float(case_data["location__latitude"]), -6.9175)
         self.assertEqual(float(case_data["location__longitude"]), 107.6191)
         self.assertEqual(case_data["city"], "Bandung")
 
     def test_get_all_case_locations_empty(self):
-        repository = CaseRepository()
-        locations = repository.get_all_locations()
+        # Clear all cases and locations first
+        News.objects.all().delete()
+        Case.objects.all().delete()
+        
+        # Create a new repository instance to ensure we're testing with a clean state
+        empty_repository = CaseRepository()
+        locations = empty_repository.get_all_locations()
         self.assertFalse(locations.exists())
 
     def test_positive_case(self):
-
+        # Create a new location and disease for this test
         location = Location.objects.create(
             latitude=0.0, longitude=0.0, city="Test City", province="Test Province"
         )
@@ -301,6 +317,7 @@ class CaseRepositoryTestCase(TestCase):
             location=location
         )
 
+        # Add date_published field to fix NOT NULL constraint error
         news = News.objects.create(
             portal="Test Portal",
             title="Test Title",
@@ -309,15 +326,18 @@ class CaseRepositoryTestCase(TestCase):
             url="https://example.com",
             author="Test Author",
             case=case,
-            img_url="https://example.com/image.jpg"
+            img_url="https://example.com/image.jpg",
+            date_published=timezone.now()  # Add this field
         )
 
         repository = CaseRepository()
         results = list(repository.get_all_cases())
 
-        self.assertEqual(len(results), 1)
-        entry = results[0]
-        self.assertEqual(str(entry["id"]), str(case.id))
+        # We expect 2 results: one from setUp and one from this test
+        self.assertEqual(len(results), 2)
+        # Find the entry that matches our case ID
+        entry = next((item for item in results if str(item["id"]) == str(case.id)), None)
+        self.assertIsNotNone(entry)
         self.assertEqual(entry["location__province"], location.province)
         self.assertEqual(entry["location__city"], location.city)
         self.assertEqual(entry["news__portal"], news.portal)
@@ -325,11 +345,18 @@ class CaseRepositoryTestCase(TestCase):
         self.assertEqual(entry["news__date_published"].date(), news.date_published.date())
 
     def test_negative_case_empty_database(self):
+        # Clear all existing data to ensure we're testing with an empty database
+        News.objects.all().delete()
+        Case.objects.all().delete()
+        Disease.objects.all().delete()
+        Location.objects.all().delete()
+        
         repository = CaseRepository()
         results = list(repository.get_all_cases())
         self.assertEqual(len(results), 0)
 
     def test_corner_case_multiple_news(self):
+        # Create a new location and disease for this test
         location = Location.objects.create(
             latitude=1.0, longitude=1.0, city="Corner City", province="Corner Province"
         )
@@ -345,6 +372,7 @@ class CaseRepositoryTestCase(TestCase):
             location=location
         )
 
+        # Add date_published field to fix NOT NULL constraint error
         News.objects.create(
             portal="Portal 1",
             title="Title 1",
@@ -353,9 +381,11 @@ class CaseRepositoryTestCase(TestCase):
             url="https://example.com/1",
             author="Author 1",
             case=case,
-            img_url="https://example.com/image1.jpg"
+            img_url="https://example.com/image1.jpg",
+            date_published=timezone.now()  # Add this field
         )
 
+        # Add date_published field to fix NOT NULL constraint error
         News.objects.create(
             portal="Portal 2",
             title="Title 2",
@@ -364,11 +394,13 @@ class CaseRepositoryTestCase(TestCase):
             url="https://example.com/2",
             author="Author 2",
             case=case,
-            img_url="https://example.com/image2.jpg"
+            img_url="https://example.com/image2.jpg",
+            date_published=timezone.now()  # Add this field
         )
 
         repository = CaseRepository()
-        results = list(repository.get_all_cases())
+        # Get only the cases related to the current test case
+        results = [result for result in repository.get_all_cases() if str(result["id"]) == str(case.id)]
 
         self.assertEqual(len(results), 2)
         portals = {entry["news__portal"] for entry in results}
