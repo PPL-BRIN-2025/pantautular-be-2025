@@ -97,6 +97,23 @@ class StatisticsView(APIView):
             case_filter_service=case_filter_service
         )
     
+    def get(self, request):
+        """Get all statistics without applying any filters"""
+        try:
+            # Generate comprehensive report without filters
+            statistics = self.statistics_coordinator.generate_comprehensive_report()
+            
+            return Response(statistics, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            print(f"Statistics GET error: {str(e)}")
+            print(traceback.format_exc())
+            return Response(
+                {"error": f"An error occurred while fetching statistics: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def post(self, request):
         try:
             # Process the request data to match expected filter format

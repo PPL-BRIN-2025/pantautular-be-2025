@@ -173,9 +173,14 @@ class CaseFilterPostTest(TestCase):
 class StatisticsViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY")
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
         self.client.credentials(HTTP_X_API_KEY=self.api_key)
         self.url = reverse('statistics')
+        
+        # Mock the APIKeyAuthentication to always authenticate successfully
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)  # Return (user, auth) tuple
         
         # Mock the StatisticsCoordinator
         self.coordinator_patcher = patch('pt_backend.views.StatisticsCoordinator')
@@ -197,6 +202,7 @@ class StatisticsViewTest(TestCase):
         
     def tearDown(self):
         self.coordinator_patcher.stop()
+        self.auth_patcher.stop()
         
     def test_statistics_with_start_date(self):
         """Test that start_date is correctly passed to the statistics coordinator"""

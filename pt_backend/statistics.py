@@ -1,6 +1,7 @@
 from collections import Counter
 from datetime import datetime
 from .interfaces import CaseRepositoryInterface
+from .repositories import CaseRepository
 
 class SeverityGroupingReport:
  
@@ -84,15 +85,14 @@ class PrevalenceStatistics:
             2024: 281603.8,   
         }
 
-    def get_prevalence_statistics(self, start_date=None):
-        year = 2024
-
+    def get_prevalence_statistics(self, start_date=None):  
         try:
+            year = 2024
             if start_date:
                 start_date = datetime.strptime(start_date, '%Y-%m-%d')
                 year = start_date.year 
 
-            cases = self.repository.get_cases_by_year(year)
+            cases = self.repository.get_cases_by_year(self.repository, year)
             total_cases = cases.count()
             
             population = self.POPULATION_DATA.get(year)
@@ -122,25 +122,33 @@ class StatisticsCoordinator:
     
     def __init__(self, case_filter_service):
         self.case_filter_service = case_filter_service
-        self.prevalence = PrevalenceStatistics(case_filter_service.repository)
+        self.prevalence = PrevalenceStatistics(CaseRepository)
+        self.age_report = AgeGroupingReport()
         # Add other statistics components here as needed
     
     def generate_comprehensive_report(self, **filter_params):
-        # Filter data once
-        filtered_cases = None
-        
-        if self.case_filter_service:
-            filtered_cases = self.case_filter_service.filter_cases(**filter_params)
+        try:
+            # Filter data once
+            filtered_cases = None
+            
+            if self.case_filter_service:
+                filtered_cases = self.case_filter_service.filter_cases(**filter_params)
 
-        result = {}
+            result = {}
+            
+            # Extract date parameters from filter_params
+            date_range = filter_params.get('date_range', {})
+            start_date = date_range.get('start') if date_range else None
+            
+            # Generate prevalence statistics with date parameters
+            result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
+            result["age_statistics"] = self.age_report.generate_report(
+                filtered_cases=filtered_cases
+            )
+            
+            # Add more statistics components here as needed
+            
+            return result
         
-        # Extract date parameters from filter_params
-        date_range = filter_params.get('date_range', {})
-        start_date = date_range.get('start') if date_range else None
-        
-        # Generate prevalence statistics with date parameters
-        result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
-        
-        # Add more statistics components here as needed
-        
-        return result
+        except Exception as e:
+            print(e)

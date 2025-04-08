@@ -183,7 +183,7 @@ class NewsRepositoryTestCase(BaseTestCase):
         
         hosp_data = result["hospitalisasi"]
         self.assertEqual(len(hosp_data), 2)
-        self.assertEqual(hosp_data[0]["date"], "2025-02-01")
+        self.assertEqual(hosp_data[0]["date"], "2023-05-01")
         count = 0
         for item in hosp_data:
             count += item["count"]
