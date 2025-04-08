@@ -1,4 +1,5 @@
-from collections import Counter
+from asyncio.log import logger
+from collections import Counter, defaultdict
 from datetime import datetime
 
 class SeverityGroupingReport:
@@ -74,29 +75,27 @@ class AgeGroupingReport:
 class SeverityDatesCountReport:
     def generate_report(self, filtered_cases=None):
         """Generate severity dates count report"""
-        severity_dates = {}
-        
         if not filtered_cases:
-            return severity_dates
-        
+            logger.info("No filtered cases provided. Returning empty report.")
+            return {}
+
+        severity_dates = defaultdict(lambda: defaultdict(int))
+
         for case in filtered_cases:
             severity = case.get("severity")
             date_published = case.get("news__date_published")
+
+            # Safely format the date
             if isinstance(date_published, datetime):
                 date_published = date_published.strftime('%Y-%m-%d')
-            
-            if severity not in severity_dates:
-                severity_dates[severity] = {}
-            
-            if date_published not in severity_dates[severity]:
-                severity_dates[severity][date_published] = 0
-            
+            else:
+                logger.warning(f"Invalid or missing date_published in case: {case}")
+                continue
+
             severity_dates[severity][date_published] += 1
 
-        result = {}
-
-        for severity, dates in severity_dates.items():
-            result[severity] = [
-                {"date": date, "count": count} for date, count in dates.items()
-            ]
-        return result
+        # Transform to the desired output format
+        return {
+            severity: [{"date": date, "count": count} for date, count in dates.items()]
+            for severity, dates in severity_dates.items()
+        }
