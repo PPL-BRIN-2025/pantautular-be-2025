@@ -34,6 +34,7 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_cases_by_year(year)
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
+    
     def get_gender_dist(self):
         return self.repository.get_gender_distribution()
 
