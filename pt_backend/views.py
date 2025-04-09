@@ -315,14 +315,6 @@ class SeverityFilteringStatsView(APIView):
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         date_range = (start_date, end_date) if start_date or end_date else None
-        print("VIEWS: Date range:", date_range)
-
-        # if start_date or end_date:
-        #         # Create a date range even if one value is None
-        #         filter_params['date_range'] = {
-        #             'start': start_date,
-        #             'end': end_date
-        #         }
         
         return {
             'diseases': diseases,
