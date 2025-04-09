@@ -1,8 +1,8 @@
 from django.utils import timezone
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, Case
-from django.db.models import Count, Case as DjangoCase, When, IntegerField, Sum, F, Q
+from django.db.models import Count, When, IntegerField, Sum, F, Q
+from django.db.models import Case as DjangoCase  # Rename Django's Case to DjangoCase
 from django.db.models.functions import Coalesce
 from .interfaces import CaseRepositoryInterface
 from django.utils import timezone
@@ -10,91 +10,6 @@ from datetime import datetime
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from collections import defaultdict
-
-def get_entity_severity_stats(model_class, group_by_field=None, name_field=None, error_prefix="Error retrieving", limit=12):
-    """
-    Generic helper to get severity statistics for any entity.
-    
-    Args:
-        model_class: The model class to query (Disease or Location).
-        group_by_field: Field to group by (None for Disease, 'province' or 'city' for Location).
-        name_field: Field to use as the name in results (defaults to group_by_field).
-        error_prefix: Prefix for error messages.
-        limit: Max number of results to return.
-        
-    Returns:
-        List of dictionaries with severity stats or error dict.
-    """
-    try:
-        if group_by_field:
-            query = model_class.objects.values(group_by_field)
-            is_values_query = True
-            name_field = name_field or group_by_field
-        else:
-            query = model_class.objects
-            is_values_query = False
-            
-        entities = query.annotate(
-            hospitalisasi_count=Coalesce(
-                Sum(
-                    DjangoCase(
-                        When(cases__severity__iexact='hospitalisasi', then=1),
-                        default=0,
-                        output_field=IntegerField()
-                    )
-                ), 0
-            ),
-            insiden_count=Coalesce(
-                Sum(
-                    DjangoCase(
-                        When(cases__severity__iexact='insiden', then=1),
-                        default=0,
-                        output_field=IntegerField()
-                    )
-                ), 0
-            ),
-            mortalitas_count=Coalesce(
-                Sum(
-                    DjangoCase(
-                        When(cases__severity__iexact='mortalitas', then=1),
-                        default=0,
-                        output_field=IntegerField()
-                    )
-                ), 0
-            ),
-            total_cases=Coalesce(Count('cases', distinct=True), 0)
-        ).order_by('-total_cases')[:limit] 
-
-        result = []
-        for entity in entities:
-            if is_values_query:
-                entity_name = entity[name_field]
-                hospitalisasi = entity['hospitalisasi_count']
-                insiden = entity['insiden_count']
-                mortalitas = entity['mortalitas_count']
-                total = entity['total_cases']
-            else:
-                entity_name = getattr(entity, name_field)
-                hospitalisasi = entity.hospitalisasi_count
-                insiden = entity.insiden_count
-                mortalitas = entity.mortalitas_count
-                total = entity.total_cases
-                
-            entity_info = {
-                "name": entity_name,
-                "severity_counts": {
-                    "hospitalisasi": hospitalisasi or 0,
-                    "insiden": insiden or 0,
-                    "mortalitas": mortalitas or 0,
-                },
-                "total_cases": total or 0,
-            }
-            result.append(entity_info)
-            
-        return result
-    except Exception as e:
-        print(f"Error in get_entity_severity_stats: {e}")
-        return {"error": f"{error_prefix} severity statistics"}
 
 def get_entity_severity_stats(model_class, group_by_field=None, name_field=None, error_prefix="Error retrieving", limit=12):
     """
@@ -273,6 +188,7 @@ class CaseRepository(CaseRepositoryInterface):
             "disease__level_of_alertness",
             "news__type",
         )
+        
     def get_all_locations(self):
         return Case.get_all_locations()
     
