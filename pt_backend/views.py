@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, PrevalenceSerializer
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer
 from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
@@ -171,20 +171,6 @@ class CitySeverityStatsView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-class SeverityDatesView(APIView):
-    def get(self, request):
-        news_repository = NewsRepository()
-        try:
-            severity_dates = news_repository.get_all_severities_dates()
-            for item in severity_dates:
-                if 'date_published' in item:
-                    item['date_published'] = item['date_published'].date()
-            if len(severity_dates) == 0:
-                return Response({"error": "No severity dates found"}, status=status.HTTP_404_NOT_FOUND)
-            return Response({"data": severity_dates}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 class CaseDetailView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
