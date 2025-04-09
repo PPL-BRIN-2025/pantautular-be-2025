@@ -1,7 +1,6 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
 from .repositories import DiseaseRepository, LocationRepository, NewsRepository
 from django.core.cache import cache
-from .interfaces import CaseRepositoryInterface
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
 class CaseService(CaseRetrievalInterface):
