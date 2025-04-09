@@ -1,8 +1,11 @@
 from .models import Case, Disease, Location, News
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, Case as DjangoCase, When, IntegerField, Sum, F, Q
+from django.db.models import Count, When, IntegerField, Sum, F, Q
+from django.db.models import Case as DjangoCase  # Rename Django's Case to DjangoCase
 from django.db.models.functions import Coalesce
 from .interfaces import CaseRepositoryInterface
+from django.db.models.functions import TruncDate
+from collections import defaultdict
 
 def get_entity_severity_stats(model_class, group_by_field=None, name_field=None, error_prefix="Error retrieving", limit=12):
     """
@@ -142,7 +145,46 @@ class NewsRepository:
         except ObjectDoesNotExist:
             return {"error": "Error retrieving news"}
 
+    def get_all_severities_dates(self):
+        try:
+            date_counts = (
+                News.objects
+                .annotate(date=TruncDate('date_published'))
+                .values('case__severity', 'date')
+                .annotate(count=Count('id'))
+                .order_by('case__severity', 'date')
+            )
+
+            result = defaultdict(list)
+            for item in date_counts:
+                severity_key = str(item['case__severity'])
+                if severity_key and severity_key != 'None':
+                    result[severity_key].append({
+                        "date": item['date'].strftime('%Y-%m-%d'),
+                        "count": item['count']
+                    })
+
+            return dict(result)
+        except Exception as e:
+            return {"error": str(e)}
+
 class CaseRepository(CaseRepositoryInterface):
+    def get_all_cases(self):
+        return Case.objects.all().values(
+            "id",
+            "location__province",
+            "location__city",
+            "news__portal",
+            "severity",
+            "news__date_published",
+            "gender",
+            "age",
+            "status",
+            "disease__name",
+            "disease__level_of_alertness",
+            "news__type",
+        )
+        
     def get_all_locations(self):
         return Case.get_all_locations()
     
@@ -162,3 +204,9 @@ class CaseRepository(CaseRepositoryInterface):
         except (Case.DoesNotExist, Exception) as e: 
             print(f"Error getting case detail: {str(e)}")  
             return None
+        
+    def get_cases_by_year(self, year):
+        return Case.objects.filter(
+            news__date_published__year=year
+        ).distinct()
+        
