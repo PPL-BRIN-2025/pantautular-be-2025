@@ -251,7 +251,7 @@ class LocalPortalStatisticsReport:
         
         top_local = [
             {"portal": portal, "count": count}
-            for portal, count in portal_counts.most_common()
+            for portal, count in portal_counts.most_common(5)
         ]
 
         all_local = [
