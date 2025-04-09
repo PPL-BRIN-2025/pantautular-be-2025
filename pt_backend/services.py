@@ -1,5 +1,5 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
-from .repositories import DiseaseRepository, LocationRepository, NewsRepository
+from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
@@ -67,10 +67,10 @@ class LocationService:
     def get_city_severity_stats(self):
         result = self.repository.get_city_severity_stats()
         return result
+    
 class NewsService:
     def get_severities_dates(self):
         return NewsRepository().get_all_severities_dates()
-
 
 class CaseDetailService:
     def __init__(
@@ -144,13 +144,11 @@ class CaseDetailService:
         query = disease_name.replace(" ", "+")
         return f"https://www.google.com/search?q=Apa+itu+{query}"
    
-
-
 class CasesFilterService:
     def __init__(self, case_service):
         self.case_service = case_service
 
-    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, disease_alertness=None, date_range=None):
+    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, disease_alertness=None, date_range=None, ids_only = False):
         cases = self.case_service.get_all_cases()
         cases = self._filter_by_disease(cases, disease)
         cases = self._filter_by_provinces(cases, provinces)
@@ -158,6 +156,9 @@ class CasesFilterService:
         cases = self._filter_by_news_portals(cases, portals)
         cases = self._filter_by_disease_alertness(cases, disease_alertness)
         cases = self._filter_by_news_date_range(cases, date_range)
+
+        if ids_only:
+            return cases.values('id')
         return cases
     
     def _filter_by_disease(self, cases, disease):
@@ -189,8 +190,12 @@ class CasesFilterService:
         if not date_range:
             return cases
         
-        start_date = date_range.get('start')
-        end_date = date_range.get('end')
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_date, end_date = date_range
+        elif isinstance(date_range, dict):
+            start_date = date_range.get('start')
+            end_date = date_range.get('end')
+
         
         if start_date and end_date:
             # Both dates provided
@@ -203,3 +208,34 @@ class CasesFilterService:
             return cases.filter(news__date_published__lte=end_date)
         
         return cases
+
+class SeverityFilteringService:
+    def __init__(self):
+        self.disease_repository = DiseaseRepository()
+        self.location_repository = LocationRepository()
+        self.filter_service = CasesFilterService(
+            case_service=CaseService(
+                repository=CaseRepository(), 
+                cache_service=CacheService()
+            )
+        )
+    
+    def get_filter_stats(self, 
+                          diseases=None, 
+                          provinces=None, 
+                          cities=None, 
+                          news_portals=None, 
+                          alert_levels=None, 
+                          date_range=None):
+        
+        # Get filtered case IDs from filter service
+        filtered_case_ids = self.filter_service.filter_cases(
+            diseases, provinces, cities, news_portals, alert_levels, date_range, ids_only=True
+        )
+        
+        # Get all three statistics using the same filtered case IDs
+        return {
+            "disease_stats": self.disease_repository.get_disease_severity_stats(filtered_case_ids),
+            "province_stats": self.location_repository.get_province_severity_stats(filtered_case_ids),
+            "city_stats": self.location_repository.get_city_severity_stats(filtered_case_ids)
+        }

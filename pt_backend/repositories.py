@@ -7,7 +7,14 @@ from .interfaces import CaseRepositoryInterface
 from django.db.models.functions import TruncDate
 from collections import defaultdict
 
-def get_entity_severity_stats(model_class, group_by_field=None, name_field=None, error_prefix="Error retrieving", limit=12):
+def get_entity_severity_stats(
+        model_class, 
+        group_by_field=None, 
+        name_field=None, 
+        error_prefix="Error retrieving", 
+        limit=12,
+        filtered_case_ids=None
+    ):
     """
     Generic helper to get severity statistics for any entity.
     
@@ -22,6 +29,7 @@ def get_entity_severity_stats(model_class, group_by_field=None, name_field=None,
         List of dictionaries with severity stats or error dict.
     """
     try:
+        # Set up query - either direct model or using values()  
         if group_by_field:
             query = model_class.objects.values(group_by_field)
             is_values_query = True
@@ -29,7 +37,11 @@ def get_entity_severity_stats(model_class, group_by_field=None, name_field=None,
         else:
             query = model_class.objects
             is_values_query = False
+        
+        if filtered_case_ids is not None:
+            query = query.filter(cases__id__in=filtered_case_ids)
             
+        # Add the annotations
         entities = query.annotate(
             hospitalisasi_count=Coalesce(
                 Sum(
@@ -61,6 +73,7 @@ def get_entity_severity_stats(model_class, group_by_field=None, name_field=None,
             total_cases=Coalesce(Count('cases', distinct=True), 0)
         ).order_by('-total_cases')[:limit] 
 
+        # Format the response
         result = []
         for entity in entities:
             if is_values_query:
@@ -102,12 +115,13 @@ class DiseaseRepository:
         except ObjectDoesNotExist:
             return {"error": "Error retrieving diseases"}
     
-    def get_disease_severity_stats(self):
+    def get_disease_severity_stats(self, filtered_case_ids=None):
         return get_entity_severity_stats(
             model_class=Disease,
-            group_by_field=None,
+            group_by_field=None, 
             name_field="name",
-            error_prefix="Error retrieving disease"
+            error_prefix="Error retrieving disease",
+            filtered_case_ids=filtered_case_ids
         )
 
 class LocationRepository:
@@ -120,21 +134,22 @@ class LocationRepository:
         except ObjectDoesNotExist:
             return {"error": "Error retrieving locations"}
     
-    def get_province_severity_stats(self):
+    def get_province_severity_stats(self, filtered_case_ids=None):
         return get_entity_severity_stats(
             model_class=Location,
             group_by_field="province",
-            error_prefix="Error retrieving province"
+            error_prefix="Error retrieving province",
+            filtered_case_ids=filtered_case_ids
         )
     
-    def get_city_severity_stats(self):
+    def get_city_severity_stats(self, filtered_case_ids=None):
         return get_entity_severity_stats(
             model_class=Location, 
             group_by_field="city",
-            error_prefix="Error retrieving city"
+            error_prefix="Error retrieving city",
+            filtered_case_ids=filtered_case_ids
         )
-
-
+    
 class NewsRepository:
     def get_all_news_name(self):
         try:
@@ -209,4 +224,3 @@ class CaseRepository(CaseRepositoryInterface):
         return Case.objects.filter(
             news__date_published__year=year
         ).distinct()
-        
