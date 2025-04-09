@@ -145,138 +145,6 @@ class PrevalenceStatisticsTest(BaseStatisticsTestCase):
         self.assertEqual(result["total_cases"], 0)
         self.assertEqual(result["population"], 278696200)
 
-class StatisticsCoordinatorTest(BaseStatisticsTestCase):
-    def setUp(self):
-        super().setUp()
-        # Create a mock case filter service
-        self.mock_case_filter_service = Mock()
-        self.mock_case_filter_service.filter_cases.return_value = [
-            {
-                "id": str(self.case.id),
-                "gender": "Pria",
-                "age": 25,
-                "severity": "hospitalisasi",
-                "news__date_published": self.news.date_published
-            }
-        ]
-        
-        # Create the coordinator
-        self.coordinator = StatisticsCoordinator(self.mock_case_filter_service)
-        
-    def test_generate_comprehensive_report_with_start_date(self):
-        """Test generating a comprehensive report with a start date"""
-        result = self.coordinator.generate_comprehensive_report(
-            date_range={"start": "2023-01-01", "end": None}
-        )
-        
-        # Verify the result contains all expected statistics
-        self.assertIn("prevalence_statistics", result)
-        self.assertIn("age_statistics", result)
-        self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_count_statistics", result)
-        
-        # Verify that filter_cases was called
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        
-    def test_generate_comprehensive_report_without_start_date(self):
-        """Test generating a comprehensive report without a start date"""
-        result = self.coordinator.generate_comprehensive_report()
-        
-        # Verify the result contains all expected statistics
-        self.assertIn("prevalence_statistics", result)
-        self.assertIn("age_statistics", result)
-        self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_count_statistics", result)
-        
-        # Verify that filter_cases was called
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        
-    def test_generate_comprehensive_report_with_date_range(self):
-        """Test generating a comprehensive report with a date range"""
-        result = self.coordinator.generate_comprehensive_report(
-            date_range={"start": "2023-01-01", "end": "2023-12-31"}
-        )
-        
-        # Verify the result contains all expected statistics
-        self.assertIn("prevalence_statistics", result)
-        self.assertIn("age_statistics", result)
-        self.assertIn("gender_statistics", result)
-        self.assertIn("severity_dates_count_statistics", result)
-        
-        # Verify that filter_cases was called with the correct date range
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('date_range', call_args)
-        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
-        self.assertEqual(call_args['date_range']['end'], "2023-12-31")
-        
-    def test_generate_comprehensive_report_with_disease_filter(self):
-        """Test generating a comprehensive report with a disease filter"""
-        result = self.coordinator.generate_comprehensive_report(
-            disease=["Test Disease"]
-        )
-        
-        # Verify that filter_cases was called with the correct disease filter
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('disease', call_args)
-        self.assertEqual(call_args['disease'], ["Test Disease"])
-        
-    def test_generate_comprehensive_report_with_location_filter(self):
-        """Test generating a comprehensive report with a location filter"""
-        result = self.coordinator.generate_comprehensive_report(
-            provinces=["Test Province"]
-        )
-        
-        # Verify that filter_cases was called with the correct location filter
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('provinces', call_args)
-        self.assertEqual(call_args['provinces'], ["Test Province"])
-        
-    def test_generate_comprehensive_report_with_portal_filter(self):
-        """Test generating a comprehensive report with a portal filter"""
-        result = self.coordinator.generate_comprehensive_report(
-            portals=["Test Portal"]
-        )
-        
-        # Verify that filter_cases was called with the correct portal filter
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('portals', call_args)
-        self.assertEqual(call_args['portals'], ["Test Portal"])
-        
-    def test_generate_comprehensive_report_with_alertness_filter(self):
-        """Test generating a comprehensive report with an alertness filter"""
-        result = self.coordinator.generate_comprehensive_report(
-            disease_alertness=1
-        )
-        
-        # Verify that filter_cases was called with the correct alertness filter
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('disease_alertness', call_args)
-        self.assertEqual(call_args['disease_alertness'], 1)
-        
-    def test_generate_comprehensive_report_with_multiple_filters(self):
-        """Test generating a comprehensive report with multiple filters"""
-        result = self.coordinator.generate_comprehensive_report(
-            disease=["Test Disease"],
-            provinces=["Test Province"],
-            portals=["Test Portal"],
-            disease_alertness=1,
-            date_range={"start": "2023-01-01", "end": "2023-12-31"}
-        )
-        
-        # Verify that filter_cases was called with all the correct filters
-        self.mock_case_filter_service.filter_cases.assert_called_once()
-        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
-        self.assertIn('disease', call_args)
-        self.assertIn('provinces', call_args)
-        self.assertIn('portals', call_args)
-        self.assertIn('disease_alertness', call_args)
-        self.assertIn('date_range', call_args)
-
 class TestSeverityGroupingReport(unittest.TestCase):
     def setUp(self):
         # Create a dummy CaseFilterService with a filter_cases method.
@@ -1081,3 +949,223 @@ class TestLocalPortalStatisticsReport(unittest.TestCase):
         # Verify counts
         self.assertEqual([item["count"] for item in report["top_local"]], 
                          [3, 2, 1])
+        
+class StatisticsCoordinatorTest(BaseStatisticsTestCase):
+    def setUp(self):
+        super().setUp()
+        # Create a mock case filter service
+        self.mock_case_filter_service = Mock()
+        self.mock_case_filter_service.filter_cases.return_value = [
+            {
+                "id": str(self.case.id),
+                "gender": "Pria",
+                "age": 25,
+                "severity": "hospitalisasi",
+                "news__date_published": self.news.date_published,
+                "news__portal": "Test Portal",
+                "news__type": "Nasional",
+                "disease__name": "Test Disease",
+                "location__province": "Test Province"
+            }
+        ]
+        
+        # Create the coordinator
+        self.coordinator = StatisticsCoordinator(self.mock_case_filter_service)
+        
+    def test_generate_comprehensive_report_with_start_date(self):
+        """Test generating a comprehensive report with a start date"""
+        result = self.coordinator.generate_comprehensive_report(
+            date_range={"start": "2023-01-01", "end": None}
+        )
+        
+        # Verify the result contains all expected statistics
+        self.assertIn("prevalence_statistics", result)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_statistics", result)  
+        self.assertIn("severity_dates_count_statistics", result)
+        self.assertIn("national_news_statistics", result)
+        self.assertIn("local_portal_statistics", result)
+        self.assertIn("healthcare_news_statistics", result)
+        
+        # Verify that filter_cases was called
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        
+    def test_generate_comprehensive_report_without_start_date(self):
+        """Test generating a comprehensive report without a start date"""
+        result = self.coordinator.generate_comprehensive_report()
+        
+        # Verify the result contains all expected statistics
+        self.assertIn("prevalence_statistics", result)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_statistics", result)
+        self.assertIn("severity_dates_count_statistics", result)
+        self.assertIn("national_news_statistics", result)
+        self.assertIn("local_portal_statistics", result)
+        self.assertIn("healthcare_news_statistics", result)
+        
+        # Verify that filter_cases was called
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        
+    def test_generate_comprehensive_report_with_date_range(self):
+        """Test generating a comprehensive report with a date range"""
+        result = self.coordinator.generate_comprehensive_report(
+            date_range={"start": "2023-01-01", "end": "2023-12-31"}
+        )
+        
+        # Verify the result contains all expected statistics
+        self.assertIn("prevalence_statistics", result)
+        self.assertIn("age_statistics", result)
+        self.assertIn("gender_statistics", result)
+        self.assertIn("severity_statistics", result)
+        self.assertIn("severity_dates_count_statistics", result)
+        self.assertIn("national_news_statistics", result)
+        self.assertIn("local_portal_statistics", result)
+        self.assertIn("healthcare_news_statistics", result)
+        
+        # Verify that filter_cases was called with the correct date range
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('date_range', call_args)
+        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertEqual(call_args['date_range']['end'], "2023-12-31")
+        
+    def test_generate_comprehensive_report_with_disease_filter(self):
+        """Test generating a comprehensive report with a disease filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease=["Test Disease"]
+        )
+        
+        # Verify that filter_cases was called with the correct disease filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease', call_args)
+        self.assertEqual(call_args['disease'], ["Test Disease"])
+        
+    def test_generate_comprehensive_report_with_location_filter(self):
+        """Test generating a comprehensive report with a location filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            provinces=["Test Province"]
+        )
+        
+        # Verify that filter_cases was called with the correct location filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('provinces', call_args)
+        self.assertEqual(call_args['provinces'], ["Test Province"])
+        
+    def test_generate_comprehensive_report_with_portal_filter(self):
+        """Test generating a comprehensive report with a portal filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            portals=["Test Portal"]
+        )
+        
+        # Verify that filter_cases was called with the correct portal filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('portals', call_args)
+        self.assertEqual(call_args['portals'], ["Test Portal"])
+        
+    def test_generate_comprehensive_report_with_alertness_filter(self):
+        """Test generating a comprehensive report with an alertness filter"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease_alertness=1
+        )
+        
+        # Verify that filter_cases was called with the correct alertness filter
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease_alertness', call_args)
+        self.assertEqual(call_args['disease_alertness'], 1)
+        
+    def test_generate_comprehensive_report_with_multiple_filters(self):
+        """Test generating a comprehensive report with multiple filters"""
+        result = self.coordinator.generate_comprehensive_report(
+            disease=["Test Disease"],
+            provinces=["Test Province"],
+            portals=["Test Portal"],
+            disease_alertness=1,
+            date_range={"start": "2023-01-01", "end": "2023-12-31"}
+        )
+        
+        # Verify that filter_cases was called with all the correct filters
+        self.mock_case_filter_service.filter_cases.assert_called_once()
+        call_args = self.mock_case_filter_service.filter_cases.call_args[1]
+        self.assertIn('disease', call_args)
+        self.assertIn('provinces', call_args)
+        self.assertIn('portals', call_args)
+        self.assertIn('disease_alertness', call_args)
+        self.assertIn('date_range', call_args)
+        
+    def test_generate_comprehensive_report_with_filter_error(self):
+        """Test handling of filter errors in comprehensive report"""
+        # Setup the mock to raise an exception
+        self.mock_case_filter_service.filter_cases.side_effect = Exception("Filter error")
+        
+        # Generate report should handle the error gracefully
+        result = self.coordinator.generate_comprehensive_report()
+        
+        # Verify error is captured in the result
+        self.assertIn("error", result)
+        self.assertTrue(result["error"].startswith("Failed to filter cases:"))
+
+    def test_generate_comprehensive_report_with_report_generator_error(self):
+        """Test handling of errors in individual report generators"""
+        # Create a coordinator with a problematic report generator
+        coordinator = StatisticsCoordinator(self.mock_case_filter_service)
+        
+        # Replace one of the report generators with a mock that raises an exception
+        coordinator.age_report.generate_report = Mock(side_effect=Exception("Age report error"))
+        
+        # Generate report should handle the error gracefully and continue with other reports
+        result = coordinator.generate_comprehensive_report()
+        
+        # Verify the specific report has an error but other reports are still present
+        self.assertIn("age_statistics", result)
+        self.assertIn("error", result["age_statistics"])
+        self.assertTrue(result["age_statistics"]["error"].startswith("Failed to generate report:"))
+        
+        # Other reports should still be present
+        self.assertIn("gender_statistics", result)
+        self.assertIn("prevalence_statistics", result)
+        self.assertNotIn("error", result)  # Main result should not have an error
+
+    def test_generate_comprehensive_report_with_unexpected_error(self):
+        """Test handling of unexpected errors in the comprehensive report generation"""
+        coordinator = StatisticsCoordinator(self.mock_case_filter_service)
+        
+        with patch.object(coordinator.prevalence, 'get_prevalence_statistics', 
+                         side_effect=Exception("Unexpected error in coordinator")):
+            result = coordinator.generate_comprehensive_report()
+            
+            # Verify error is captured in the result
+            self.assertIn("prevalence_statistics", result)
+            self.assertIn("error", result["prevalence_statistics"]) 
+            self.assertTrue(result["prevalence_statistics"]["error"].startswith("Failed to generate report:"))
+    
+    def test_generate_comprehensive_report_with_multiple_report_errors(self):
+        """Test handling of multiple errors in different report generators"""
+        # Create a coordinator with multiple problematic report generators
+        coordinator = StatisticsCoordinator(self.mock_case_filter_service)
+        
+        # Replace multiple report generators with mocks that raise exceptions
+        coordinator.age_report.generate_report = Mock(side_effect=Exception("Age report error"))
+        coordinator.gender_report.generate_report = Mock(side_effect=Exception("Gender report error"))
+        
+        # Generate report should handle all errors gracefully
+        result = coordinator.generate_comprehensive_report()
+        
+        # Verify the specific reports have errors
+        self.assertIn("age_statistics", result)
+        self.assertIn("error", result["age_statistics"])
+        self.assertTrue(result["age_statistics"]["error"].startswith("Failed to generate report:"))
+        
+        self.assertIn("gender_statistics", result)
+        self.assertIn("error", result["gender_statistics"])
+        self.assertTrue(result["gender_statistics"]["error"].startswith("Failed to generate report:"))
+        
+        # Other reports should still be present without errors
+        self.assertIn("prevalence_statistics", result)
+        self.assertNotIn("error", result["prevalence_statistics"])
+        self.assertNotIn("error", result)  # Main result should not have an error
