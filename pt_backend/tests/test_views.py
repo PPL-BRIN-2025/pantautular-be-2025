@@ -203,6 +203,31 @@ class StatisticsViewTest(TestCase):
         self.coordinator_patcher.stop()
         self.auth_patcher.stop()
         
+    def test_statistics_get(self):
+        """Test retrieving statistics with GET method (no filters)"""
+        response = self.client.get(self.url)
+        
+        # Check that the response is successful
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify that generate_comprehensive_report was called without filter_params
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_called_once_with()
+        
+        # Verify the response contains the expected data
+        self.assertIn("prevalence_statistics", response.data)
+        self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
+        
+    def test_statistics_get_with_exception(self):
+        """Test handling of exceptions in GET method"""
+        # Mock the coordinator to raise an exception
+        self.mock_coordinator_instance.generate_comprehensive_report.side_effect = Exception("Test error")
+        
+        response = self.client.get(self.url)
+        
+        # Check error response
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data, {"error": "An error occurred while fetching statistics"})
+        
     def test_statistics_with_start_date(self):
         """Test that start_date is correctly passed to the statistics coordinator"""
         # Make the request with a start_date
@@ -274,3 +299,168 @@ class StatisticsViewTest(TestCase):
         # Verify the response contains the expected data
         self.assertIn("prevalence_statistics", response.data)
         self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
+    
+    def test_statistics_with_disease_filter(self):
+        """Test filtering statistics by disease"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"diseases": ["COVID-19", "Dengue"]}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify generate_comprehensive_report was called with disease filter
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertIn('disease', call_args)
+        self.assertEqual(call_args['disease'], ["COVID-19", "Dengue"])
+    
+    def test_statistics_with_location_filter(self):
+        """Test filtering statistics by location"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"locations": ["Jakarta", "Bandung"]}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify generate_comprehensive_report was called with cities filter
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertIn('cities', call_args)
+        self.assertEqual(call_args['cities'], ["Jakarta", "Bandung"])
+    
+    def test_statistics_with_portal_filter(self):
+        """Test filtering statistics by portal"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"portals": ["kompas.com", "detik.com"]}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify generate_comprehensive_report was called with portals filter
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertIn('portals', call_args)
+        self.assertEqual(call_args['portals'], ["kompas.com", "detik.com"])
+    
+    def test_statistics_with_alertness_filter(self):
+        """Test filtering statistics by alertness level"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"level_of_alertness": 3}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify generate_comprehensive_report was called with disease_alertness filter
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertIn('disease_alertness', call_args)
+        self.assertEqual(call_args['disease_alertness'], 3)
+    
+    def test_statistics_with_zero_alertness_level(self):
+        """Test that alertness level of 0 doesn't get passed as a filter"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"level_of_alertness": 0}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify disease_alertness wasn't included in filter params
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertNotIn('disease_alertness', call_args)
+    
+    def test_statistics_with_combined_filters(self):
+        """Test using multiple filters together"""
+        response = self.client.post(
+            self.url,
+            data=json.dumps({
+                "diseases": ["COVID-19"],
+                "locations": ["Jakarta"],
+                "portals": ["kompas.com"],
+                "level_of_alertness": 2,
+                "start_date": "2023-01-01",
+                "end_date": "2023-06-30"
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify all filters were correctly passed
+        call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
+        self.assertEqual(call_args['disease'], ["COVID-19"])
+        self.assertEqual(call_args['cities'], ["Jakarta"])
+        self.assertEqual(call_args['portals'], ["kompas.com"])
+        self.assertEqual(call_args['disease_alertness'], 2)
+        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertEqual(call_args['date_range']['end'], "2023-06-30")
+    
+    def test_statistics_post_with_exception(self):
+        """Test handling of exceptions in POST method"""
+        # Mock the coordinator to raise an exception
+        self.mock_coordinator_instance.generate_comprehensive_report.side_effect = Exception("Test error")
+        
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"diseases": ["COVID-19"]}),
+            content_type='application/json'
+        )
+        
+        # Check error response
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.data, {"error": "An error occurred while fetching statistics"})
+    
+    def test_statistics_missing_api_key(self):
+        """Test that requests without API key are rejected"""
+        # Stop the authentication mock to test real authentication
+        self.auth_patcher.stop()
+        
+        # Remove API key from request
+        self.client.credentials()
+        
+        # Try both GET and POST
+        get_response = self.client.get(self.url)
+        post_response = self.client.post(
+            self.url, 
+            data=json.dumps({"diseases": ["COVID-19"]}),
+            content_type='application/json'
+        )
+        
+        # Restart the auth patcher for other tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
+        
+        # Both should be forbidden
+        self.assertEqual(get_response.status_code, 403)
+        self.assertEqual(post_response.status_code, 403)
+    
+    def test_statistics_invalid_api_key(self):
+        """Test that requests with invalid API key are rejected"""
+        # Stop the authentication mock to test real authentication
+        self.auth_patcher.stop()
+        
+        # Set invalid API key
+        self.client.credentials(HTTP_X_API_KEY="invalid-key")
+        
+        # Try both GET and POST
+        get_response = self.client.get(self.url)
+        post_response = self.client.post(
+            self.url, 
+            data=json.dumps({"diseases": ["COVID-19"]}),
+            content_type='application/json'
+        )
+        
+        # Restart the auth patcher for other tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
+        
+        # Both should be forbidden
+        self.assertEqual(get_response.status_code, 403)
+        self.assertEqual(post_response.status_code, 403)
