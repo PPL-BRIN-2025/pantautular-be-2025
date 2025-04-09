@@ -4,7 +4,6 @@ from django.db.models import Count, When, IntegerField, Sum, F, Q
 from django.db.models import Case as DjangoCase  # Rename Django's Case to DjangoCase
 from django.db.models.functions import Coalesce
 from .interfaces import CaseRepositoryInterface
-from django.db.models import Count
 from django.db.models.functions import TruncDate
 from collections import defaultdict
 
