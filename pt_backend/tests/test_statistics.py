@@ -1033,7 +1033,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         
     def test_generate_comprehensive_report_with_disease_filter(self):
         """Test generating a comprehensive report with a disease filter"""
-        result = self.coordinator.generate_comprehensive_report(
+        self.coordinator.generate_comprehensive_report(
             disease=["Test Disease"]
         )
         
