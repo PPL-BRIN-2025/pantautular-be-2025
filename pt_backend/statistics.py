@@ -1,5 +1,5 @@
 from asyncio.log import logger
-from collections import Counter, defaultdict, defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from .interfaces import CaseRepositoryInterface
 from .repositories import CaseRepository
