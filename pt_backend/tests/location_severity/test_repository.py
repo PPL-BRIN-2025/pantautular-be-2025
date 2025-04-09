@@ -1,8 +1,8 @@
 from django.test import TestCase
 from pt_backend.models import Disease, Case, Location
-from pt_backend.repositories import LocationRepository
+from pt_backend.repositories import DiseaseRepository, LocationRepository, get_entity_severity_stats
 import uuid, random
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from pt_backend.tests.test_utils import generate_test_data
 
 class LocationRepositoryTestCase(TestCase):
@@ -204,3 +204,90 @@ class LocationRepositoryTestCase(TestCase):
             self.assertIsInstance(result, dict)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "Error retrieving city severity statistics")
+
+class TestEntitySeverityStatsFunction(TestCase):
+    def setUp(self):
+        # Create test disease
+        self.disease = Disease.objects.create(
+            id=uuid.uuid4(),
+            name="Test Direct Filter",
+            level_of_alertness=3
+        )
+        
+        # Create test location
+        self.location = Location.objects.create(
+            id=uuid.uuid4(),
+            latitude=0.0,
+            longitude=0.0,
+            city="Test City",
+            province="Test Province"
+        )
+        
+        # Create test cases
+        self.case1 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="male",
+            age=30,
+            city="Test City",
+            status="minimal",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.location
+        )
+        
+        self.case2 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="female",
+            age=25,
+            city="Test City",
+            status="biasa",
+            severity="insiden",
+            disease=self.disease,
+            location=self.location
+        )
+        
+        self.case3 = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="male",
+            age=40,
+            city="Test City",
+            status="bahaya",
+            severity="mortalitas",
+            disease=self.disease,
+            location=self.location
+        )
+    
+    def test_get_entity_severity_stats_with_filtered_case_ids(self):
+        """Test that filtered_case_ids parameter correctly filters cases"""
+        # Only include the first two cases
+        filtered_ids = [self.case1.id, self.case2.id]
+        
+        result = get_entity_severity_stats(
+            model_class=Disease,
+            name_field="name",
+            error_prefix="Test filter",
+            filtered_case_ids=filtered_ids
+        )
+        
+        # Should get one disease with only hospitalisasi and insiden cases, no mortalitas
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "Test Direct Filter")
+        self.assertEqual(result[0]["severity_counts"]["hospitalisasi"], 1)
+        self.assertEqual(result[0]["severity_counts"]["insiden"], 1)
+        self.assertEqual(result[0]["severity_counts"]["mortalitas"], 0) # This case was filtered out
+        self.assertEqual(result[0]["total_cases"], 2)  # Only 2 cases, not 3
+
+class TestDiseaseRepositoryEmptyCases(TestCase):
+    def setUp(self):
+        # Delete all diseases if any exist
+        Disease.objects.all().delete()
+        self.repository = DiseaseRepository()
+    
+    def test_get_all_diseases_name_empty(self):
+        """Test that get_all_diseases_name returns empty list when no diseases exist"""
+        result = self.repository.get_all_diseases_name()
+        
+        # Verify empty list is returned
+        self.assertEqual(result, [])
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)

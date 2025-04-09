@@ -1,8 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+
+from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer
-from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService
+from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
@@ -272,3 +274,91 @@ class StatisticsView(APIView):
                 {"error": "An error occurred while fetching statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+class SeverityFilteringStatsView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def post(self, request):
+        """Handle POST requests with JSON payload for filtering"""
+        try:
+            # Extract and process filter parameters
+            filter_params = self._extract_filter_parameters(request.data)
+            
+            # Initialize service and get results
+            severity_filter = SeverityFilteringService()
+            results = severity_filter.get_filter_stats(**filter_params)
+            
+            return Response(results, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response(
+                {"error": f"Error processing filter request: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def _extract_filter_parameters(self, data):
+        """Extract and process filter parameters from request data"""
+        # Extract basic filters
+        diseases = data.get('diseases', []) or None
+        locations = data.get('locations', [])
+        portals = data.get('portals', []) or None
+        
+        # Process location data
+        provinces, cities = self._process_location_data(locations)
+        
+        # Process alertness level
+        level_of_alertness = data.get('level_of_alertness') or None
+        if level_of_alertness:
+            level_of_alertness = int(level_of_alertness)
+        
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        date_range = (start_date, end_date) if start_date or end_date else None
+        print("VIEWS: Date range:", date_range)
+
+        # if start_date or end_date:
+        #         # Create a date range even if one value is None
+        #         filter_params['date_range'] = {
+        #             'start': start_date,
+        #             'end': end_date
+        #         }
+        
+        return {
+            'diseases': diseases,
+            'provinces': provinces,
+            'cities': cities,
+            'news_portals': portals,
+            'alert_levels': level_of_alertness,
+            'date_range': date_range
+        }
+    
+    def _process_location_data(self, locations):
+        """Process location data to extract provinces and cities"""
+        if not locations:
+            return None, None
+            
+        provinces = []
+        cities = []
+        
+        for location in locations:
+            # Check if location is a province
+            if Location.objects.filter(province=location).exists():
+                provinces.append(location)
+                continue
+            
+            # Check if location is a city
+            if Location.objects.filter(city=location).exists():
+                cities.append(location)
+                
+                # Add the associated province(s) for each city
+                city_provinces = Location.objects.filter(
+                    city=location
+                ).values_list('province', flat=True).distinct()
+                provinces.extend(city_provinces)
+        
+        # Clean up results
+        provinces = list(set(provinces)) if provinces else None
+        cities = cities if cities else None
+        
+        return provinces, cities
