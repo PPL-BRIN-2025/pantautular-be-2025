@@ -18,42 +18,48 @@ class StatisticsCoordinator:
         self.gender_report = GenderGroupingReport()
         self.severity_report = SeverityGroupingReport()
         self.severity_dates_count_report = SeverityDatesCountReport()
-        # Add other statistics components here as needed
+        self.national_news_report = NationalNewsStatisticsReport()
+        self.local_portal_report = LocalPortalStatisticsReport()
+        self.healthcare_news_report = HealthcareNewsStatisticsReport()
     
     def generate_comprehensive_report(self, **filter_params):
-        try:
-            # Filter data once
-            filtered_cases = None
-            
-            if self.case_filter_service:
-                filtered_cases = self.case_filter_service.filter_cases(**filter_params)
-
-            result = {}
-            
-            # Extract date parameters from filter_params
-            date_range = filter_params.get('date_range', {})
-            start_date = date_range.get('start') if date_range else None
-            
-            # Generate prevalence statistics with date parameters
-            result["prevalence_statistics"] = self.prevalence.get_prevalence_statistics(start_date)
-            result["age_statistics"] = self.age_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["gender_statistics"] = self.gender_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["severity_statistics"] = self.severity_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            result["severity_dates_count_statistics"] = self.severity_dates_count_report.generate_report(
-                filtered_cases=filtered_cases
-            )
-            # Add more statistics components here as needed
-            
-            return result
+        result = {}
         
-        except Exception as e:
-            print(e)
+        # Filter data once
+        filtered_cases = None
+        
+        if self.case_filter_service:
+            try:
+                filtered_cases = self.case_filter_service.filter_cases(**filter_params)
+            except Exception as filter_error:
+                logger.error(f"Error filtering cases: {str(filter_error)}")
+                result["error"] = f"Failed to filter cases: {str(filter_error)}"
+                return result
+        
+        # Extract date parameters from filter_params
+        date_range = filter_params.get('date_range', {})
+        start_date = date_range.get('start') if date_range else None
+        
+        # Generate each report individually with error handling
+        report_generators = {
+            "prevalence_statistics": lambda: self.prevalence.get_prevalence_statistics(start_date),
+            "age_statistics": lambda: self.age_report.generate_report(filtered_cases=filtered_cases),
+            "gender_statistics": lambda: self.gender_report.generate_report(filtered_cases=filtered_cases),
+            "severity_statistics": lambda: self.severity_report.generate_report(filtered_cases=filtered_cases),
+            "severity_dates_count_statistics": lambda: self.severity_dates_count_report.generate_report(filtered_cases=filtered_cases),
+            "national_news_statistics": lambda: self.national_news_report.generate_report(filtered_cases=filtered_cases),
+            "local_portal_statistics": lambda: self.local_portal_report.generate_report(filtered_cases=filtered_cases),
+            "healthcare_news_statistics": lambda: self.healthcare_news_report.generate_report(filtered_cases=filtered_cases)
+        }
+        
+        for key, generator in report_generators.items():
+            try:
+                result[key] = generator()
+            except Exception as e:
+                logger.error(f"Error generating {key}: {str(e)}")
+                result[key] = {"error": f"Failed to generate report: {str(e)}"}
+        
+        return result
 
 class SeverityGroupingReport:
  
@@ -250,7 +256,7 @@ class NationalNewsStatisticsReport:
         # No need to sort manually - Counter has most_common() method
         top_national = [
             {"portal": portal, "count": count} 
-            for portal, count in portal_counts.most_common()
+            for portal, count in portal_counts.most_common(5)
         ]
         
         # Create all_national with news and disease counts
@@ -309,7 +315,7 @@ class HealthcareNewsStatisticsReport:
         # Create top_healthcare with sorted news counts
         top_healthcare = [
             {"portal": portal, "count": count}
-            for portal, count in portal_counts.most_common()
+            for portal, count in portal_counts.most_common(5)
         ]
 
         # Create all_healthcare with news and disease counts
