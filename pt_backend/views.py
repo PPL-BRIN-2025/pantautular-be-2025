@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CaseLocationSerializer, PrevalenceSerializer
-from .services import CacheService, CaseService, CaseDetailService, CasesFilterService
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, PrevalenceSerializer
+from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
@@ -11,7 +11,8 @@ from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatt
 import logging
 from .statistics import StatisticsCoordinator
 logger = logging.getLogger(__name__)
-INTERNAL_ERROR_MESSAGE = "An unexpected error occurred. Please try again later."
+
+INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -35,8 +36,7 @@ class AllCaseLocationsView(APIView):
             return Response(serialized_data, status=status.HTTP_200_OK)
         except Exception as e:
             print(e)
-            return Response({"error": INTERNAL_ERROR_MESSAGE}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
         try:
@@ -48,7 +48,7 @@ class AllCaseLocationsView(APIView):
 
             if not cases:
                 return Response(
-                    {"error": INTERNAL_ERROR_MESSAGE},
+                    {"error": INTERNAL_SERVER_ERR_MSG},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
@@ -58,7 +58,7 @@ class AllCaseLocationsView(APIView):
             )
         except Exception as e:
             return Response(
-                {"error": INTERNAL_ERROR_MESSAGE},
+                {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -85,6 +85,92 @@ class FiltersView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)     
 
+class DiseaseSeverityStatsView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = DiseaseSeverityStatsSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = DiseaseService()
+    
+    def get(self, request):
+        try:
+            stats = self.service.get_disease_severity_stats()
+            
+            if isinstance(stats, dict) and "error" in stats:
+                return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(stats, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+class LocationSeverityStatsView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = LocationSeverityStatsSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        repository = LocationRepository()
+        self.service = LocationService(repository=repository)
+    
+    def get(self, request):
+        try:
+            stats = self.service.get_province_severity_stats()
+            
+            if isinstance(stats, dict) and "error" in stats:
+                return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(stats, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+class CitySeverityStatsView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = LocationSeverityStatsSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        repository = LocationRepository()
+        self.service = LocationService(repository=repository)
+    
+    def get(self, request):
+        try:
+            stats = self.service.get_city_severity_stats()
+            
+            if isinstance(stats, dict) and "error" in stats:
+                return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(stats, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
 class SeverityDatesView(APIView):
     def get(self, request):
         news_repository = NewsRepository()
@@ -148,9 +234,6 @@ class StatisticsView(APIView):
             return Response(statistics, status=status.HTTP_200_OK)
             
         except Exception as e:
-            import traceback
-            print(f"Statistics GET error: {str(e)}")
-            print(traceback.format_exc())
             return Response(
                 {"error": f"An error occurred while fetching statistics: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -165,10 +248,8 @@ class StatisticsView(APIView):
             if 'diseases' in request.data and request.data['diseases']:
                 filter_params['disease'] = request.data['diseases']
             
-            # Handle locations - map to provinces and cities based on your data model
+            # Handle locations
             if 'locations' in request.data and request.data['locations']:
-                # In this example, we're treating all locations as provinces
-                # You may need to adjust this based on your actual data structure
                 filter_params['provinces'] = request.data['locations']
             
             # Handle portals
@@ -199,9 +280,6 @@ class StatisticsView(APIView):
             return Response(statistics, status=status.HTTP_200_OK)
             
         except Exception as e:
-            import traceback
-            print(f"Statistics error: {str(e)}")
-            print(traceback.format_exc())
             return Response(
                 {"error": f"An error occurred while fetching statistics: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

@@ -1,9 +1,8 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
-from .repositories import NewsRepository
+from .repositories import DiseaseRepository, LocationRepository, NewsRepository
 from django.core.cache import cache
 from .interfaces import CaseRepositoryInterface
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from datetime import datetime
 
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
@@ -48,6 +47,27 @@ class CacheService(CacheInterface):
     def delete(self, key):
         cache.delete(key)
 
+class DiseaseService:
+    def __init__(self, repository=None):
+        self.repository = repository or DiseaseRepository()
+    
+    def get_disease_severity_stats(self):
+        print("Service: Fetching disease severity stats")
+        result = self.repository.get_disease_severity_stats()
+        print(f"Service: Received result type: {type(result)}")
+        return result
+
+class LocationService:
+    def __init__(self, repository=None):
+        self.repository = repository or LocationRepository()
+        
+    def get_province_severity_stats(self):
+        result = self.repository.get_province_severity_stats()
+        return result
+
+    def get_city_severity_stats(self):
+        result = self.repository.get_city_severity_stats()
+        return result
 class NewsService:
     def get_severities_dates(self):
         return NewsRepository().get_all_severities_dates()
