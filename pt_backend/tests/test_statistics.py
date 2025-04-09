@@ -1045,7 +1045,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         
     def test_generate_comprehensive_report_with_location_filter(self):
         """Test generating a comprehensive report with a location filter"""
-        result = self.coordinator.generate_comprehensive_report(
+        self.coordinator.generate_comprehensive_report(
             provinces=["Test Province"]
         )
         
@@ -1057,7 +1057,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         
     def test_generate_comprehensive_report_with_portal_filter(self):
         """Test generating a comprehensive report with a portal filter"""
-        result = self.coordinator.generate_comprehensive_report(
+        self.coordinator.generate_comprehensive_report(
             portals=["Test Portal"]
         )
         
@@ -1069,7 +1069,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         
     def test_generate_comprehensive_report_with_alertness_filter(self):
         """Test generating a comprehensive report with an alertness filter"""
-        result = self.coordinator.generate_comprehensive_report(
+        self.coordinator.generate_comprehensive_report(
             disease_alertness=1
         )
         
@@ -1081,7 +1081,7 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         
     def test_generate_comprehensive_report_with_multiple_filters(self):
         """Test generating a comprehensive report with multiple filters"""
-        result = self.coordinator.generate_comprehensive_report(
+        self.coordinator.generate_comprehensive_report(
             disease=["Test Disease"],
             provinces=["Test Province"],
             portals=["Test Portal"],
