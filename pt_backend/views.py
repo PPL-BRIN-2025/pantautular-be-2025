@@ -222,7 +222,7 @@ class StatisticsView(APIView):
         except Exception as e:
             print(e)
             return Response(
-                {"error": f"An error occurred while fetching statistics"},
+                {"error": "An error occurred while fetching statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
@@ -269,6 +269,6 @@ class StatisticsView(APIView):
         except Exception as e:
             print(e)
             return Response(
-                {"error": f"An error occurred while fetching statistics"},
+                {"error": "An error occurred while fetching statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
