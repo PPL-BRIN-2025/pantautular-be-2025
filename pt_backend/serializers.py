@@ -6,6 +6,8 @@ class CaseLocationSerializer(serializers.Serializer):
     location__latitude = serializers.DecimalField(max_digits=8, decimal_places=6)
     
     city = serializers.CharField(max_length=255)
+    location__province = serializers.CharField(max_length=255)
+
 class PrevalenceSerializer(serializers.Serializer):
     year = serializers.IntegerField()
     total_cases = serializers.IntegerField()

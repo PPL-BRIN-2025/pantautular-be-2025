@@ -26,6 +26,6 @@ class CaseFilterService:
         return (
             Case.objects
             .filter(query)
-            .values('id', 'location__longitude', 'location__latitude', 'city')
+            .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province')
             .distinct()
         )
