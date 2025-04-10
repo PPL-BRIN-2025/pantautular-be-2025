@@ -143,6 +143,9 @@ class SeverityDatesCountReport:
 
             severity_dates[severity][date_published] += 1
 
+        for severity, dates in severity_dates.items():
+            severity_dates[severity] = dict(sorted(dates.items()))
+
         # Transform to the desired output format
         return {
             severity: [{"date": date, "count": count} for date, count in dates.items()]
