@@ -200,7 +200,12 @@ class PrevalenceStatistics:
             
             population = self.POPULATION_DATA.get(year)
             if not population:
-                return {"error": f"Population data not available for year {year}"}
+                return {
+                "year": year,
+                "total_cases": total_cases,
+                "population": population,
+                "prevalence": "No data available" 
+            }
             
             population = int(population * 1_000)  
             
