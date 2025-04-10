@@ -206,8 +206,8 @@ class PrevalenceStatistics:
                 return {
                 "year": year,
                 "total_cases": total_cases,
-                "population": population,
-                "prevalence": "No data available" 
+                "population": "Angka jiwa belum tercatat",
+                "prevalence": "No Data"
             }
             
             population = int(population * 1_000)  
