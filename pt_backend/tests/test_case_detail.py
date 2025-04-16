@@ -197,17 +197,23 @@ class CaseDetailServiceTest(TestCase):
 
 class CaseRepositoryTest(TestCase):
    def test_get_case_detail_by_id_exception(self):
-       # Update the patch path to target the model import in the repositories module
-       with patch('pt_backend.repositories.Case') as mock_case:
-           mock_case.objects.select_related.side_effect = Exception("Database error")
+       # Create a mock Case model with DoesNotExist exception
+       mock_case = Mock()
+       mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
+       mock_case.objects.select_related.side_effect = Exception("Database error")
+       
+       with patch('pt_backend.repositories.Case', mock_case):
            repository = CaseRepository()
            result = repository.get_case_detail_by_id(uuid.uuid4())
            self.assertIsNone(result)
 
-
    def test_get_case_detail_by_id_not_found(self):
-       # Let's patch the whole method to avoid the issue
-       with patch.object(CaseRepository, 'get_case_detail_by_id', return_value=None):
+       # Create a mock Case model with DoesNotExist exception
+       mock_case = Mock()
+       mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
+       mock_case.objects.select_related.side_effect = mock_case.DoesNotExist("Case not found")
+       
+       with patch('pt_backend.repositories.Case', mock_case):
            repository = CaseRepository()
            non_existent_id = uuid.uuid4()
            result = repository.get_case_detail_by_id(non_existent_id)

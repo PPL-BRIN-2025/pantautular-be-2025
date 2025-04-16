@@ -191,7 +191,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -202,7 +202,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -217,7 +217,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -233,7 +233,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -252,7 +252,7 @@ class CaseFilterServiceTest(TestCase):
         
         self.mock_case.objects.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])

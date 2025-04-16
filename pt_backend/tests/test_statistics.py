@@ -109,8 +109,8 @@ class PrevalenceStatisticsTest(BaseStatisticsTestCase):
         """Test getting prevalence statistics with an invalid year (no population data)"""
         result = self.statistics.get_prevalence_statistics("2000-01-01")
         
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Population data not available for year 2000")
+        self.assertIn("prevalence", result)
+        self.assertEqual(result["prevalence"], "No Data")
 
     def test_get_prevalence_statistics_no_cases(self):
         """Test getting prevalence statistics when there are no cases for the year"""

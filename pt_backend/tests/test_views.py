@@ -23,8 +23,8 @@ class CaseAPITest(TestCase):
 
         self.disease1 = Disease.objects.create(name="Flu", level_of_alertness=2)
         self.disease2 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
-        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, city="Jakarta")
-        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, city="Bandung")
+        self.location1 = Location.objects.create(latitude=-6.2088, longitude=106.8456, city="Jakarta", province="DKI Jakarta")
+        self.location2 = Location.objects.create(latitude=-6.9175, longitude=107.6191, city="Bandung", province="Jawa Barat")
         self.case1 = Case.objects.create(
             id=uuid.uuid4(), gender="Male", age=30, city="Jakarta", status="confirmed", disease=self.disease1, location=self.location1
         )
@@ -46,13 +46,15 @@ class CaseAPITest(TestCase):
                 "id": str(self.case2.id),
                 "location__longitude": "107.619100",
                 "location__latitude": "-6.917500",
-                "city": "Bandung"
+                "city": "Bandung",
+                "location__province": "Jawa Barat"
             },
             {
                 "id": str(self.case1.id),
                 "location__longitude": "106.845600",
                 "location__latitude": "-6.208800",
-                "city": "Jakarta"
+                "city": "Jakarta",
+                "location__province": "DKI Jakarta"
             }
         ]
         expected_data.sort(key=lambda x: x['city'])
@@ -127,8 +129,8 @@ class CaseFilterPostTest(TestCase):
 
     def test_post_filter_success(self):
         mock_cases = [
-            {'id': str(self.test_uuid1), 'location__longitude': '106.845600', 'location__latitude': '-6.208800', 'city': 'Jakarta'},
-            {'id': str(self.test_uuid2), 'location__longitude': '107.619100', 'location__latitude': '-6.917500', 'city': 'Bandung'}
+            {'id': str(self.test_uuid1), 'location__longitude': '106.845600', 'location__latitude': '-6.208800', 'city': 'Jakarta', 'location__province': 'DKI Jakarta'},
+            {'id': str(self.test_uuid2), 'location__longitude': '107.619100', 'location__latitude': '-6.917500', 'city': 'Bandung', 'location__province': 'Jawa Barat'}
         ]
         self.mock_filter_instance.filter_cases.return_value = mock_cases
 
