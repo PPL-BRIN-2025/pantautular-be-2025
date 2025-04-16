@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.contrib.auth.hashers import check_password, make_password
 from pt_backend.models import (
     User, Role, Permission, Disease, Location, Case, News,
-    HealthProtocol
+    HealthProtocol, Climate
 )
 from decimal import Decimal
 import uuid
@@ -197,4 +197,17 @@ class NewsModelTest(TestCase):
             case=self.case
         )
 
-        self.assertEqual(str(self.news), "Test News") 
+    def test_str_representation(self):
+        self.assertEqual(str(self.news), "Test News")
+
+class ClimateModelTest(TestCase):
+    def setUp(self):
+        self.climate = Climate.objects.create(
+            province = "Test Province",
+            temperature = 1.0,
+            humidity = 2.0,
+            percipitation = 3.0,
+        )
+
+    def test_str_representation(self):
+        self.assertEqual(str(self.climate), "Test Province")
