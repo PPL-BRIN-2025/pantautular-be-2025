@@ -75,12 +75,21 @@ class Disease(models.Model):
 class Climate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     province = models.CharField(max_length=255)
-    temperature = models.DecimalField(max_digits=8, decimal_places=6)
-    percipitation = models.DecimalField(max_digits=8, decimal_places=6)
-    humidity = models.DecimalField(max_digits=8, decimal_places=6)
+    temperature = models.DecimalField(max_digits=8, decimal_places=2)
+    percipitation = models.DecimalField(max_digits=8, decimal_places=2)
+    humidity = models.DecimalField(max_digits=8, decimal_places=2)
+    year = models.IntegerField(null=True)
+    month = models.IntegerField(null=True)
 
     def __str__(self):
         return self.province
+    
+    @staticmethod
+    def get_climate_for_location(location, year, month=None):
+        query = Climate.objects.filter(province=location.province, year=year)
+        if month:
+            query = query.filter(month=month)
+        return query
 
 class HealthProtocolDisease(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
