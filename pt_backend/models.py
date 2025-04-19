@@ -76,10 +76,10 @@ class Climate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     province = models.CharField(max_length=255)
     temperature = models.DecimalField(max_digits=8, decimal_places=2)
-    precipitation = models.DecimalField(max_digits=8, decimal_places=2, null=True)
+    precipitation = models.DecimalField(max_digits=8, decimal_places=2)
     humidity = models.DecimalField(max_digits=8, decimal_places=2)
-    year = models.IntegerField(null=True)
-    month = models.IntegerField(null=True)
+    year = models.IntegerField()
+    month = models.IntegerField()
 
     def __str__(self):
         return self.province
