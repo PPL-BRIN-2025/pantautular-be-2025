@@ -76,7 +76,7 @@ class Climate(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     province = models.CharField(max_length=255)
     temperature = models.DecimalField(max_digits=8, decimal_places=2)
-    percipitation = models.DecimalField(max_digits=8, decimal_places=2)
+    precipitation = models.DecimalField(max_digits=8, decimal_places=2, null=True)
     humidity = models.DecimalField(max_digits=8, decimal_places=2)
     year = models.IntegerField(null=True)
     month = models.IntegerField(null=True)
@@ -105,7 +105,6 @@ class Location(models.Model):
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
     city = models.CharField(max_length=255, unique=False)
     province = models.CharField(max_length=255, unique=False)
-    climate = models.ForeignKey(Climate, on_delete=models.CASCADE, related_name="locations", null=True)
 
     @staticmethod
     def get_location_by_city(city):

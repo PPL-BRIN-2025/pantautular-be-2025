@@ -206,7 +206,7 @@ class ClimateModelTest(TestCase):
             province = "Test Province",
             temperature = 1.0,
             humidity = 2.0,
-            percipitation = 3.0,
+            precipitation = 3.0,
         )
 
     def test_str_representation(self):
@@ -226,7 +226,7 @@ class ClimateModelTest(TestCase):
             province="Test Province",
             temperature=20.00,
             humidity=75.00,
-            percipitation=100.00,
+            precipitation=100.00,
             year=2024,
             month=1
         )
@@ -235,7 +235,7 @@ class ClimateModelTest(TestCase):
             province="Test Province",
             temperature=22.00,
             humidity=70.00,
-            percipitation=90.00,
+            precipitation=90.00,
             year=2024,
             month=2
         )
@@ -269,7 +269,7 @@ class ClimateModelTest(TestCase):
             province="Different Province",
             temperature=20.00,
             humidity=75.00,
-            percipitation=100.00,
+            precipitation=100.00,
             year=2024,
             month=1
         )
