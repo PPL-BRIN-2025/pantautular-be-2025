@@ -248,8 +248,8 @@ class PasswordResetService:
         self.reset_url_base = reset_url_base
     
     def find_user_by_email(self, email):
-        User = get_user_model()
-        return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
+        user_model = get_user_model()
+        return user_model.objects.get(email=email) if user_model.objects.filter(email=email).exists() else None
     
     def generate_password_reset_token(self, user):
         uid = urlsafe_base64_encode(force_bytes(user.pk))

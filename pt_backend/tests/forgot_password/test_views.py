@@ -7,13 +7,12 @@ from pt_backend.authentication import APIKeyAuthentication
 class TestPasswordResetView(TestCase):
     def setUp(self):
         self.client = Client()
-        User = get_user_model()
-        self.user = User.objects.create_user(
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
             username='testuser',
             email='test@example.com',
             password='oldpassword123'
         )
-        # Assuming you have a URL pattern defined for password reset
         self.reset_url = '/api/auth/password-reset-request/'
         
     # Positive test cases
@@ -21,7 +20,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_request_successful(self, mock_auth, mock_process_reset):
         """Test successful password reset request"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         mock_process_reset.return_value = True
         
@@ -43,7 +41,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_missing_email(self, mock_auth):
         """Test password reset request with missing email"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         response = self.client.post(
@@ -60,12 +57,11 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_nonexistent_email(self, mock_auth, mock_process_reset):
         """Test password reset request with non-existent email"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         # Simulate DoesNotExist exception
-        User = get_user_model()
-        mock_process_reset.side_effect = User.DoesNotExist()
+        user_model = get_user_model()
+        mock_process_reset.side_effect = user_model.DoesNotExist()
         
         response = self.client.post(
             self.reset_url, 
@@ -85,7 +81,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_unknown_error(self, mock_auth, mock_process_reset):
         """Test password reset request with unknown error"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         # Simulate a general exception
@@ -104,7 +99,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_empty_email(self, mock_auth):
         """Test password reset request with empty email string"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         response = self.client.post(
@@ -120,7 +114,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_malformed_json(self, mock_auth):
         """Test password reset request with malformed JSON"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         response = self.client.post(
@@ -136,7 +129,6 @@ class TestPasswordResetView(TestCase):
     @patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
     def test_password_reset_logs_error(self, mock_auth, mock_process_reset, mock_logger):
         """Test that errors are properly logged"""
-        # Fix: Provide proper return value for authenticate
         mock_auth.return_value = (self.user, 'some-token')
         
         error = Exception("Test error")

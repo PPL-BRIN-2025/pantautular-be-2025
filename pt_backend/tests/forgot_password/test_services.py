@@ -7,8 +7,8 @@ from pt_backend.services import PasswordResetService
 
 class TestPasswordResetService(TestCase):
     def setUp(self):
-        User = get_user_model()
-        self.user = User.objects.create_user(
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
             username='testuser',
             email='test@example.com',
             password='oldpassword123'
@@ -83,8 +83,8 @@ class TestPasswordResetService(TestCase):
     @patch('pt_backend.services.send_mail')
     def test_unicode_email(self, mock_send_mail):
         """Test handling email with unicode characters"""
-        User = get_user_model()
-        unicode_user = User.objects.create_user(
+        user_model = get_user_model()
+        user_model.objects.create_user(
             username='unicodeuser',
             email='tëst@exämple.com',
             password='password123'
