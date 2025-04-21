@@ -32,9 +32,6 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_cases_by_year(year)
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
-    
-    def get_gender_dist(self):
-        return self.repository.get_gender_distribution()
 
 class CacheService(CacheInterface):
     def get(self, key):
@@ -239,3 +236,22 @@ class SeverityFilteringService:
             "province_stats": self.location_repository.get_province_severity_stats(filtered_case_ids),
             "city_stats": self.location_repository.get_city_severity_stats(filtered_case_ids)
         }
+
+class PasswordResetService:
+    def __init__(self, reset_url_base="http://localhost:3000/reset-password"):
+        self.reset_url_base = reset_url_base
+    
+    def find_user_by_email(self, email):
+        pass
+    
+    def generate_password_reset_token(self, user):
+        pass
+
+    def create_password_reset_link(self, uid, token):
+        pass
+    
+    def send_password_reset_email(self, email, reset_link):
+        pass
+    
+    def process_reset_request(self, email):
+        pass
