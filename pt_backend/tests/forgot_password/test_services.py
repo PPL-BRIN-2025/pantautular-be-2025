@@ -40,7 +40,7 @@ class TestPasswordResetService(TestCase):
     @patch('pt_backend.services.send_mail')
     def test_send_reset_email_successful(self, mock_send_mail):
         """Test that email sending works properly"""
-        self.service.send_password_reset_email('test@example.com', 'http://test.link')
+        self.service.send_password_reset_email('test@example.com', 'https://test.link')
         mock_send_mail.assert_called_once()
         
     @patch('pt_backend.services.PasswordResetService.send_password_reset_email')
@@ -66,7 +66,7 @@ class TestPasswordResetService(TestCase):
         """Test handling email sending error"""
         mock_send_mail.side_effect = Exception("Email error")
         with self.assertRaises(Exception):
-            self.service.send_password_reset_email('test@example.com', 'http://test.link')
+            self.service.send_password_reset_email('test@example.com', 'https://test.link')
             
     def test_generate_token_invalid_user(self):
         """Test token generation with invalid user"""
@@ -90,7 +90,7 @@ class TestPasswordResetService(TestCase):
             password='password123'
         )
         
-        self.service.send_password_reset_email('tëst@exämple.com', 'http://test.link')
+        self.service.send_password_reset_email('tëst@exämple.com', 'https://test.link')
         mock_send_mail.assert_called_once()
         
     def test_special_chars_in_url(self):
