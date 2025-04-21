@@ -1,10 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import ParseError
 from rest_framework import status
+
+from django.contrib.auth import get_user_model
 
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer
-from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService
+from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, PasswordResetService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
@@ -354,3 +357,20 @@ class SeverityFilteringStatsView(APIView):
         cities = cities if cities else None
         
         return provinces, cities
+
+class PasswordResetLinkRequestView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.password_reset_service = PasswordResetService()
+
+    def post(self, request):
+        try:
+            return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
+                             status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            logger.error(f"Error sending password reset link: {str(e)}")
+            return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
