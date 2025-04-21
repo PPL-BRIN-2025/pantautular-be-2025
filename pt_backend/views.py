@@ -376,6 +376,10 @@ class PasswordResetLinkRequestView(APIView):
             return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
                              status=status.HTTP_200_OK)
         
+        except get_user_model().DoesNotExist:
+            return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
+                             status=status.HTTP_200_OK)
+        
         except Exception as e:
             logger.error(f"Error sending password reset link: {str(e)}")
             return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
