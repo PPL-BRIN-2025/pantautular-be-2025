@@ -83,6 +83,88 @@ class TestCaseService(unittest.TestCase):
         self.mock_cache.set.assert_called_once_with("all_cases", repository_data, timeout=300)
         self.assertEqual(result, repository_data)
 
+    def test_get_cases_by_year_cache_hit(self):
+        """
+        Test get_cases_by_year when data is in the cache.
+        The service should return cached data without calling the repository.
+        """
+        year = 2023
+        cached_data = [
+            {
+                "id": "3",
+                "location__province": "YearProvince",
+                "location__city": "YearCity",
+                "news__portal": "YearPortal",
+                "severity": "YearSeverity",
+                "news__date_published": "2023-05-15"
+            }
+        ]
+        self.mock_cache.get.return_value = cached_data
+
+        result = self.service.get_cases_by_year(year)
+
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        self.mock_repository.get_cases_by_year.assert_not_called()
+        self.assertEqual(result, cached_data)
+
+    def test_get_cases_by_year_cache_miss(self):
+        """
+        Test get_cases_by_year when data is not in the cache.
+        The service should fetch data from the repository and cache it.
+        """
+        year = 2023
+        repository_data = [
+            {
+                "id": "4",
+                "location__province": "RepoYearProvince",
+                "location__city": "RepoYearCity",
+                "news__portal": "RepoYearPortal",
+                "severity": "RepoYearSeverity",
+                "news__date_published": "2023-06-20"
+            }
+        ]
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_cases_by_year.return_value = repository_data
+
+        result = self.service.get_cases_by_year(year)
+
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        self.mock_repository.get_cases_by_year.assert_called_once_with(year)
+        self.mock_cache.set.assert_called_once_with("all_cases", repository_data, timeout=300)
+        self.assertEqual(result, repository_data)
+
+    def test_get_cases_by_year_cache_miss_empty_response(self):
+        """
+        Test get_cases_by_year when data is not in the cache and repository returns None.
+        The service should return an empty list.
+        """
+        year = 2023
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_cases_by_year.return_value = None
+
+        result = self.service.get_cases_by_year(year)
+
+        self.mock_cache.get.assert_called_once_with("all_cases")
+        self.mock_repository.get_cases_by_year.assert_called_once_with(year)
+        self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
+        self.assertEqual(result, [])
+
+    # def test_get_gender_dist(self):
+    #     """
+    #     Test get_gender_dist method properly calls through to the repository
+    #     and returns the repository's response.
+    #     """
+    #     gender_data = {
+    #         "Male": 150,
+    #         "Female": 120,
+    #         "Unknown": 30
+    #     }
+    #     self.mock_repository.get_gender_distribution.return_value = gender_data
+
+    #     result = self.service.get_gender_dist()
+
+    #     self.mock_repository.get_gender_distribution.assert_called_once()
+    #     self.assertEqual(result, gender_data)
 
 class TestCacheService(TestCase):
     def setUp(self):
