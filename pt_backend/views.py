@@ -368,6 +368,11 @@ class PasswordResetLinkRequestView(APIView):
 
     def post(self, request):
         try:
+            email = request.data.get("email")
+            if not email:
+                return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            self.password_reset_service.process_reset_request(email)
             return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
                              status=status.HTTP_200_OK)
         
