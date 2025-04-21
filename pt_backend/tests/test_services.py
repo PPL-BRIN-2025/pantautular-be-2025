@@ -149,23 +149,6 @@ class TestCaseService(unittest.TestCase):
         self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
         self.assertEqual(result, [])
 
-    # def test_get_gender_dist(self):
-    #     """
-    #     Test get_gender_dist method properly calls through to the repository
-    #     and returns the repository's response.
-    #     """
-    #     gender_data = {
-    #         "Male": 150,
-    #         "Female": 120,
-    #         "Unknown": 30
-    #     }
-    #     self.mock_repository.get_gender_distribution.return_value = gender_data
-
-    #     result = self.service.get_gender_dist()
-
-    #     self.mock_repository.get_gender_distribution.assert_called_once()
-    #     self.assertEqual(result, gender_data)
-
 class TestCacheService(TestCase):
     def setUp(self):
         self.cache_service = CacheService()
