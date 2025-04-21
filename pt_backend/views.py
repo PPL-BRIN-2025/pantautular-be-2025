@@ -376,6 +376,9 @@ class PasswordResetLinkRequestView(APIView):
             return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
                              status=status.HTTP_200_OK)
         
+        except ParseError:
+            return Response({"error": "Invalid JSON in request body"}, status=status.HTTP_400_BAD_REQUEST)
+
         except get_user_model().DoesNotExist:
             return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
                              status=status.HTTP_200_OK)
