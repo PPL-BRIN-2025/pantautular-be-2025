@@ -1,5 +1,11 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import crypto from 'k6/crypto';
+
+// Helper function for secure random
+function secureRandom() {
+    return crypto.randomBytes(4).readUInt32LE(0) / 0xffffffff;
+}
 
 // Poisson distribution implementation
 function poisson(mean) {
@@ -9,7 +15,7 @@ function poisson(mean) {
     
     do {
         k++;
-        p *= Math.random();
+        p *= secureRandom();  // Use secure random instead of Math.random()
     } while (p > L);
     
     return k - 1;
@@ -121,8 +127,8 @@ export default function () {
     };
 
     // Randomly select a payload
-    const payload = payloads[Math.floor(Math.random() * payloads.length)];
-
+    const payload = payloads[Math.floor(secureRandom() * payloads.length)];
+    
     const response = http.post(
         `${BASE_URL}/cases/locations/`,
         JSON.stringify(payload.data),
