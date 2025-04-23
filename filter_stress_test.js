@@ -154,6 +154,7 @@ export default function () {
                     'location__province' in item
                 );
             } catch (e) {
+                console.error('Error parsing response:', e.message);
                 return false;
             }
         }
