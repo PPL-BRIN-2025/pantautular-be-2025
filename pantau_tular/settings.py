@@ -31,6 +31,10 @@ SECRET_API_KEY = os.getenv('SECRET_API_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
+# settings.py
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
+
 ALLOWED_HOSTS = ["localhost", "127.0.0.1",".up.railway.app"]
 
 # Application definition

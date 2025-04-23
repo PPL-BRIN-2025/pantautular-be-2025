@@ -3,6 +3,12 @@ from .repositories import CaseRepository, DiseaseRepository, LocationRepository,
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_KEY_ALL_LOCATIONS = "all_locations"
@@ -32,9 +38,6 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_cases_by_year(year)
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
-    
-    def get_gender_dist(self):
-        return self.repository.get_gender_distribution()
 
 class CacheService(CacheInterface):
     def get(self, key):
@@ -239,3 +242,35 @@ class SeverityFilteringService:
             "province_stats": self.location_repository.get_province_severity_stats(filtered_case_ids),
             "city_stats": self.location_repository.get_city_severity_stats(filtered_case_ids)
         }
+
+class PasswordResetService:
+    def __init__(self, reset_url_base="http://localhost:3000/reset-password"):
+        self.reset_url_base = reset_url_base
+    
+    def find_user_by_email(self, email):
+        user_model = get_user_model()
+        return user_model.objects.get(email=email) if user_model.objects.filter(email=email).exists() else None
+    
+    def generate_password_reset_token(self, user):
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        return uid, token
+
+    def create_password_reset_link(self, uid, token):
+        return f"{self.reset_url_base}/{uid}/{token}/"
+    
+    def send_password_reset_email(self, email, reset_link):
+        send_mail(
+            subject="Reset Password Akunmu",
+            message=f"Klik link berikut untuk mereset password akunmu: {reset_link}",
+            from_email="no-reply@gmail.com",
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    
+    def process_reset_request(self, email):
+        user = self.find_user_by_email(email)
+        uid, token = self.generate_password_reset_token(user)
+        reset_link = self.create_password_reset_link(uid, token)
+        self.send_password_reset_email(email, reset_link)
+        return True
