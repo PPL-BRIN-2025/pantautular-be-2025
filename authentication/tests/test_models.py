@@ -22,15 +22,13 @@ class ModelTests(TestCase):
 
         self.user = User.objects.create(
             name="Ken Balya",
-            password="plain-secret",
+            password="plain-secret", # NOSONAR – test data, not a real secret
             role="ADMIN",
             email="ken@example.com",
         )
         self.perm_read = Permission.objects.create(
             name="read_reports", description="Can read confidential reports"
         )
-
-    # ------------------------------------------------------------------ User --
 
     def test_user_str_returns_name(self):
         self.assertEqual(str(self.user), "Ken Balya")
