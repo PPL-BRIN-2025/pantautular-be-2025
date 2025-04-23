@@ -30,7 +30,7 @@ class SignupAPIViewTests(TestCase):
 
     def test_signup_happy_path(self):
         res = self._post(
-            {"name": "Ken", "email": "ken@example.com", "password": "5up3rSafe!"}
+            {"name": "Ken", "email": "ken@example.com", "password": "5up3rSafe!"} # NOSONAR – test data, not a real secret
         )
 
         self.assertEqual(res.status_code, 201)
@@ -40,11 +40,11 @@ class SignupAPIViewTests(TestCase):
 
     def test_duplicate_email_returns_400(self):
         self._post(
-            {"name": "Ken", "email": "dup@ex.com", "password": "Sup3rSafe!"}
+            {"name": "Ken", "email": "dup@ex.com", "password": "Sup3rSafe!"} # NOSONAR – test data, not a real secret
         )
 
         res = self._post(
-            {"name": "Clone", "email": "dup@ex.com", "password": "OtherSafe12!"}
+            {"name": "Clone", "email": "dup@ex.com", "password": "OtherSafe12!"} # NOSONAR – test data, not a real secret
         )
 
         self.assertEqual(res.status_code, 400)
@@ -59,7 +59,7 @@ class SignupAPIViewTests(TestCase):
             side_effect=ValidationError("Too weak"),
         ):
             res = self._post(
-                {"name": "Weak", "email": "weak@ex.com", "password": "WeakPass1"}
+                {"name": "Weak", "email": "weak@ex.com", "password": "WeakPass1"} # NOSONAR – test data, not a real secret
             )
 
         self.assertEqual(res.status_code, 400)
@@ -72,7 +72,7 @@ class SignupAPIViewTests(TestCase):
 
     def test_missing_or_wrong_api_key_returns_401(self):
         res = self._post(
-            {"name": "Ken", "email": "wrongkey@ex.com", "password": "5up3rSafe!"},
+            {"name": "Ken", "email": "wrongkey@ex.com", "password": "5up3rSafe!"}, # NOSONAR – test data, not a real secret
             api_key="badkey",
         )
         self.assertEqual(res.status_code, 401)

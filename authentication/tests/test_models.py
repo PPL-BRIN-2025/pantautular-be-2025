@@ -50,21 +50,18 @@ class ModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             User.objects.create(
                 name="Clone",
-                password="whatever",
+                password="whatever", # NOSONAR – test data, not a real secret
                 role="MEMBER",
-                email="ken@example.com",  # duplicate
+                email="ken@example.com",  
             )
-
-    # ------------------------------------------------------------------ Role --
 
     def test_role_str(self):
         self.assertEqual(str(self.role_admin), "ADMIN")
 
     def test_role_name_unique(self):
         with self.assertRaises(IntegrityError):
-            Role.objects.create(name="ADMIN")  # duplicate name
+            Role.objects.create(name="ADMIN")  
 
-    # -------------------------------------------------------------- Permission --
 
     def test_permission_str(self):
         self.assertEqual(str(self.perm_read), "read_reports")
@@ -75,7 +72,6 @@ class ModelTests(TestCase):
                 name="read_reports", description="dup"
             )
 
-    # ------------------------------------------------------------- UserRole M2M --
 
     def test_user_role_unique_together(self):
         UserRole.objects.create(user=self.user, role=self.role_admin)
@@ -83,7 +79,6 @@ class ModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             UserRole.objects.create(user=self.user, role=self.role_admin)
 
-    # ------------------------------------------------- UserRoleRegistered meta --
 
     def test_registered_role_defaults_label_to_role_name(self):
         reg = UserRoleRegistered.objects.create(role=self.role_member)
@@ -91,14 +86,12 @@ class ModelTests(TestCase):
         self.assertEqual(str(reg), "MEMBER")
 
     def test_registered_role_ordering(self):
-        # create two with differing sort_order to ensure ordering respected
         r1 = UserRoleRegistered.objects.create(role=self.role_admin, sort_order=2)
         r2 = UserRoleRegistered.objects.create(role=self.role_member, sort_order=1)
         self.assertListEqual(
             list(UserRoleRegistered.objects.all()), [r2, r1]
         )
 
-    # ---------------------------------------------------------- RolePermission --
 
     def test_role_permission_unique_together(self):
         RolePermission.objects.create(role=self.role_admin, permission=self.perm_read)

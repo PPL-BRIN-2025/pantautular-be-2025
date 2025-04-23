@@ -10,7 +10,7 @@ class TenagaAhliRegistrationTests(TestCase):
         dto = factory.register(
             name="Dr. Rahma",
             email="rahma@corp.id",
-            raw_password="Sup3rSafe!",
+            raw_password="Sup3rSafe!",# NOSONAR – test data, not a real secret
         )
 
         self.assertEqual(dto.role.name, "TENAGA_AHLI")
