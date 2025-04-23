@@ -38,7 +38,7 @@ class FilterTestCase(TestCase):
 
     def test_location_filter_with_valid_data(self):
         data = {'locations': ['Jakarta', 'Bandung']}
-        expected_q = Q(location__name__in=['Jakarta', 'Bandung'])
+        expected_q = Q(location__city__in=['Jakarta', 'Bandung']) | Q(location__province__in=['Jakarta', 'Bandung'])
         result = self.location_filter.apply(data)
         self.assertEqual(str(result), str(expected_q))
 
