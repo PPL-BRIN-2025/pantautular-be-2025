@@ -1,4 +1,10 @@
-from .registry import autodiscover, get_factory
+from importlib import import_module
+from pathlib import Path
 
-autodiscover()          
-__all__ = ["get_factory"]   
+from .registry import get_factory  
+
+_factories_dir = Path(__file__).with_suffix("").parent / "factories"
+for p in _factories_dir.glob("*.py"):
+    import_module(f"{__package__}.factories.{p.stem}")
+
+__all__ = ["get_factory"]

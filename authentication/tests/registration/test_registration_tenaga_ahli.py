@@ -20,11 +20,13 @@ class TenagaAhliRegistrationTests(TestCase):
             UserRole.objects.filter(user=dto.user, role=dto.role).exists()
         )
 
-        expected_perms = {"submit_report", "view_dashboard"}
+        expected = {"submit_report", "view_dashboard"}
+
         self.assertSetEqual(
-            set(dto.role.permissions.values_list("name", flat=True)),
-            expected_perms,
+            set(dto.role.permissions.values_list("permission__name", flat=True)),
+            expected,
         )
+
 
         self.assertEqual(Role.objects.filter(name="TENAGA_AHLI").count(), 1)
 
