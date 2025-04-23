@@ -10,9 +10,8 @@ from .repositories import CaseRepository, DiseaseRepository, LocationRepository,
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-import logging
 from .statistics import StatisticsCoordinator
-from .grafana_config import (
+from .filter.grafana_config import (
     measure_time, count_calls,
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
 )
