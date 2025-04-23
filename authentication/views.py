@@ -3,9 +3,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import SignupSerializer 
 from authentication.registration.service import RegistrationService, RegistrationError
-
+from .security import APIKeyAuthentication
 
 class SignupAPIView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
         if not serializer.is_valid():
