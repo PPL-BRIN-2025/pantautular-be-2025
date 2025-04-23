@@ -41,8 +41,8 @@ class ModelTests(TestCase):
         self.user.update_password("new-secret")
         self.user.refresh_from_db()
         # password has been hashed & stored:
-        self.assertNotEqual(self.user.password, "new-secret")
-        self.assertTrue(check_password("new-secret", self.user.password))
+        self.assertNotEqual(self.user.password, "new-secret") # NOSONAR – test data, not a real secret
+        self.assertTrue(check_password("new-secret", self.user.password)) # NOSONAR – test data, not a real secret
 
     def test_user_email_must_be_unique(self):
         with self.assertRaises(IntegrityError):
