@@ -12,7 +12,10 @@ from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 import logging
 from .statistics import StatisticsCoordinator
-logger = logging.getLogger(__name__)
+from .grafana_config import (
+    measure_time, count_calls,
+    CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
+)
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
@@ -40,25 +43,29 @@ class AllCaseLocationsView(APIView):
             print(e)
             return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @measure_time(API_RESPONSE_TIME)
+    @count_calls(CASE_SEARCHED)
     def post(self, request):
         try:
             if not request.data or all(not v for v in request.data.values()):
                 cases = self.service.get_all_case_locations()
-
             else: 
                 cases = self.filter_service.filter_cases(request.data)
 
             if not cases:
                 return Response(
-                    {"error": INTERNAL_SERVER_ERR_MSG},
+                    {"error": "No cases found with the given filters"},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            serialized_data = self.serializer_class(cases, many=True).data
             return Response(
-                self.serializer_class(cases, many=True).data,
+                serialized_data,
                 status=status.HTTP_200_OK
             )
         except Exception as e:
+            print(f"Error in case filter: {str(e)}")
+            API_ERRORS.labels(error_type='case_filter_error').inc()
             return Response(
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
