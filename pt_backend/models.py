@@ -8,7 +8,6 @@ class User(models.Model):
     password = models.CharField(max_length=255)
     role = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
-    last_login = models.DateTimeField(null=True, blank=True)
 
     def has_role(self, role_name):
         return self.role == role_name
