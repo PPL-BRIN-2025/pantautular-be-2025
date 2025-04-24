@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'hello',
     'corsheaders',
+    'authentication'
 ]
 
 MIDDLEWARE = [
@@ -62,6 +63,12 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "10/min",   
+    },
+}
 
 ROOT_URLCONF = 'pantau_tular.urls'
 
