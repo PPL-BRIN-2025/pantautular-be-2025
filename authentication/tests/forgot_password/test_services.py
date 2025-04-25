@@ -3,13 +3,12 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import patch, MagicMock
 from authentication.services import PasswordResetService
-
-get_user_model = PasswordResetService.get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from pt_backend.models import User
 
 class TestPasswordResetService(TestCase):
     def setUp(self):
-        user_model = get_user_model()
-        self.user = user_model.objects.create(
+        self.user = User.objects.create(
             email='test@example.com',
             name='testuser',
             password='oldpassword123',
@@ -85,8 +84,7 @@ class TestPasswordResetService(TestCase):
     @patch('authentication.services.send_mail')
     def test_unicode_email(self, mock_send_mail):
         """Test handling email with unicode characters"""
-        user_model = get_user_model()
-        user_model.objects.create(
+        User.objects.create(
             email='tëst@exämple.com',
             name='unicodeuser',
             password='password123',

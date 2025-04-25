@@ -2,15 +2,12 @@ from django.test import TestCase, Client
 from unittest.mock import patch
 from rest_framework import status
 from authentication.security import APIKeyAuthentication
-from authentication.services import PasswordResetService
-
-get_user_model  = PasswordResetService.get_user_model
+from pt_backend.models import User
 
 class TestPasswordResetView(TestCase):
     def setUp(self):
         self.client = Client()
-        user_model = get_user_model()
-        self.user = user_model.objects.create(
+        self.user = User.objects.create(
             name='testuser',
             email='test@example.com',
             password='oldpassword123',
@@ -63,8 +60,7 @@ class TestPasswordResetView(TestCase):
         mock_auth.return_value = (self.user, 'some-token')
         
         # Simulate DoesNotExist exception
-        user_model = get_user_model()
-        mock_process_reset.side_effect = user_model.DoesNotExist
+        mock_process_reset.side_effect = User.DoesNotExist
         
         response = self.client.post(
             self.reset_url, 

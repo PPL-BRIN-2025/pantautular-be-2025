@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import ParseError
 from rest_framework.throttling import UserRateThrottle
+from pt_backend.models import User
 
 from .serializers import SignupSerializer
 from .security import APIKeyAuthentication
@@ -12,7 +13,6 @@ from authentication.registration.service import (
 )
 
 from .services import PasswordResetService
-from django.contrib.auth import get_user_model
 
 import logging
 
@@ -61,7 +61,7 @@ class PasswordResetLinkRequestView(APIView):
         except ParseError:
             return Response({"error": "Invalid JSON in request body"}, status=status.HTTP_400_BAD_REQUEST)
 
-        except get_user_model().DoesNotExist:
+        except User.DoesNotExist:
             return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
                              status=status.HTTP_200_OK)
         
