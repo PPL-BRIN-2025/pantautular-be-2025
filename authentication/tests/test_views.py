@@ -7,6 +7,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory
 from authentication.views import SignupAPIView
 from pt_backend.models import User
+from rest_framework import status
 
 client = APIClient()
 
@@ -77,3 +78,88 @@ class SignupAPIViewTests(TestCase):
         )
         self.assertEqual(res.status_code, 401)
         self.assertIn("Invalid API key", res.data["detail"])
+
+class LoginAPIViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('login')
+        
+        # Mock API key validation
+        patcher = patch('authentication.security.APIKeyAuthentication.authenticate')
+        self.mock_auth = patcher.start()
+        self.mock_auth.return_value = (None, None)  # Authentication always passes
+        self.addCleanup(patcher.stop)
+
+    @patch('authentication.views.AuthService')
+    def test_successful_login(self, mock_auth_service):
+        """Test successful login request - happy path"""
+        # Configure mock
+        mock_auth_service_instance = mock_auth_service.return_value
+        mock_auth_service_instance.login.return_value = {'access_token': 'dummy-token'}
+        
+        # Make request
+        data = {
+            'email': 'test@example.com',
+            'password': 'Password123!' # NOSONAR – test data, not a real secret
+        }
+        response = self.client.post(self.url, data, format='json')
+        
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access_token', response.data)
+        self.assertIn('detail', response.data)
+        self.assertEqual(response.data['detail'], 'Login successful')
+        mock_auth_service_instance.login.assert_called_once_with(
+            email='test@example.com', 
+            password='Password123!' # NOSONAR – test data, not a real secret
+        )
+
+    @patch('authentication.views.AuthService')
+    def test_invalid_credentials(self, mock_auth_service):
+        """Test login with invalid credentials - unhappy path"""
+        # Configure mock
+        mock_auth_service_instance = mock_auth_service.return_value
+        mock_auth_service_instance.login.return_value = None
+        
+        # Make request
+        data = {
+            'email': 'test@example.com',
+            'password': 'WrongPassword123!' # NOSONAR – test data, not a real secret
+        }
+        response = self.client.post(self.url, data, format='json')
+        
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('detail', response.data)
+        self.assertEqual(response.data['detail'], 'Invalid email or password')
+
+    @patch('authentication.views.AuthService')
+    def test_server_error_handling(self, mock_auth_service):
+        """Test handling of server errors - edge case"""
+        # Configure mock to raise exception
+        mock_auth_service_instance = mock_auth_service.return_value
+        mock_auth_service_instance.login.side_effect = Exception('Database error')
+        
+        # Make request
+        data = {
+            'email': 'test@example.com',
+            'password': 'Password123!' # NOSONAR – test data, not a real secret
+        }
+        response = self.client.post(self.url, data, format='json')
+        
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn('detail', response.data)
+        self.assertEqual(response.data['detail'], 'Login failed. Please try again.')
+
+    def test_invalid_request_data(self):
+        """Test login with invalid request format - edge case"""
+        # Make request with invalid data
+        data = {
+            'email': 'not-an-email',
+            'password': 'short'
+        }
+        response = self.client.post(self.url, data, format='json')
+        
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
