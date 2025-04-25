@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.urls import resolve, reverse
-from pt_backend.views import PasswordResetLinkRequestView
+from authentication.views import PasswordResetLinkRequestView
 
 class PasswordResetURLTests(TestCase):
     """Test the URL patterns for password reset functionality"""
@@ -16,4 +16,4 @@ class PasswordResetURLTests(TestCase):
     def test_password_reset_request_url_name(self):
         """Test the named URL for password reset request"""
         url = reverse('password-reset-request')
-        self.assertEqual(url, '/api/auth/password-reset-request/')
+        self.assertEqual(url, '/authentication/password-reset-request')
