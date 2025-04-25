@@ -36,7 +36,16 @@ class PasswordResetService:
         return True
     
     def get_user_from_uidb64(self, uidb64):
-        pass
-
+        """Decode uidb64 and retrieve the user"""
+        try:
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = User.objects.get(pk=uid)
+            return user
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return None
+    
     def validate_token(self, user, token):
-        pass
+        """Validate if the token is valid for the given user"""
+        if not user:
+            return False
+        return default_token_generator.check_token(user, token)
