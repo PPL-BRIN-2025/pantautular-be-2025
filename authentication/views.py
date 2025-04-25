@@ -78,4 +78,10 @@ class PasswordResetLinkValidateView(APIView):
         self.password_reset_service = PasswordResetService()
 
     def get(self, request, uidb64, token):
-        pass
+        user = self.password_reset_service.get_user_from_uidb64(uidb64)
+        if not user:
+            return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
+
+        if self.password_reset_service.validate_token(user, token):
+            return Response({"valid": True}, status=status.HTTP_200_OK)
+        return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
