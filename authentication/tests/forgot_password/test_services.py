@@ -3,6 +3,9 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import patch, MagicMock
 from authentication.services import PasswordResetService
+from django.contrib.auth.hashers import check_password
+from pt_backend.models import User
+from authentication.services.change_password_service import ChangePasswordService
 
 get_user_model = PasswordResetService.get_user_model
 
@@ -102,3 +105,38 @@ class TestPasswordResetService(TestCase):
         uid, token = service.generate_password_reset_token(self.user)
         link = service.create_password_reset_link(uid, token)
         self.assertTrue('!@#$%^&*()' in link)
+
+
+class ChangePasswordServiceTest(TestCase):
+
+    def test_change_password_success(self):
+        user = User.objects.create(name="Charlie", email="charlie@example.com", password="oldpass", role="USER")
+        service = ChangePasswordService()
+        result = service.change_password("charlie@example.com", "newsecurepass")
+
+        user.refresh_from_db()
+        self.assertTrue(result)
+        self.assertTrue(check_password("newsecurepass", user.password))
+
+    def test_change_password_user_not_found(self):
+        service = ChangePasswordService()
+        result = service.change_password("ghost@example.com", "pass")
+        self.assertFalse(result)
+
+    def test_change_password_empty_password(self):
+        user = User.objects.create(name="Dana", email="dana@example.com", password="oldpass", role="USER")
+        service = ChangePasswordService()
+        result = service.change_password("dana@example.com", "")
+
+        user.refresh_from_db()
+        self.assertTrue(result)
+        self.assertTrue(check_password("", user.password))
+
+    def test_change_password_reuse_same_password(self):
+        user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER")
+        service = ChangePasswordService()
+        result = service.change_password("eli@example.com", "oldpass")
+
+        user.refresh_from_db()
+        self.assertTrue(result)
+        self.assertTrue(check_password("oldpass", user.password))  # oldpass will be rehashed
