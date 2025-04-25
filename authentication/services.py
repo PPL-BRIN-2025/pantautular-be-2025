@@ -4,9 +4,13 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from pt_backend.models import User
 
+import os
+
 class PasswordResetService:
-    def __init__(self, reset_url_base="http://localhost:3000/authentication/reset-password"):
-        self.reset_url_base = reset_url_base
+    def __init__(self, reset_url_base=None):
+        self.reset_url_base = reset_url_base or os.getenv(
+            'PROD_PASSWORD_RESET_URL') or os.getenv(
+            'DEV_PASSWORD_RESET_URL')
     
     def find_user_by_email(self, email):
         return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
