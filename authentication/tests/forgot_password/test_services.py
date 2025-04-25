@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from authentication.services import PasswordResetService
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
-from authentication.services.change_password_service import ChangePasswordService
+from authentication.services import ChangePasswordService
 
 get_user_model = PasswordResetService.get_user_model
 

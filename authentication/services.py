@@ -4,6 +4,8 @@ from django.core.mail import send_mail
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from pt_backend.models import User
+from django.contrib.auth.hashers import make_password
+from .repository import UserRepository
 
 class PasswordResetService:
     def __init__(self, reset_url_base="http://localhost:3000/authentication/reset-password"):
@@ -39,4 +41,20 @@ class PasswordResetService:
         uid, token = self.generate_password_reset_token(user)
         reset_link = self.create_password_reset_link(uid, token)
         self.send_password_reset_email(email, reset_link)
+        return True
+    
+
+
+
+class ChangePasswordService:
+    def __init__(self, repository: UserRepository = UserRepository()):
+        self.repository = repository
+
+    def change_password(self, email: str, new_password: str) -> bool:
+        user = self.repository.get_user_by_email(email)
+        if not user:
+            return False
+
+        user.password = make_password(new_password)
+        self.repository.save_user(user)
         return True
