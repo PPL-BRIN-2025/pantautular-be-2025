@@ -68,3 +68,14 @@ class PasswordResetLinkRequestView(APIView):
         except Exception as e:
             logger.error(f"Error sending password reset link: {str(e)}")
             return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class PasswordResetLinkValidateView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.password_reset_service = PasswordResetService()
+
+    def get(self, request, uidb64, token):
+        pass
