@@ -15,7 +15,7 @@ class TestPasswordResetService(TestCase):
         self.user = user_model.objects.create(
             email='test@example.com',
             name='testuser',
-            password='oldpassword123',
+            password='oldpassword123', # NOSONAR – test data, not a real secret
             role="TEST ROLE"
         )
         self.service = PasswordResetService()
@@ -92,7 +92,7 @@ class TestPasswordResetService(TestCase):
         user_model.objects.create(
             email='tëst@exämple.com',
             name='unicodeuser',
-            password='password123',
+            password='password123', # NOSONAR – test data, not a real secret
             role="TEST ROLE"
         )
         
@@ -110,7 +110,7 @@ class TestPasswordResetService(TestCase):
 class ChangePasswordServiceTest(TestCase):
 
     def test_change_password_success(self):
-        user = User.objects.create(name="Charlie", email="charlie@example.com", password="oldpass", role="USER")
+        user = User.objects.create(name="Charlie", email="charlie@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
         service = ChangePasswordService()
         result = service.change_password("charlie@example.com", "newsecurepass")
 
@@ -124,7 +124,7 @@ class ChangePasswordServiceTest(TestCase):
         self.assertFalse(result)
 
     def test_change_password_empty_password(self):
-        user = User.objects.create(name="Dana", email="dana@example.com", password="oldpass", role="USER")
+        user = User.objects.create(name="Dana", email="dana@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
         service = ChangePasswordService()
         result = service.change_password("dana@example.com", "")
 
@@ -133,10 +133,10 @@ class ChangePasswordServiceTest(TestCase):
         self.assertTrue(check_password("", user.password))
 
     def test_change_password_reuse_same_password(self):
-        user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER")
+        user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
         service = ChangePasswordService()
         result = service.change_password("eli@example.com", "oldpass")
 
         user.refresh_from_db()
         self.assertTrue(result)
-        self.assertTrue(check_password("oldpass", user.password))  # oldpass will be rehashed
+        self.assertTrue(check_password("oldpass", user.password))  
