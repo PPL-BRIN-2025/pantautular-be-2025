@@ -157,7 +157,7 @@ class LoginAPIViewTests(TestCase):
         # Make request with invalid data
         data = {
             'email': 'not-an-email',
-            'password': 'short'
+            'password': 'short' # NOSONAR – test data, not a real secret
         }
         response = self.client.post(self.url, data, format='json')
         
