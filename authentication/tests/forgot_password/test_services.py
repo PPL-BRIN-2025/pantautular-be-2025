@@ -100,3 +100,50 @@ class TestPasswordResetService(TestCase):
         uid, token = service.generate_password_reset_token(self.user)
         link = service.create_password_reset_link(uid, token)
         self.assertTrue('!@#$%^&*()' in link)
+    
+    def test_get_user_from_uidb64_valid(self):
+        """Test retrieving a user from a valid uidb64"""
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        user = self.service.get_user_from_uidb64(uidb64)
+        self.assertEqual(user.id, self.user.id)
+        self.assertEqual(user.email, 'test@example.com')
+
+    def test_get_user_from_uidb64_invalid_format(self):
+        """Test retrieving a user with invalid uidb64 format"""
+        user = self.service.get_user_from_uidb64('invalid-base64')
+        self.assertIsNone(user)
+
+    def test_get_user_from_uidb64_nonexistent_user(self):
+        """Test retrieving a non-existent user from uidb64"""
+        uidb64 = urlsafe_base64_encode(force_bytes(99999))
+        user = self.service.get_user_from_uidb64(uidb64)
+        self.assertIsNone(user)
+
+    def test_get_user_from_uidb64_empty(self):
+        """Test retrieving a user with empty uidb64"""
+        user = self.service.get_user_from_uidb64('')
+        self.assertIsNone(user)
+
+    def test_validate_token_valid(self):
+        """Test validating a valid token"""
+        token = default_token_generator.make_token(self.user)
+        result = self.service.validate_token(self.user, token)
+        self.assertTrue(result)
+
+    def test_validate_token_invalid(self):
+        """Test validating an invalid token"""
+        token = "invalid-token"
+        result = self.service.validate_token(self.user, token)
+        self.assertFalse(result)
+
+    def test_validate_token_none_user(self):
+        """Test validating a token with None user"""
+        token = "some-token"
+        result = self.service.validate_token(None, token)
+        self.assertFalse(result)
+
+    def test_validate_token_empty(self):
+        """Test validating an empty token"""
+        token = ""
+        result = self.service.validate_token(self.user, token)
+        self.assertFalse(result)

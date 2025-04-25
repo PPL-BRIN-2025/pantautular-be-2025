@@ -34,3 +34,9 @@ class PasswordResetService:
         reset_link = self.create_password_reset_link(uid, token)
         self.send_password_reset_email(email, reset_link)
         return True
+    
+    def get_user_from_uidb64(self, uidb64):
+        pass
+
+    def validate_token(self, user, token):
+        pass
