@@ -151,12 +151,9 @@ class TestPasswordResetValidateView(TestCase):
             password='oldpassword123',
             role="TEST ROLE"
         )
-        # Base URL for validation endpoints
         self.validate_url_base = '/authentication/password-reset-validate'
-        # Sample uidb64 and token (will be used in mock returns)
         self.valid_uidb64 = 'valid-uid'
         self.valid_token = 'valid-token'
-        # Full URL for a valid request
         self.valid_url = f"{self.validate_url_base}/{self.valid_uidb64}/{self.valid_token}"
         
     # Positive test case
@@ -165,22 +162,18 @@ class TestPasswordResetValidateView(TestCase):
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_successful(self, mock_auth, mock_get_user, mock_validate):
         """Test successful token validation"""
-        # Setup mocks
         mock_auth.return_value = (self.user, 'some-token')
         mock_get_user.return_value = self.user
         mock_validate.return_value = True
         
-        # Execute request
         response = self.client.get(
             self.valid_url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Assertions
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('valid', response.json())
         self.assertTrue(response.json()['valid'])
-        # Verify mocks were called correctly
         mock_get_user.assert_called_once_with(self.valid_uidb64)
         mock_validate.assert_called_once_with(self.user, self.valid_token)
     
@@ -189,21 +182,17 @@ class TestPasswordResetValidateView(TestCase):
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_user_not_found(self, mock_auth, mock_get_user):
         """Test token validation with non-existent user"""
-        # Setup mocks
         mock_auth.return_value = (self.user, 'some-token')
         mock_get_user.return_value = None
         
-        # Execute request
         response = self.client.get(
             self.valid_url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Assertions
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('valid', response.json())
         self.assertFalse(response.json()['valid'])
-        # Verify mock was called correctly
         mock_get_user.assert_called_once_with(self.valid_uidb64)
     
     @patch('authentication.services.PasswordResetService.validate_token')
@@ -211,22 +200,18 @@ class TestPasswordResetValidateView(TestCase):
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_invalid_token(self, mock_auth, mock_get_user, mock_validate):
         """Test token validation with invalid token"""
-        # Setup mocks
         mock_auth.return_value = (self.user, 'some-token')
         mock_get_user.return_value = self.user
         mock_validate.return_value = False
         
-        # Execute request
         response = self.client.get(
             self.valid_url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Assertions
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('valid', response.json())
         self.assertFalse(response.json()['valid'])
-        # Verify mocks were called correctly
         mock_get_user.assert_called_once_with(self.valid_uidb64)
         mock_validate.assert_called_once_with(self.user, self.valid_token)
     
@@ -234,37 +219,29 @@ class TestPasswordResetValidateView(TestCase):
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_empty_uidb64(self, mock_auth):
         """Test token validation with empty uidb64"""
-        # Setup mock
         mock_auth.return_value = (self.user, 'some-token')
         
-        # URL with empty uidb64
         url = f"{self.validate_url_base}//valid-token"
         
-        # Execute request
         response = self.client.get(
             url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Expect 404 since URL pattern won't match
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
     
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_empty_token(self, mock_auth):
         """Test token validation with empty token"""
-        # Setup mock
         mock_auth.return_value = (self.user, 'some-token')
         
-        # URL with empty token
         url = f"{self.validate_url_base}/valid-uid/"
         
-        # Execute request
         response = self.client.get(
             url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Expect 404 since URL pattern won't match
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
     
     @patch('authentication.services.PasswordResetService.validate_token')
@@ -272,24 +249,19 @@ class TestPasswordResetValidateView(TestCase):
     @patch('authentication.security.APIKeyAuthentication.authenticate')
     def test_validate_token_special_chars(self, mock_auth, mock_get_user, mock_validate):
         """Test token validation with special characters in token"""
-        # Setup mocks
         mock_auth.return_value = (self.user, 'some-token')
         mock_get_user.return_value = self.user
         mock_validate.return_value = True
         
-        # Use URL-safe special characters
-        special_token = "abc-_.~+*"  # These are safely transmitted in URLs
+        special_token = "abc-_.~+*"
         special_url = f"{self.validate_url_base}/{self.valid_uidb64}/{special_token}"
         
-        # Execute request
         response = self.client.get(
             special_url,
             HTTP_X_API_KEY='test-api-key'
         )
         
-        # Assertions
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('valid', response.json())
         self.assertTrue(response.json()['valid'])
-        # Verify mocks were called correctly with the special token
         mock_validate.assert_called_once_with(self.user, special_token)
