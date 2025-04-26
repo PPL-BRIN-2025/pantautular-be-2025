@@ -34,7 +34,7 @@ class TestPasswordResetService(TestCase):
         """Test that reset link creation works properly"""
         uid, token = self.service.generate_password_reset_token(self.user)
         link = self.service.create_password_reset_link(uid, token)
-        self.assertTrue(link.startswith("http://localhost:3000/authentication/reset-password/"))
+        self.assertTrue(link.startswith("http://localhost:3000/forgot-password/reset"))
         self.assertTrue(uid in link)
         self.assertTrue(token in link)
         
