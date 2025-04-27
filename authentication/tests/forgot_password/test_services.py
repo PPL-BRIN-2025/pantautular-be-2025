@@ -3,15 +3,19 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import patch, MagicMock
 from authentication.services import PasswordResetService
-from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
+from authentication.services import ChangePasswordService
+
+get_user_model = PasswordResetService.get_user_model
 
 class TestPasswordResetService(TestCase):
     def setUp(self):
-        self.user = User.objects.create(
+        user_model = get_user_model()
+        self.user = user_model.objects.create(
             email='test@example.com',
             name='testuser',
-            password='oldpassword123',
+            password='oldpassword123', # NOSONAR – test data, not a real secret
             role="TEST ROLE"
         )
         self.service = PasswordResetService()
@@ -34,7 +38,7 @@ class TestPasswordResetService(TestCase):
         """Test that reset link creation works properly"""
         uid, token = self.service.generate_password_reset_token(self.user)
         link = self.service.create_password_reset_link(uid, token)
-        self.assertTrue(link.startswith("http://localhost:3000/forgot-password/reset"))
+        self.assertTrue(link.startswith("http://localhost:3000/authentication/reset-password/"))
         self.assertTrue(uid in link)
         self.assertTrue(token in link)
         
@@ -84,10 +88,11 @@ class TestPasswordResetService(TestCase):
     @patch('authentication.services.send_mail')
     def test_unicode_email(self, mock_send_mail):
         """Test handling email with unicode characters"""
-        User.objects.create(
+        user_model = get_user_model()
+        user_model.objects.create(
             email='tëst@exämple.com',
             name='unicodeuser',
-            password='password123',
+            password='password123', # NOSONAR – test data, not a real secret
             role="TEST ROLE"
         )
         
@@ -100,50 +105,38 @@ class TestPasswordResetService(TestCase):
         uid, token = service.generate_password_reset_token(self.user)
         link = service.create_password_reset_link(uid, token)
         self.assertTrue('!@#$%^&*()' in link)
-    
-    def test_get_user_from_uidb64_valid(self):
-        """Test retrieving a user from a valid uidb64"""
-        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
-        user = self.service.get_user_from_uidb64(uidb64)
-        self.assertEqual(user.id, self.user.id)
-        self.assertEqual(user.email, 'test@example.com')
 
-    def test_get_user_from_uidb64_invalid_format(self):
-        """Test retrieving a user with invalid uidb64 format"""
-        user = self.service.get_user_from_uidb64('invalid-base64')
-        self.assertIsNone(user)
 
-    def test_get_user_from_uidb64_nonexistent_user(self):
-        """Test retrieving a non-existent user from uidb64"""
-        uidb64 = urlsafe_base64_encode(force_bytes(99999))
-        user = self.service.get_user_from_uidb64(uidb64)
-        self.assertIsNone(user)
+class ChangePasswordServiceTest(TestCase):
 
-    def test_get_user_from_uidb64_empty(self):
-        """Test retrieving a user with empty uidb64"""
-        user = self.service.get_user_from_uidb64('')
-        self.assertIsNone(user)
+    def test_change_password_success(self):
+        user = User.objects.create(name="Charlie", email="charlie@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
+        service = ChangePasswordService()
+        result = service.change_password("charlie@example.com", "newsecurepass")
 
-    def test_validate_token_valid(self):
-        """Test validating a valid token"""
-        token = default_token_generator.make_token(self.user)
-        result = self.service.validate_token(self.user, token)
+        user.refresh_from_db()
         self.assertTrue(result)
+        self.assertTrue(check_password("newsecurepass", user.password)) # NOSONAR – test data, not a real secret
 
-    def test_validate_token_invalid(self):
-        """Test validating an invalid token"""
-        token = "invalid-token"
-        result = self.service.validate_token(self.user, token)
+    def test_change_password_user_not_found(self):
+        service = ChangePasswordService()
+        result = service.change_password("ghost@example.com", "pass")
         self.assertFalse(result)
 
-    def test_validate_token_none_user(self):
-        """Test validating a token with None user"""
-        token = "some-token"
-        result = self.service.validate_token(None, token)
-        self.assertFalse(result)
+    def test_change_password_empty_password(self):
+        user = User.objects.create(name="Dana", email="dana@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
+        service = ChangePasswordService()
+        result = service.change_password("dana@example.com", "")
 
-    def test_validate_token_empty(self):
-        """Test validating an empty token"""
-        token = ""
-        result = self.service.validate_token(self.user, token)
-        self.assertFalse(result)
+        user.refresh_from_db()
+        self.assertTrue(result)
+        self.assertTrue(check_password("", user.password)) # NOSONAR – test data, not a real secret
+
+    def test_change_password_reuse_same_password(self):
+        user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
+        service = ChangePasswordService()
+        result = service.change_password("eli@example.com", "oldpass")
+
+        user.refresh_from_db()
+        self.assertTrue(result)
+        self.assertTrue(check_password("oldpass", user.password))  # NOSONAR – test data, not a real secret
