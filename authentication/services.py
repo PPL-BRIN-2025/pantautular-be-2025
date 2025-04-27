@@ -26,13 +26,14 @@ class PasswordResetService:
         return uid, token
 
     def create_password_reset_link(self, uid, token):
-        return f"{self.reset_url_base}?uid={uid}&token={token}"
+        return f"{self.reset_url_base}/{uid}/{token}"
     
     def process_reset_request(self, email):
         user = self.find_user_by_email(email)
-        uid, token = self.generate_password_reset_token(user)
-        reset_link = self.create_password_reset_link(uid, token)
-        self.email_service.send_password_reset_email(email, reset_link)
+        if user:
+            uid, token = self.generate_password_reset_token(user)
+            reset_link = self.create_password_reset_link(uid, token)
+            self.email_service.send_password_reset_email(email, reset_link)
         return True
     
     def get_user_from_uidb64(self, uidb64):
