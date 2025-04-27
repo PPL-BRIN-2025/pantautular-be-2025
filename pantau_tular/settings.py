@@ -80,6 +80,11 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
 
+ACCOUNT_LOCKOUT = {
+    'MAX_FAILED_ATTEMPTS': 5,
+    'LOCKOUT_DURATION': 60 * 15, 
+}
+
 ROOT_URLCONF = 'pantau_tular.urls'
 
 TEMPLATES = [
