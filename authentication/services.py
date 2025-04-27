@@ -1,5 +1,4 @@
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from pt_backend.models import User
@@ -7,12 +6,15 @@ from django.contrib.auth.hashers import make_password
 from .repository import UserRepository
 
 import os
+from authentication.email_services import BrevoEmailService
 
 class PasswordResetService:
-    def __init__(self, reset_url_base=None):
+    def __init__(self, reset_url_base=None, email_service=None):
         self.reset_url_base = reset_url_base or os.getenv(
             'PROD_PASSWORD_RESET_URL') or os.getenv(
             'DEV_PASSWORD_RESET_URL')
+        
+        self.email_service = email_service or BrevoEmailService()
     
     def find_user_by_email(self, email):
         return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
@@ -23,37 +25,13 @@ class PasswordResetService:
         return uid, token
 
     def create_password_reset_link(self, uid, token):
-        return f"{self.reset_url_base}/{uid}/{token}"
-    
-    def send_password_reset_email(self, email, reset_link):
-        send_mail(
-            subject="Reset Password Akunmu",
-            message=f"Klik link berikut untuk mereset password akunmu: {reset_link}",
-            from_email="no-reply@gmail.com",
-            recipient_list=[email],
-            fail_silently=False,
-        )
+        return f"{self.reset_url_base}?uid={uid}&token={token}"
     
     def process_reset_request(self, email):
         user = self.find_user_by_email(email)
         uid, token = self.generate_password_reset_token(user)
         reset_link = self.create_password_reset_link(uid, token)
-        self.send_password_reset_email(email, reset_link)
-        return True
-    
-
-
-class ChangePasswordService:
-    def __init__(self, repository: UserRepository = UserRepository()):
-        self.repository = repository
-
-    def change_password(self, email: str, new_password: str) -> bool:
-        user = self.repository.get_user_by_email(email)
-        if not user:
-            return False
-
-        user.password = make_password(new_password)
-        self.repository.save_user(user)
+        self.email_service.send_password_reset_email(email, reset_link)
         return True
     
     def get_user_from_uidb64(self, uidb64):
@@ -70,4 +48,16 @@ class ChangePasswordService:
         if not user:
             return False
         return default_token_generator.check_token(user, token)
+    
+class ChangePasswordService:
+    def __init__(self, repository: UserRepository = UserRepository()):
+        self.repository = repository
 
+    def change_password(self, email: str, new_password: str) -> bool:
+        user = self.repository.get_user_by_email(email)
+        if not user:
+            return False
+
+        user.password = make_password(new_password)
+        self.repository.save_user(user)
+        return True

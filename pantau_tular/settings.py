@@ -67,6 +67,7 @@ MIDDLEWARE = [
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "user": "10/min",   
+        "password_reset": "5/day",
     },
 }
 
