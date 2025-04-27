@@ -116,7 +116,7 @@ class ChangePasswordServiceTest(TestCase):
 
         user.refresh_from_db()
         self.assertTrue(result)
-        self.assertTrue(check_password("newsecurepass", user.password))
+        self.assertTrue(check_password("newsecurepass", user.password)) # NOSONAR – test data, not a real secret
 
     def test_change_password_user_not_found(self):
         service = ChangePasswordService()
@@ -130,7 +130,7 @@ class ChangePasswordServiceTest(TestCase):
 
         user.refresh_from_db()
         self.assertTrue(result)
-        self.assertTrue(check_password("", user.password))
+        self.assertTrue(check_password("", user.password)) # NOSONAR – test data, not a real secret
 
     def test_change_password_reuse_same_password(self):
         user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
@@ -139,4 +139,4 @@ class ChangePasswordServiceTest(TestCase):
 
         user.refresh_from_db()
         self.assertTrue(result)
-        self.assertTrue(check_password("oldpass", user.password))  
+        self.assertTrue(check_password("oldpass", user.password))  # NOSONAR – test data, not a real secret
