@@ -282,14 +282,14 @@ class TestPasswordResetConfirmView(TestCase):
         self.valid_url = f"{self.confirm_url_base}/{self.valid_uidb64}/{self.valid_token}"
         
         # Valid password that meets all requirements
-        self.valid_password = "TestPass123!"
+        self.valid_password = "TestPass123!" # NOSONAR – test data, not a real secret
         self.valid_data = {
             'password': self.valid_password,
             'password-confirm': self.valid_password
         }
     
     
-    @patch('authentication.services.ChangePasswordService.change_password')  # Changed from PasswordResetService.reset_password
+    @patch('authentication.services.ChangePasswordService.change_password')
     @patch('authentication.services.PasswordResetService.validate_token')
     @patch('authentication.services.PasswordResetService.get_user_from_uidb64')
     @patch('authentication.security.APIKeyAuthentication.authenticate')

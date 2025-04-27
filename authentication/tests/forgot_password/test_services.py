@@ -237,7 +237,7 @@ class TestPasswordValidationService(TestCase):
 
     def test_validate_password_no_lowercase(self):
         """Test that a password without lowercase letters fails validation"""
-        password = "UPPERCASE123!"
+        password = "UPPERCASE123!" # NOSONAR – test data, not a real secret
         result, detail = self.service.validate_password_strength(password)
         self.assertFalse(result)
         self.assertEqual(detail, "Password harus mengandung minimal 1 huruf kecil")
