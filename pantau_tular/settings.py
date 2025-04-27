@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +32,10 @@ SECRET_API_KEY = os.getenv('SECRET_API_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
+# settings.py
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
+
 ALLOWED_HOSTS = ["localhost", "127.0.0.1",".up.railway.app"]
 
 # Application definition
@@ -47,6 +52,8 @@ INSTALLED_APPS = [
     'hello',
     'corsheaders',
     'django_prometheus',
+    'authentication',
+    'rest_framework_simplejwt',
 ]
 
 MIDDLEWARE = [
@@ -61,6 +68,25 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
+
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "10/min",   
+    },
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+}
+
+ACCOUNT_LOCKOUT = {
+    'MAX_FAILED_ATTEMPTS': 5,
+    'LOCKOUT_DURATION': 60 * 15, 
+}
 
 ROOT_URLCONF = 'pantau_tular.urls'
 
