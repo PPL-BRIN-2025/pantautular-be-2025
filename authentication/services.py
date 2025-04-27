@@ -1,3 +1,4 @@
+import re
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
@@ -61,3 +62,32 @@ class ChangePasswordService:
         user.password = make_password(new_password)
         self.repository.save_user(user)
         return True
+    
+class PasswordValidationService:
+    @staticmethod
+    def validate_password_match(password, password_confirm):
+        """Validate that password and confirmation match."""
+        return password == password_confirm
+    
+    @staticmethod
+    def validate_password_strength(password):
+        """
+        Validate password strength requirements.
+        Returns (bool, str): (is_valid, error_message)
+        """
+        if len(password) < 8:
+            return False, "Password harus minimal 8 karakter"
+            
+        if not re.search(r'[A-Z]', password):
+            return False, "Password harus mengandung minimal 1 huruf besar"
+            
+        if not re.search(r'[a-z]', password):
+            return False, "Password harus mengandung minimal 1 huruf kecil"
+            
+        if not re.search(r'[0-9]', password):
+            return False, "Password harus mengandung minimal 1 angka"
+            
+        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>/?]', password):
+            return False, "Password harus mengandung minimal 1 karakter spesial"
+            
+        return True, ""
