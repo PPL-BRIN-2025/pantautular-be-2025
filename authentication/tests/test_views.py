@@ -163,3 +163,29 @@ class LoginAPIViewTests(TestCase):
         
         # Verify
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('authentication.views.AuthService')
+    def test_account_lockout(self, mock_auth_service):
+        """Test login with locked account - account lockout feature"""
+        lockout_message = "Account is locked due to too many failed attempts. Try again in 14 minutes and 55 seconds."
+        mock_auth_service_instance = mock_auth_service.return_value
+        mock_auth_service_instance.login.return_value = {
+            'locked': True,
+            'message': lockout_message
+        }
+        
+        # Make request
+        data = {
+            'email': 'test@example.com',
+            'password': 'Password123!' # NOSONAR – test data, not a real secret
+        }
+        response = self.client.post(self.url, data, format='json')
+        
+        # Verify
+        self.assertEqual(response.status_code, status.HTTP_423_LOCKED)
+        self.assertIn('detail', response.data)
+        self.assertEqual(response.data['detail'], lockout_message)
+        mock_auth_service_instance.login.assert_called_once_with(
+            email='test@example.com', 
+            password='Password123!' # NOSONAR – test data, not a real secret
+        )
