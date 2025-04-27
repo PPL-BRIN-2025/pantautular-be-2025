@@ -29,9 +29,10 @@ class PasswordResetService:
     
     def process_reset_request(self, email):
         user = self.find_user_by_email(email)
-        uid, token = self.generate_password_reset_token(user)
-        reset_link = self.create_password_reset_link(uid, token)
-        self.email_service.send_password_reset_email(email, reset_link)
+        if user:
+            uid, token = self.generate_password_reset_token(user)
+            reset_link = self.create_password_reset_link(uid, token)
+            self.email_service.send_password_reset_email(email, reset_link)
         return True
     
     def get_user_from_uidb64(self, uidb64):
