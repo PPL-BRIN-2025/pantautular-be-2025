@@ -49,6 +49,12 @@ class LoginAPIView(APIView):
                 email=serializer.validated_data['email'],
                 password=serializer.validated_data['password']
             )
+
+            if tokens and isinstance(tokens, dict) and tokens.get('locked'):
+                return Response(
+                    {"detail": tokens['message']},
+                    status=status.HTTP_423_LOCKED
+                )
             
             if not tokens:
                 return Response(
