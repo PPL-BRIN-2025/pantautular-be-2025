@@ -85,7 +85,7 @@ class PasswordValidationService:
         if not re.search(r'[a-z]', password):
             return False, "Password harus mengandung minimal 1 huruf kecil"
             
-        if not re.search(r'[0-9]', password):
+        if not re.search(r'\d', password):
             return False, "Password harus mengandung minimal 1 angka"
             
         if not re.search(r'[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>/?]', password):
