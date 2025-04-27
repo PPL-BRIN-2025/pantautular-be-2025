@@ -377,3 +377,127 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             alert_levels=None,
             date_range=None
         )
+    
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.Location.objects.filter')
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_with_province_location(self, mock_service, mock_location_filter, mock_auth):
+        """Test POST with a location that is a province but not a city"""
+        # Setup mocks
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+        
+        # Mock Location.objects.filter to return different results based on arguments
+        def mock_filter_side_effect(**kwargs):
+            if 'province' in kwargs:
+                # When checking if location is a province
+                province_name = kwargs['province']
+                # Create a mock that will return True for province existence check
+                mock_exists = MagicMock()
+                mock_exists.exists.return_value = province_name == "DKI Jakarta"
+                return mock_exists
+            
+            elif 'city' in kwargs:
+                # This should not be called for province locations due to continue statement
+                self.fail("City check should not be called for province locations due to continue statement")
+                
+            return MagicMock()
+        
+        mock_location_filter.side_effect = mock_filter_side_effect
+        
+        # Make request with a location that is ONLY a province
+        response = self.client.post(
+            self.url,
+            data={"locations": ["DKI Jakarta"]},
+            format='json'
+        )
+        
+        # Assertions
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify the service was called with the correct parameters
+        mock_service_instance.get_filter_stats.assert_called_once_with(
+            diseases=None,
+            provinces=["DKI Jakarta"],  # Should include DKI Jakarta as province
+            cities=None,                # No cities should be included
+            news_portals=None,
+            alert_levels=None,
+            date_range=None
+        )
+    
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.Location.objects.filter')
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_with_mixed_province_and_city_locations(self, mock_service, mock_location_filter, mock_auth):
+        """Test POST with both province and city locations"""
+        # Setup mocks
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+        
+        # Track which locations have been processed as provinces
+        processed_as_province = set()
+        
+        # Mock Location.objects.filter to handle both province and city checks
+        def mock_filter_side_effect(**kwargs):
+            if 'province' in kwargs:
+                # When checking if location is a province
+                province_name = kwargs['province']
+                is_province = province_name == "DKI Jakarta"
+                
+                if is_province:
+                    processed_as_province.add(province_name)
+                    
+                mock_exists = MagicMock()
+                mock_exists.exists.return_value = is_province
+                return mock_exists
+            
+            elif 'city' in kwargs:
+                # When checking if location is a city
+                city_name = kwargs['city']
+                
+                # Skip city check for province (to verify continue statement worked)
+                if city_name in processed_as_province:
+                    self.fail(f"City check should not be called for province {city_name}")
+                
+                # Only Jakarta is a city
+                is_city = city_name == "Jakarta"
+                mock_exists = MagicMock()
+                mock_exists.exists.return_value = is_city
+                
+                if is_city:
+                    # For values_list call that gets provinces for cities
+                    mock_values = MagicMock()
+                    mock_values.distinct.return_value = ["DKI Jakarta"]
+                    mock_filter_result = MagicMock()
+                    mock_filter_result.values_list.return_value = mock_values
+                    return mock_filter_result
+                
+                return mock_exists
+            
+            return MagicMock()
+        
+        mock_location_filter.side_effect = mock_filter_side_effect
+        
+        # Make request with both province and city locations
+        response = self.client.post(
+            self.url,
+            data={"locations": ["DKI Jakarta", "Jakarta", "Unknown"]},
+            format='json'
+        )
+        
+        # Assertions
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify the service was called with correct parameters
+        actual_call = mock_service_instance.get_filter_stats.call_args
+        actual_kwargs = actual_call[1]
+        
+        # DKI Jakarta should be in provinces list (from direct province check)
+        # DKI Jakarta should also be from Jakarta city's province (but deduplicated)
+        self.assertIn("DKI Jakarta", actual_kwargs['provinces'])
+        self.assertEqual(actual_kwargs['provinces'].count("DKI Jakarta"), 1)  # Should be deduplicated
+        
+        # Only Jakarta should be in cities
+        self.assertEqual(actual_kwargs['cities'], ["Jakarta"])

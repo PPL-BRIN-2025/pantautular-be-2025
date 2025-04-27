@@ -128,3 +128,167 @@ class SeverityFilteringServiceTestCase(TestCase):
         self.assertEqual(result["disease_stats"], self.mock_disease_stats)
         self.assertEqual(result["province_stats"], self.mock_province_stats)
         self.assertEqual(result["city_stats"], self.mock_city_stats)
+
+class CasesFilterServiceTestCase(TestCase):
+    """Test class specifically for CasesFilterService"""
+    
+    def setUp(self):
+        # Mock case service
+        self.mock_case_service = MagicMock()
+        self.filter_service = CasesFilterService(self.mock_case_service)
+        
+        # Mock the queryset for filtering operations
+        self.mock_queryset = MagicMock()
+        self.mock_filtered_queryset = MagicMock()
+        self.mock_case_service.get_all_cases.return_value = self.mock_queryset
+        
+        # Set up the mock queryset to return a new mock when filter is called
+        self.mock_queryset.filter.return_value = self.mock_filtered_queryset
+    
+    def test_filter_by_disease(self):
+        """Test that _filter_by_disease properly filters cases by disease name"""
+        # Test data
+        disease_names = ["COVID-19", "Dengue"]
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_disease(self.mock_queryset, disease_names)
+        
+        # Check filter was called with correct arguments
+        self.mock_queryset.filter.assert_called_once_with(disease__name__in=disease_names)
+        
+        # Verify result is the filtered queryset
+        self.assertEqual(result, self.mock_filtered_queryset)
+    
+    def test_date_range_as_dictionary(self):
+        """Test _filter_by_news_date_range with date_range as a dictionary"""
+        # Test data with dictionary date range
+        date_range = {
+            'start': '2023-01-01',
+            'end': '2023-12-31'
+        }
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range)
+        
+        # Check that filter was called with correct arguments for date range
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__range=[date_range['start'], date_range['end']]
+        )
+        
+        # Verify result is the filtered queryset
+        self.assertEqual(result, self.mock_filtered_queryset)
+    
+    def test_date_range_as_dictionary_with_only_start_date(self):
+        """Test _filter_by_news_date_range with dictionary containing only start date"""
+        # Test data with dictionary containing only start date
+        date_range = {
+            'start': '2023-01-01',
+            'end': None
+        }
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range)
+        
+        # Check that filter was called with correct arguments for start date only
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__gte=date_range['start']
+        )
+        
+        # Verify result is the filtered queryset
+        self.assertEqual(result, self.mock_filtered_queryset)
+    
+    def test_date_range_as_dictionary_with_only_end_date(self):
+        """Test _filter_by_news_date_range with dictionary containing only end date"""
+        # Test data with dictionary containing only end date
+        date_range = {
+            'start': None,
+            'end': '2023-12-31'
+        }
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range)
+        
+        # Check that filter was called with correct arguments for end date only
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__lte=date_range['end']
+        )
+        
+        # Verify result is the filtered queryset
+        self.assertEqual(result, self.mock_filtered_queryset)
+    
+    def test_date_range_as_empty_dictionary(self):
+        """Test _filter_by_news_date_range with an empty dictionary"""
+        # Test data with empty dictionary
+        date_range = {}
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range)
+        
+        # The filter should not be called since both start and end dates would be None
+        self.mock_queryset.filter.assert_not_called()
+        
+        # Should return the original queryset
+        self.assertEqual(result, self.mock_queryset)
+
+    def test_filter_cases_with_ids_only(self):
+        """Test that filter_cases returns only IDs when ids_only=True"""
+        # Setup
+        mock_ids_values = MagicMock()
+        self.mock_queryset.values.return_value = mock_ids_values
+        
+        # Call the method with ids_only=True
+        result = self.filter_service.filter_cases(ids_only=True)
+        
+        # Verify that values('id') was called on the queryset
+        self.mock_queryset.values.assert_called_once_with('id')
+        
+        # Verify that the result is the mock_ids_values
+        self.assertEqual(result, mock_ids_values)
+    
+    def test_date_range_as_tuple(self):
+        """Test _filter_by_news_date_range with date_range as a tuple"""
+        # Test data with tuple date range
+        start_date = '2023-01-01'
+        end_date = '2023-12-31'
+        date_range = (start_date, end_date)
+        
+        # Call the method directly
+        result = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range)
+        
+        # Check that filter was called with correct arguments for date range
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__range=[start_date, end_date]
+        )
+        
+        # Verify result is the filtered queryset
+        self.assertEqual(result, self.mock_filtered_queryset)
+    
+    def test_date_range_as_tuple_with_none_values(self):
+        """Test _filter_by_news_date_range with tuple containing None values"""
+        # Both None
+        date_range1 = (None, None)
+        result1 = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range1)
+        self.mock_queryset.filter.assert_not_called()
+        self.assertEqual(result1, self.mock_queryset)
+        
+        # Reset the mock for next test
+        self.mock_queryset.filter.reset_mock()
+        
+        # Only start date
+        date_range2 = ('2023-01-01', None)
+        result2 = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range2)
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__gte='2023-01-01'
+        )
+        self.assertEqual(result2, self.mock_filtered_queryset)
+        
+        # Reset the mock for next test
+        self.mock_queryset.filter.reset_mock()
+        
+        # Only end date
+        date_range3 = (None, '2023-12-31')
+        result3 = self.filter_service._filter_by_news_date_range(self.mock_queryset, date_range3)
+        self.mock_queryset.filter.assert_called_once_with(
+            news__date_published__lte='2023-12-31'
+        )
+        self.assertEqual(result3, self.mock_filtered_queryset)
