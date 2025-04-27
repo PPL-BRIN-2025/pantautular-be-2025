@@ -39,10 +39,7 @@ class TestPasswordResetService(TestCase):
         
         self.assertTrue(link.startswith("http://localhost:3000/forgot-password/reset"))
         
-        self.assertTrue(f"?uid={uid}" in link)
-        self.assertTrue(f"&token={token}" in link)
-        
-        expected_format = f"{self.service.reset_url_base}?uid={uid}&token={token}"
+        expected_format = f"{self.service.reset_url_base}/{uid}/{token}"
         self.assertEqual(link, expected_format)
         
     def test_find_nonexistent_user(self):
