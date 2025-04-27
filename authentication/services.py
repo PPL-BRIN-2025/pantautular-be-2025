@@ -55,7 +55,7 @@ class ChangePasswordService:
         user.password = make_password(new_password)
         self.repository.save_user(user)
         return True
-=======
+    
     def get_user_from_uidb64(self, uidb64):
         """Decode uidb64 and retrieve the user"""
         try:
