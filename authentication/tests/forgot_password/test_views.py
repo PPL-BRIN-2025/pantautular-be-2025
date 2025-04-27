@@ -2,15 +2,12 @@ from django.test import TestCase, Client
 from unittest.mock import patch
 from rest_framework import status
 from authentication.security import APIKeyAuthentication
-from authentication.services import PasswordResetService
-
-get_user_model  = PasswordResetService.get_user_model
+from pt_backend.models import User
 
 class TestPasswordResetView(TestCase):
     def setUp(self):
         self.client = Client()
-        user_model = get_user_model()
-        self.user = user_model.objects.create(
+        self.user = User.objects.create(
             name='testuser',
             email='test@example.com',
             password='oldpassword123',
@@ -63,8 +60,7 @@ class TestPasswordResetView(TestCase):
         mock_auth.return_value = (self.user, 'some-token')
         
         # Simulate DoesNotExist exception
-        user_model = get_user_model()
-        mock_process_reset.side_effect = user_model.DoesNotExist
+        mock_process_reset.side_effect = User.DoesNotExist
         
         response = self.client.post(
             self.reset_url, 
@@ -145,3 +141,127 @@ class TestPasswordResetView(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         mock_logger.error.assert_called_once()
+
+class TestPasswordResetValidateView(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create(
+            name='testuser',
+            email='test@example.com',
+            password='oldpassword123',
+            role="TEST ROLE"
+        )
+        self.validate_url_base = '/authentication/password-reset-validate'
+        self.valid_uidb64 = 'valid-uid'
+        self.valid_token = 'valid-token'
+        self.valid_url = f"{self.validate_url_base}/{self.valid_uidb64}/{self.valid_token}"
+        
+    # Positive test case
+    @patch('authentication.services.PasswordResetService.validate_token')
+    @patch('authentication.services.PasswordResetService.get_user_from_uidb64')
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_successful(self, mock_auth, mock_get_user, mock_validate):
+        """Test successful token validation"""
+        mock_auth.return_value = (self.user, 'some-token')
+        mock_get_user.return_value = self.user
+        mock_validate.return_value = True
+        
+        response = self.client.get(
+            self.valid_url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('valid', response.json())
+        self.assertTrue(response.json()['valid'])
+        mock_get_user.assert_called_once_with(self.valid_uidb64)
+        mock_validate.assert_called_once_with(self.user, self.valid_token)
+    
+    # Negative test cases
+    @patch('authentication.services.PasswordResetService.get_user_from_uidb64')
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_user_not_found(self, mock_auth, mock_get_user):
+        """Test token validation with non-existent user"""
+        mock_auth.return_value = (self.user, 'some-token')
+        mock_get_user.return_value = None
+        
+        response = self.client.get(
+            self.valid_url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('valid', response.json())
+        self.assertFalse(response.json()['valid'])
+        mock_get_user.assert_called_once_with(self.valid_uidb64)
+    
+    @patch('authentication.services.PasswordResetService.validate_token')
+    @patch('authentication.services.PasswordResetService.get_user_from_uidb64')
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_invalid_token(self, mock_auth, mock_get_user, mock_validate):
+        """Test token validation with invalid token"""
+        mock_auth.return_value = (self.user, 'some-token')
+        mock_get_user.return_value = self.user
+        mock_validate.return_value = False
+        
+        response = self.client.get(
+            self.valid_url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('valid', response.json())
+        self.assertFalse(response.json()['valid'])
+        mock_get_user.assert_called_once_with(self.valid_uidb64)
+        mock_validate.assert_called_once_with(self.user, self.valid_token)
+    
+    # Edge cases
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_empty_uidb64(self, mock_auth):
+        """Test token validation with empty uidb64"""
+        mock_auth.return_value = (self.user, 'some-token')
+        
+        url = f"{self.validate_url_base}//valid-token"
+        
+        response = self.client.get(
+            url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_empty_token(self, mock_auth):
+        """Test token validation with empty token"""
+        mock_auth.return_value = (self.user, 'some-token')
+        
+        url = f"{self.validate_url_base}/valid-uid/"
+        
+        response = self.client.get(
+            url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    
+    @patch('authentication.services.PasswordResetService.validate_token')
+    @patch('authentication.services.PasswordResetService.get_user_from_uidb64')
+    @patch('authentication.security.APIKeyAuthentication.authenticate')
+    def test_validate_token_special_chars(self, mock_auth, mock_get_user, mock_validate):
+        """Test token validation with special characters in token"""
+        mock_auth.return_value = (self.user, 'some-token')
+        mock_get_user.return_value = self.user
+        mock_validate.return_value = True
+        
+        special_token = "abc-_.~+*"
+        special_url = f"{self.validate_url_base}/{self.valid_uidb64}/{special_token}"
+        
+        response = self.client.get(
+            special_url,
+            HTTP_X_API_KEY='test-api-key'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('valid', response.json())
+        self.assertTrue(response.json()['valid'])
+        mock_validate.assert_called_once_with(self.user, special_token)
