@@ -17,6 +17,12 @@ class User(models.Model):
         self.password = make_password(new_password)
         self.save()
 
+    def get_email_field_name(self):
+        return "email"
+
+    def get_username(self):
+        return self.email    
+
     def __str__(self):
         return self.name
 

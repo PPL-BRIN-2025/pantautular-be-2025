@@ -36,6 +36,13 @@ LOGGING = {
     'disable_existing_loggers': True,
 }
 
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "user": None,
+        "password_reset": None,
+    },
+}
+
 # Disable migrations during tests
 class DisableMigrations:
     def __contains__(self, item):

@@ -72,6 +72,7 @@ MIDDLEWARE = [
 REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "user": "10/min",   
+        "password_reset": "5/day",
     },
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
