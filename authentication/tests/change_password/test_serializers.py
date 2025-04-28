@@ -11,7 +11,7 @@ class ChangePasswordSerializerTest(TestCase):
         self.user = User.objects.create(
             name="TestUser",
             email="test@example.com",
-            password=make_password("current_password"),
+            password=make_password("current_password"), #NOSONAR - test data only
             role="USER"
         )
         self.serializer_context = {'user': self.user}
@@ -19,9 +19,9 @@ class ChangePasswordSerializerTest(TestCase):
     def test_password_match_validation(self):
         """Test validation when passwords match"""
         data = {
-            'current_password': 'current_password',
-            'new_password': 'new_secure_password123',
-            'confirm_password': 'new_secure_password123'
+            'current_password': 'current_password', #NOSONAR - test data only
+            'new_password': 'new_secure_password123', #NOSONAR - test data only
+            'confirm_password': 'new_secure_password123' ##NOSONAR - test data only
         }
         
         serializer = ChangePasswordSerializer(data=data, context=self.serializer_context)
@@ -30,9 +30,9 @@ class ChangePasswordSerializerTest(TestCase):
     def test_password_mismatch_validation(self):
         """Test validation when confirmation password doesn't match"""
         data = {
-            'current_password': 'current_password',
-            'new_password': 'new_secure_password123',
-            'confirm_password': 'different_password'
+            'current_password': 'current_password', #NOSONAR - test data only
+            'new_password': 'new_secure_password123', #NOSONAR - test data only
+            'confirm_password': 'different_password' #NOSONAR - test data only
         }
         
         serializer = ChangePasswordSerializer(data=data, context=self.serializer_context)
@@ -60,9 +60,9 @@ class ChangePasswordSerializerTest(TestCase):
         mock_validate_password.side_effect = ValidationError(['Password too common.'])
         
         data = {
-            'current_password': 'current_password',
-            'new_password': 'password123',
-            'confirm_password': 'password123'
+            'current_password': 'current_password', #NOSONAR - test data only
+            'new_password': 'password123', #NOSONAR - test data only
+            'confirm_password': 'password123' #NOSONAR - test data only
         }
         
         serializer = ChangePasswordSerializer(data=data, context=self.serializer_context)

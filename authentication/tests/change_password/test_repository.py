@@ -9,7 +9,7 @@ class UserRepositoryTest(TestCase):
         self.user = User.objects.create(
             name="Test User",
             email="test@example.com",
-            password=make_password("correct_password"),
+            password=make_password("correct_password"), # NOSONAR - test data only
             role="USER"
         )
         self.repository = UserRepository()
