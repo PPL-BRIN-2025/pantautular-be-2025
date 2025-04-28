@@ -76,3 +76,4 @@ class UpdateUserPasswordTest(TestCase):
         self.assertFalse(result["success"])
         self.assertTrue(check_password("current_password", self.user.password)) # NOSONAR - test data
         self.assertFalse(check_password("new_secure_password", self.user.password)) # NOSONAR - test data
+
