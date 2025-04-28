@@ -5,6 +5,7 @@ from rest_framework.exceptions import ParseError
 from rest_framework.throttling import UserRateThrottle
 from pt_backend.models import User
 
+from authentication.throttling import PasswordResetRateThrottle
 from .serializers import SignupSerializer, ChangePasswordSerializer
 from .services import ChangePasswordService
 from .security import APIKeyAuthentication
@@ -44,6 +45,7 @@ class SignupAPIView(APIView):
 class PasswordResetLinkRequestView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
+    throttle_classes = [PasswordResetRateThrottle]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

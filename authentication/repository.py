@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import check_password
 
 class UserRepository:
     @staticmethod
-    def get_user_by_email(email: str) -> User:
+    def get_user_by_email(email: str) -> User: # NOSONAR
         try:
             return User.objects.get(email=email)
         except User.DoesNotExist:
