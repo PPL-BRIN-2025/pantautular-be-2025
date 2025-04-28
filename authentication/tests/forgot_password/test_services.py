@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import MagicMock, patch
-from authentication.services import PasswordResetService, ChangePasswordService
+from authentication.services import PasswordResetService, ChangePasswordService, PasswordValidationService
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
@@ -161,3 +161,75 @@ class TestPasswordResetService(TestCase):
             
             with self.assertRaises(ApiException):
                 brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
+
+    def test_get_user_from_uidb64_with_none_value(self):
+        """Test get_user_from_uidb64 when uidb64 is None"""
+        user = self.service.get_user_from_uidb64(None)
+        self.assertIsNone(user)
+
+class TestPasswordValidationService(TestCase):
+    def setUp(self):
+        self.service = PasswordValidationService()
+
+    def test_validate_password_match_success(self):
+        """Test that a password matches the expected format"""
+        password = "ValidPassword123!" # NOSONAR – test data, not a real secret
+        password2 = "ValidPassword123!" # NOSONAR – test data, not a real secret
+        result = self.service.validate_password_match(password, password2)
+        self.assertTrue(result)
+
+    def test_validate_password_match_failure(self):
+        """Test that a password does not match the expected format"""
+        password = "ValidPassword123!" # NOSONAR – test data, not a real secret
+        password2 = "DifferentPassword123!" # NOSONAR – test data, not a real secret
+        result = self.service.validate_password_match(password, password2)
+        self.assertFalse(result)
+
+    def test_validate_password_success(self):
+        """Test that a valid password passes validation"""
+        password = "ValidPassword123!" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertTrue(result)
+        self.assertEqual(detail, "")
+
+    def test_validate_password_too_short(self):
+        """Test that a short password fails validation"""
+        password = "short" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus minimal 8 karakter")
+
+    def test_validate_password_no_uppercase(self):
+        """Test that a password without uppercase letters fails validation"""
+        password = "lowercase123!" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus mengandung minimal 1 huruf besar")
+
+    def test_validate_password_no_lowercase(self):
+        """Test that a password without lowercase letters fails validation"""
+        password = "UPPERCASE123!" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus mengandung minimal 1 huruf kecil")
+
+    def test_validate_password_no_numbers(self):
+        """Test that a password without numbers fails validation"""
+        password = "NoNumbers!" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus mengandung minimal 1 angka")
+
+    def test_validate_password_no_special_characters(self):
+        """Test that a password without special characters fails validation"""
+        password = "NoSpecialChars123" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus mengandung minimal 1 karakter spesial")
+
+    def test_validate_password_empty(self):
+        """Test that an empty password fails validation"""
+        password = "" # NOSONAR – test data, not a real secret
+        result, detail = self.service.validate_password_strength(password)
+        self.assertFalse(result)
+        self.assertEqual(detail, "Password harus minimal 8 karakter")

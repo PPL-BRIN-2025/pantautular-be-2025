@@ -1,3 +1,4 @@
+import re
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
@@ -74,19 +75,32 @@ class ChangePasswordService:
         self.repository.save_user(user)
         return {"success": True, "message": "Password successfully updated"}
 
-    def get_user_from_uidb64(self, uidb64):
-        """Decode uidb64 and retrieve the user"""
-        if uidb64 is None:
-            return None
-        try:
-            uid = urlsafe_base64_decode(uidb64).decode()
-            user = User.objects.get(pk=uid)
-            return user
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return None
     
-    def validate_token(self, user, token):
-        """Validate if the token is valid for the given user"""
-        if not user:
-            return False
-        return default_token_generator.check_token(user, token)
+class PasswordValidationService:
+    @staticmethod
+    def validate_password_match(password, password_confirm):
+        """Validate that password and confirmation match."""
+        return password == password_confirm
+    
+    @staticmethod
+    def validate_password_strength(password):
+        """
+        Validate password strength requirements.
+        Returns (bool, str): (is_valid, error_message)
+        """
+        if len(password) < 8:
+            return False, "Password harus minimal 8 karakter"
+            
+        if not re.search(r'[A-Z]', password):
+            return False, "Password harus mengandung minimal 1 huruf besar"
+            
+        if not re.search(r'[a-z]', password):
+            return False, "Password harus mengandung minimal 1 huruf kecil"
+            
+        if not re.search(r'\d', password):
+            return False, "Password harus mengandung minimal 1 angka"
+            
+        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>/?]', password):
+            return False, "Password harus mengandung minimal 1 karakter spesial"
+            
+        return True, ""

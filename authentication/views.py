@@ -14,7 +14,7 @@ from authentication.registration.service import (
     RegistrationError,
 )
 
-from .services import PasswordResetService
+from .services import ChangePasswordService, PasswordResetService, PasswordValidationService
 
 import logging
 
@@ -88,6 +88,40 @@ class PasswordResetLinkValidateView(APIView):
         if self.password_reset_service.validate_token(user, token):
             return Response({"valid": True}, status=status.HTTP_200_OK)
         return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
+    
+class PasswordResetConfirmView(APIView):
+    def __init__(self, **kwargs):
+        self.password_reset_service = PasswordResetService()
+        self.password_validation_service = PasswordValidationService()
+        self.change_password_service = ChangePasswordService()
+
+    def post(self, request, uidb64, token):
+        new_password = request.data.get("password")
+        if not new_password:
+            return Response({"detail": "Password diperlukan"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        new_password_confirm = request.data.get("password-confirm")
+        if not new_password_confirm:
+            return Response({"detail": "Konfirmasi password diperlukan"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self.password_validation_service.validate_password_match(new_password, new_password_confirm):
+            return Response({"detail": "Password tidak cocok"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        is_valid, error_message = self.password_validation_service.validate_password_strength(new_password)
+        if not is_valid:
+            return Response({"detail": error_message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = self.password_reset_service.get_user_from_uidb64(uidb64)
+        if not user:
+            return Response({"detail": "Link tidak valid"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self.password_reset_service.validate_token(user, token):
+            return Response({"detail": "Token tidak valid atau sudah kedaluwarsa"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self.change_password_service.change_password(user.email, new_password):
+            return Response({"detail": "Gagal mengganti password"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        return Response({"detail": "Password berhasil diganti"}, status=status.HTTP_200_OK)
 
 class ChangePasswordView(APIView):
     authentication_classes = [APIKeyAuthentication]
