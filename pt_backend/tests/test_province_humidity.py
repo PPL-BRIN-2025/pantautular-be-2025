@@ -117,3 +117,60 @@ class ClimateServiceTest(TestCase):
         
         # Verify cache was used
         self.assertEqual(result, [{"province": "Test", "value": 100.0}])
+
+class ProvinceHumidityViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('province-humidity')
+        
+        # Set environment variable for API key
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        
+        # Set API key header
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+
+    def tearDown(self):
+        # Clean up environment variable
+        os.environ.pop('SECRET_API_KEY', None)
+
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_get_success(self, mock_get_humidity):
+        """Test successful GET request"""
+        mock_get_humidity.return_value = [
+            {"province": "Aceh", "value": 417.0},
+            {"province": "Bali", "value": 156.0}
+        ]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('data', response.data)
+        self.assertEqual(len(response.data['data']), 2)
+
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_service_returns_error_dict(self, mock_get_humidity):
+        """Test when service returns error dict"""
+        mock_get_humidity.return_value = {"error": "Some error occurred"}
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "Some error occurred"})
+
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_serialization_error(self, mock_get_humidity):
+        """Test when serialization fails"""
+        mock_get_humidity.return_value = [{"invalid_field": "value"}]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn('error', response.data)
+
+    def test_authentication_required(self):
+        """Test that authentication is required"""
+        # Remove API key header
+        self.client.credentials()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
