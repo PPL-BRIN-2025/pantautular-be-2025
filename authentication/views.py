@@ -178,7 +178,9 @@ class ChangePasswordView(APIView):
         except Exception as e:
             logger.error(f"Error changing password: {str(e)}")
             return Response(
-                {"error": f"An error occurred: {str(e)}"}, 
+                {"error": f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class LoginAPIView(APIView):
     authentication_classes = [APIKeyAuthentication]
