@@ -8,6 +8,10 @@ from pt_backend.models import User
 from authentication.throttling import PasswordResetRateThrottle
 from .serializers import SignupSerializer, ChangePasswordSerializer
 from .services import ChangePasswordService
+from rest_framework.throttling import UserRateThrottle
+from .repositories import UserRepository
+from .services import AuthService
+from .serializers import SignupSerializer, LoginSerializer
 from .security import APIKeyAuthentication
 from authentication.registration.service import (
     RegistrationService,
@@ -41,6 +45,7 @@ class SignupAPIView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({"id": dto.user.id}, status=status.HTTP_201_CREATED)
+
 
 class PasswordResetLinkRequestView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -174,5 +179,48 @@ class ChangePasswordView(APIView):
             logger.error(f"Error changing password: {str(e)}")
             return Response(
                 {"error": f"An error occurred: {str(e)}"}, 
+
+class LoginAPIView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    throttle_classes = [UserRateThrottle]
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        user_repository = UserRepository()
+        self.auth_service = AuthService(user_repository)
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            tokens = self.auth_service.login(
+                email=serializer.validated_data['email'],
+                password=serializer.validated_data['password']
+            )
+
+            if tokens and isinstance(tokens, dict) and tokens.get('locked'):
+                return Response(
+                    {"detail": tokens['message']},
+                    status=status.HTTP_423_LOCKED
+                )
+            
+            if not tokens:
+                return Response(
+                    {"detail": "Invalid email or password"},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            return Response(
+                {
+                    "detail": "Login successful",
+                    "access_token": tokens["access_token"]
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception:
+            return Response(
+                {"detail": "Login failed. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

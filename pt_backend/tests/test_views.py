@@ -108,7 +108,7 @@ class CaseAPITest(TestCase):
         response = self.client.post(url, data=json.dumps({}), content_type='application/json')        
         mock_get_locations.assert_called_once()
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
+        self.assertEqual(response.data, {"error": "No cases found with the given filters"})
        
 class CaseFilterPostTest(TestCase):
     def setUp(self):
@@ -149,7 +149,7 @@ class CaseFilterPostTest(TestCase):
         response = self.client.post('/cases/locations/', {'diseases': ['Unknown']}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+        self.assertEqual(response.json(), {"error": "No cases found with the given filters"})
 
     def test_post_filter_missing_api_key(self):
         self.client.credentials()

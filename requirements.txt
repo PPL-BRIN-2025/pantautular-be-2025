@@ -40,3 +40,5 @@ tzdata==2025.1
 urllib3==2.3.0
 whitenoise==6.9.0
 sib-api-v3-sdk
+prometheus-client==0.20.0
+django-prometheus==2.3.1

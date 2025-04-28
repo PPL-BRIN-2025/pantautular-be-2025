@@ -41,7 +41,7 @@ class ModelTests(TestCase):
         self.user.refresh_from_db()
 
         self.assertNotEqual(self.user.password, old_pw_hash)
-        self.assertTrue(check_password("new-secret", self.user.password))
+        self.assertTrue(check_password("new-secret", self.user.password)) # NOSONAR – test data
 
     def test_user_email_unique(self):
         with self.assertRaises(IntegrityError):
