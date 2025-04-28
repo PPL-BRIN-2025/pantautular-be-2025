@@ -67,3 +67,53 @@ class ClimateRepositoryTest(TestCase):
         Climate.objects.all().delete()
         result = self.repository.get_latest_climate_data()
         self.assertEqual(len(result), 0)
+
+class ClimateServiceTest(TestCase):
+    def setUp(self):
+        self.cache_service = CacheService()
+        self.repository = ClimateRepository()
+        self.service = ClimateService(repository=self.repository, cache_service=self.cache_service)
+
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
+    def test_get_province_humidity_success(self, mock_get_data):
+        """Test service method to get province humidity"""
+        # Mock repository to return test data
+        mock_get_data.return_value = [
+            MagicMock(province="Aceh", humidity=417.0),
+            MagicMock(province="Bali", humidity=156.0)
+        ]
+        
+        result = self.service.get_province_humidity()
+        
+        # Verify format and data
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], {"province": "Aceh", "value": 417.0})
+        self.assertEqual(result[1], {"province": "Bali", "value": 156.0})
+
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
+    def test_get_province_humidity_error(self, mock_get_data):
+        """Test service method when repository raises error"""
+        mock_get_data.side_effect = Exception("Database error")
+        
+        result = self.service.get_province_humidity()
+        
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+
+    @patch('pt_backend.services.CacheService.get')
+    @patch('pt_backend.services.CacheService.set')
+    def test_cache_functionality(self, mock_set, mock_get):
+        """Test cache functionality in service"""
+        # First call - should hit repository
+        mock_get.return_value = None
+        self.service.get_province_humidity()
+        
+        # Verify cache was set
+        mock_set.assert_called_once()
+        
+        # Second call - should use cache
+        mock_get.return_value = [{"province": "Test", "value": 100.0}]
+        result = self.service.get_province_humidity()
+        
+        # Verify cache was used
+        self.assertEqual(result, [{"province": "Test", "value": 100.0}])
