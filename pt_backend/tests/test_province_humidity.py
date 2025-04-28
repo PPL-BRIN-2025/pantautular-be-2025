@@ -87,8 +87,8 @@ class ClimateServiceTest(TestCase):
         
         # Verify format and data
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], {"province": "Aceh", "value": 417.0})
-        self.assertEqual(result[1], {"province": "Bali", "value": 156.0})
+        self.assertEqual(result[0], {"id": "Aceh", "value": 417.0})
+        self.assertEqual(result[1], {"id": "Bali", "value": 156.0})
 
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_humidity_error(self, mock_get_data):
@@ -112,11 +112,11 @@ class ClimateServiceTest(TestCase):
         mock_set.assert_called_once()
         
         # Second call - should use cache
-        mock_get.return_value = [{"province": "Test", "value": 100.0}]
+        mock_get.return_value = [{"id": "Test", "value": 100.0}]
         result = self.service.get_province_humidity()
         
         # Verify cache was used
-        self.assertEqual(result, [{"province": "Test", "value": 100.0}])
+        self.assertEqual(result, [{"id": "Test", "value": 100.0}])
 
 class ProvinceHumidityViewTest(TestCase):
     def setUp(self):
@@ -137,8 +137,8 @@ class ProvinceHumidityViewTest(TestCase):
     def test_get_success(self, mock_get_humidity):
         """Test successful GET request"""
         mock_get_humidity.return_value = [
-            {"province": "Aceh", "value": 417.0},
-            {"province": "Bali", "value": 156.0}
+            {"id": "Aceh", "value": 417.0},
+            {"id": "Bali", "value": 156.0}
         ]
         
         response = self.client.get(self.url)

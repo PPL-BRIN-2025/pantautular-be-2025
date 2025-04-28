@@ -265,7 +265,7 @@ class ClimateService:
             humidity_data = []
             for climate in latest_climate:
                 humidity_data.append({
-                    "province": climate.province,
+                    "id": climate.province,
                     "value": float(climate.humidity)
                 })
             

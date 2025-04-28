@@ -51,5 +51,5 @@ class LocationSeverityStatsSerializer(serializers.Serializer):
     total_cases = serializers.IntegerField()
 
 class ProvinceHumiditySerializer(serializers.Serializer):
-    province = serializers.CharField()
+    id = serializers.CharField()
     value = serializers.DecimalField(max_digits=8, decimal_places=2)
