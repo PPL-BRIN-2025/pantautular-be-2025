@@ -8,6 +8,7 @@ class User(models.Model):
     password = models.CharField(max_length=255)
     role = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
+    last_login = models.DateTimeField(null=True, blank=True)
 
     def has_role(self, role_name):
         return self.role == role_name
@@ -15,6 +16,12 @@ class User(models.Model):
     def update_password(self, new_password):
         self.password = make_password(new_password)
         self.save()
+
+    def get_email_field_name(self):
+        return "email"
+
+    def get_username(self):
+        return self.email    
 
     def __str__(self):
         return self.name
@@ -40,6 +47,37 @@ class UserRole(models.Model):
 
     class Meta:
         unique_together = ("user", "role")
+    
+class UserRoleRegistered(models.Model):
+
+    role = models.OneToOneField(          
+        Role,
+        on_delete=models.CASCADE,
+        related_name="registration_meta",
+    )
+
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Friendly name shown in the UI (defaults to role.name)",
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Lower values appear earlier in dropdowns.",
+    )
+
+    class Meta:
+        ordering = ("sort_order", "role__name")
+        verbose_name = "registered role option"
+        verbose_name_plural = "registered role options"
+
+    def save(self, *args, **kwargs):
+        if not self.label:
+            self.label = self.role.name
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:           
+        return self.label
 
 class RolePermission(models.Model):
     role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="permissions")

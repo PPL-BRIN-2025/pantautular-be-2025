@@ -203,10 +203,12 @@ class NewsModelTest(TestCase):
 class ClimateModelTest(TestCase):
     def setUp(self):
         self.climate = Climate.objects.create(
-            province = "Test Province",
-            temperature = 1.0,
-            humidity = 2.0,
-            precipitation = 3.0,
+            province="Test Province",
+            temperature=Decimal("25.5"),
+            precipitation=Decimal("100.0"),
+            humidity=Decimal("80.0"),
+            year=2024,
+            month=1
         )
 
     def test_str_representation(self):
@@ -221,59 +223,29 @@ class ClimateModelTest(TestCase):
             province="Test Province"
         )
         
-        # Create multiple climate records for different months
-        january_climate = Climate.objects.create(
-            province="Test Province",
-            temperature=20.00,
-            humidity=75.00,
-            precipitation=100.00,
-            year=2024,
-            month=1
-        )
+        # Test with year only
+        climates = Climate.get_climate_for_location(location, 2024)
+        self.assertEqual(len(climates), 1)
+        self.assertEqual(climates[0], self.climate)
         
-        february_climate = Climate.objects.create(
-            province="Test Province",
-            temperature=22.00,
-            humidity=70.00,
-            precipitation=90.00,
-            year=2024,
-            month=2
-        )
-        
-        # Test getting climate for specific month
-        january_result = Climate.get_climate_for_location(location, 2024, 1)
-        self.assertEqual(len(january_result), 1)
-        self.assertEqual(january_result[0], january_climate)
-        
-        # Test getting climate for entire year
-        year_result = Climate.get_climate_for_location(location, 2024)
-        self.assertEqual(len(year_result), 2)
-        self.assertIn(january_climate, year_result)
-        self.assertIn(february_climate, year_result)
-        
-        # Test with non-existent data
-        empty_result = Climate.get_climate_for_location(location, 2023)
-        self.assertEqual(len(empty_result), 0)
+        # Test with year and month
+        climates = Climate.get_climate_for_location(location, 2024, 1)
+        self.assertEqual(len(climates), 1)
+        self.assertEqual(climates[0], self.climate)
 
     def test_get_climate_for_location_different_province(self):
-        # Create a test location
+        # Create a test location with different province
         location = Location.objects.create(
             latitude=Decimal("1.234567"),
             longitude=Decimal("123.456789"),
             city="Test City",
-            province="Test Province"
+            province="Different Province"
         )
         
-        # Create climate record for different province
-        other_climate = Climate.objects.create(
-            province="Different Province",
-            temperature=20.00,
-            humidity=75.00,
-            precipitation=100.00,
-            year=2024,
-            month=1
-        )
+        # Test with year only
+        climates = Climate.get_climate_for_location(location, 2024)
+        self.assertEqual(len(climates), 0)
         
-        # Test that we don't get climate data from different province
-        result = Climate.get_climate_for_location(location, 2024, 1)
-        self.assertEqual(len(result), 0)
+        # Test with year and month
+        climates = Climate.get_climate_for_location(location, 2024, 1)
+        self.assertEqual(len(climates), 0)

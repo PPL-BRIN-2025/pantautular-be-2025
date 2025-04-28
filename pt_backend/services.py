@@ -3,6 +3,12 @@ from .repositories import CaseRepository, DiseaseRepository, LocationRepository,
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_KEY_ALL_LOCATIONS = "all_locations"
@@ -32,9 +38,6 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_cases_by_year(year)
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
-    
-    def get_gender_dist(self):
-        return self.repository.get_gender_distribution()
 
 class CacheService(CacheInterface):
     def get(self, key):

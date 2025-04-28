@@ -13,4 +13,3 @@ urlpatterns = [
     path('api/severity-stats/filter/', SeverityFilteringStatsView.as_view(), name='severity-filtering-stats'),
     path('api/statistics/', StatisticsView.as_view(), name='statistics'),
 ]
-
