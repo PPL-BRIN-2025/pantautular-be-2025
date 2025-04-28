@@ -161,6 +161,7 @@ class TestPasswordResetService(TestCase):
             
             with self.assertRaises(ApiException):
                 brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
+                
 class TestPasswordValidationService(TestCase):
     def setUp(self):
         self.service = PasswordValidationService()
