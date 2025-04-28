@@ -38,6 +38,8 @@ class PasswordResetService:
     
     def get_user_from_uidb64(self, uidb64):
         """Decode uidb64 and retrieve the user"""
+        if uidb64 is None:
+            return None
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
@@ -63,6 +65,16 @@ class ChangePasswordService:
         user.password = make_password(new_password)
         self.repository.save_user(user)
         return True
+
+    def update_user_password(self, user, current_password: str, new_password: str) -> dict:
+        """Update password pengguna yang sudah login"""
+        if not self.repository.verify_password(user, current_password):
+            return {"success": False, "error": "Current password is incorrect"}
+            
+        user.password = make_password(new_password)
+        self.repository.save_user(user)
+        return {"success": True, "message": "Password successfully updated"}
+
     
 class PasswordValidationService:
     @staticmethod
