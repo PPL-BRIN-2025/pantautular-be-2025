@@ -161,7 +161,12 @@ class TestPasswordResetService(TestCase):
             
             with self.assertRaises(ApiException):
                 brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
-                
+
+    def test_get_user_from_uidb64_with_none_value(self):
+        """Test get_user_from_uidb64 when uidb64 is None"""
+        user = self.service.get_user_from_uidb64(None)
+        self.assertIsNone(user)
+
 class TestPasswordValidationService(TestCase):
     def setUp(self):
         self.service = PasswordValidationService()
