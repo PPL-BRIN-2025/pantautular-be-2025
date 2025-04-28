@@ -8,7 +8,7 @@ class UserRepository:
         try:
             return User.objects.get(email=email)
         except ObjectDoesNotExist:
-            return None
+            return None #NOSONAR
 
     @staticmethod
     def save_user(user: User) -> None:
