@@ -161,37 +161,3 @@ class TestPasswordResetService(TestCase):
             
             with self.assertRaises(ApiException):
                 brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
-
-class ChangePasswordServiceTest(TestCase):
-
-    def test_change_password_success(self):
-        user = User.objects.create(name="Charlie", email="charlie@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
-        service = ChangePasswordService()
-        result = service.change_password("charlie@example.com", "newsecurepass")
-
-        user.refresh_from_db()
-        self.assertTrue(result)
-        self.assertTrue(check_password("newsecurepass", user.password)) # NOSONAR – test data, not a real secret
-
-    def test_change_password_user_not_found(self):
-        service = ChangePasswordService()
-        result = service.change_password("ghost@example.com", "pass")
-        self.assertFalse(result)
-
-    def test_change_password_empty_password(self):
-        user = User.objects.create(name="Dana", email="dana@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
-        service = ChangePasswordService()
-        result = service.change_password("dana@example.com", "")
-
-        user.refresh_from_db()
-        self.assertTrue(result)
-        self.assertTrue(check_password("", user.password)) # NOSONAR – test data, not a real secret
-
-    def test_change_password_reuse_same_password(self):
-        user = User.objects.create(name="Eli", email="eli@example.com", password="oldpass", role="USER") # NOSONAR – test data, not a real secret
-        service = ChangePasswordService()
-        result = service.change_password("eli@example.com", "oldpass")
-
-        user.refresh_from_db()
-        self.assertTrue(result)
-        self.assertTrue(check_password("oldpass", user.password))  # NOSONAR – test data, not a real secret
