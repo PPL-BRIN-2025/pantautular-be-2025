@@ -43,9 +43,9 @@ class ChangePasswordSerializerTest(TestCase):
     def test_password_strength_validation(self, mock_validate_password):
         """Test password strength validation is called"""
         data = {
-            'current_password': 'current_password',
-            'new_password': 'weak',  # Not actually weak due to mock
-            'confirm_password': 'weak'  # Not actually weak due to mock
+            'current_password': 'current_password',  # NOSONAR - test data only
+            'new_password': 'weak',  # NOSONAR - Not actually weak due to mock
+            'confirm_password': 'weak'  # NOSONAR - Not actually weak due to mock
         }
         
         serializer = ChangePasswordSerializer(data=data, context=self.serializer_context)
