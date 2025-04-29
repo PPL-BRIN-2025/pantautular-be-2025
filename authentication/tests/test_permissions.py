@@ -77,9 +77,6 @@ class IsTokenAuthenticatedTests(TestCase):
         
         has_permission = self.permission.has_permission(request, self.view)
         
-        # This test verifies current behavior: a user with id=None still has the attribute,
-        # so permission would be granted. You may want to modify your permission class
-        # if this is not the intended behavior.
         self.assertFalse(has_permission)
 
     def tearDown(self):
