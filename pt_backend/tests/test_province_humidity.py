@@ -32,28 +32,33 @@ class ProvinceHumidityViewTest(BaseProvinceViewTest):
         self.expected_bali_value = 156.0
         super().setUp()
 
-    def test_get_success(self):
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_get_success(self, mock_get_data):
         """Test successful GET request"""
+        mock_get_data.return_value = [
+            {"id": "Aceh", "value": self.expected_aceh_value},
+            {"id": "Bali", "value": self.expected_bali_value}
+        ]
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('data', response.data)
         self.assertEqual(len(response.data['data']), 2)
 
-    def test_service_returns_error_dict(self):
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_service_returns_error_dict(self, mock_get_data):
         """Test when service returns error dict"""
-        mock_get_humidity = MagicMock(return_value={"error": "Some error occurred"})
-        with patch('pt_backend.services.ClimateService.get_province_humidity', mock_get_humidity):
-            response = self.client.get(self.url)
+        mock_get_data.return_value = {"error": "Some error occurred"}
+        response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data, {"error": "Some error occurred"})
 
-    def test_serialization_error(self):
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_serialization_error(self, mock_get_data):
         """Test when serialization fails"""
-        mock_get_humidity = MagicMock(return_value=[{"invalid_field": "value"}])
-        with patch('pt_backend.services.ClimateService.get_province_humidity', mock_get_humidity):
-            response = self.client.get(self.url)
+        mock_get_data.return_value = [{"invalid_field": "value"}]
+        response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn('error', response.data)
