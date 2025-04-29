@@ -1,5 +1,5 @@
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
-from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
+from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 
@@ -242,3 +242,37 @@ class SeverityFilteringService:
             "province_stats": self.location_repository.get_province_severity_stats(filtered_case_ids),
             "city_stats": self.location_repository.get_city_severity_stats(filtered_case_ids)
         }
+
+class ClimateService:
+    CACHE_KEY_HUMIDITY = "province_humidity"
+    CACHE_TIMEOUT = 3600  # 1 jam dalam detik
+
+    def __init__(self, repository=None, cache_service=None):
+        self.repository = repository or ClimateRepository()
+        self.cache_service = cache_service or CacheService()
+
+    def get_province_humidity(self):
+        try:
+            # Coba ambil dari cache dulu
+            cached_data = self.cache_service.get(self.CACHE_KEY_HUMIDITY)
+            if cached_data is not None:
+                return cached_data
+
+            # Get latest climate data for each province
+            latest_climate = self.repository.get_latest_climate_data()
+            
+            # Format the data
+            humidity_data = []
+            for climate in latest_climate:
+                humidity_data.append({
+                    "id": climate.province,
+                    "value": float(climate.humidity)
+                })
+            
+            # Simpan ke cache
+            self.cache_service.set(self.CACHE_KEY_HUMIDITY, humidity_data, timeout=self.CACHE_TIMEOUT)
+            
+            return humidity_data
+        except Exception as e:
+            print(f"Error in get_province_humidity: {str(e)}")
+            return {"error": str(e)}
