@@ -37,12 +37,13 @@ class ProvincePrecipitationViewTest(BaseProvinceViewTest):
         os.environ.pop('SECRET_API_KEY', None)
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
-    def test_get_success(self, mock_get_data):
+    def test_get_success(self, mock_get_precipitation):
         """Test successful GET request"""
-        mock_get_data.return_value = [
-            {"id": "Aceh", "value": self.expected_aceh_value},
-            {"id": "Bali", "value": self.expected_bali_value}
+        mock_get_precipitation.return_value = [
+            {"id": "Aceh", "value": 100.0},
+            {"id": "Bali", "value": 80.0}
         ]
+        
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -50,18 +51,20 @@ class ProvincePrecipitationViewTest(BaseProvinceViewTest):
         self.assertEqual(len(response.data['data']), 2)
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
-    def test_service_returns_error_dict(self, mock_get_data):
+    def test_service_returns_error_dict(self, mock_get_precipitation):
         """Test when service returns error dict"""
-        mock_get_data.return_value = {"error": "Some error occurred"}
+        mock_get_precipitation.return_value = {"error": "Some error occurred"}
+        
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data, {"error": "Some error occurred"})
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
-    def test_serialization_error(self, mock_get_data):
+    def test_serialization_error(self, mock_get_precipitation):
         """Test when serialization fails"""
-        mock_get_data.return_value = [{"invalid_field": "value"}]
+        mock_get_precipitation.return_value = [{"invalid_field": "value"}]
+        
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -72,5 +75,5 @@ class ProvincePrecipitationViewTest(BaseProvinceViewTest):
         # Remove API key header
         self.client.credentials()
         response = self.client.get(self.url)
+        
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
