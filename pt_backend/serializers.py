@@ -50,6 +50,6 @@ class LocationSeverityStatsSerializer(serializers.Serializer):
     severity_counts = SeverityCountsSerializer()
     total_cases = serializers.IntegerField()
 
-class ProvinceHumiditySerializer(serializers.Serializer):
+class ProvinceClimateValueSerializer(serializers.Serializer):
     id = serializers.CharField()
     value = serializers.DecimalField(max_digits=8, decimal_places=2)

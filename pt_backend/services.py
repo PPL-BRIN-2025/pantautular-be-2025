@@ -245,6 +245,7 @@ class SeverityFilteringService:
 
 class ClimateService:
     CACHE_KEY_HUMIDITY = "province_humidity"
+    CACHE_KEY_PRECIPITATION = "province_precipitation"
     CACHE_TIMEOUT = 3600  # 1 jam dalam detik
 
     def __init__(self, repository=None, cache_service=None):
@@ -275,4 +276,30 @@ class ClimateService:
             return humidity_data
         except Exception as e:
             print(f"Error in get_province_humidity: {str(e)}")
+            return {"error": str(e)}
+
+    def get_province_precipitation(self):
+        try:
+            # Coba ambil dari cache dulu
+            cached_data = self.cache_service.get(self.CACHE_KEY_PRECIPITATION)
+            if cached_data is not None:
+                return cached_data
+
+            # Get latest climate data for each province
+            latest_climate = self.repository.get_latest_climate_data()
+            
+            # Format the data
+            precipitation_data = []
+            for climate in latest_climate:
+                precipitation_data.append({
+                    "id": climate.province,
+                    "value": float(climate.precipitation)
+                })
+            
+            # Simpan ke cache
+            self.cache_service.set(self.CACHE_KEY_PRECIPITATION, precipitation_data, timeout=self.CACHE_TIMEOUT)
+            
+            return precipitation_data
+        except Exception as e:
+            print(f"Error in get_province_precipitation: {str(e)}")
             return {"error": str(e)}
