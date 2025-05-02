@@ -303,3 +303,25 @@ class ClimateService:
         except Exception as e:
             print(f"Error in get_province_precipitation: {str(e)}")
             return {"error": str(e)}
+
+    def get_province_temperature(self):
+        try:
+            cached_data = self.cache_service.get(self.CACHE_KEY_PRECIPITATION)
+            if cached_data is not None:
+                return cached_data
+
+            latest_climate = self.repository.get_latest_climate_data()
+            
+            temperature_data = []
+            for climate in latest_climate:
+                temperature_data.append({
+                    "id": climate.province,
+                    "value": float(climate.temperature)
+                })
+            
+            self.cache_service.set(self.CACHE_KEY_PRECIPITATION, temperature_data, timeout=self.CACHE_TIMEOUT)
+            
+            return temperature_data
+        except Exception as e:
+            print(f"Error in get_province_precipitation: {str(e)}")
+            return {"error": str(e)}
