@@ -19,7 +19,10 @@ from authentication.registration.service import (
 )
 
 from .services import ChangePasswordService, PasswordResetService, PasswordValidationService
+from rest_framework_simplejwt.tokens import AccessToken
+import jwt
 
+from django.conf import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -138,42 +141,75 @@ class ChangePasswordView(APIView):
     
     def post(self, request):
         try:
-            # Pastikan user ada dalam request dengan pengecekan yang lebih sederhana
-            if not request.user or not hasattr(request.user, 'email'):
+            # Extract JWT token from Authorization header
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
                 return Response(
-                    {"error": "Authentication required"}, 
+                    {"error": "Authentication token required"}, 
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-            # Validasi input
-            serializer = ChangePasswordSerializer(
-                data=request.data, 
-                context={'user': request.user}
-            )
+            token = auth_header.split(' ')[1]
             
-            if not serializer.is_valid():
-                return Response(
-                    serializer.errors, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Jalankan service
-            result = self.service.update_user_password(
-                request.user,
-                serializer.validated_data['current_password'],
-                serializer.validated_data['new_password']
-            )
-            
-            if not result["success"]:
-                return Response(
-                    {"error": result["error"]},
-                    status=status.HTTP_400_BAD_REQUEST
+            # Decode JWT token manually
+            try:
+                # Use the same algorithm and key as used in AuthService.login()
+                payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+                user_id = payload.get('user_id')
+                
+                if not user_id:
+                    return Response(
+                        {"error": "Invalid token"}, 
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                
+                # Retrieve user from database
+                user = User.objects.get(id=user_id)
+                
+                # Proceed with password change using retrieved user
+                serializer = ChangePasswordSerializer(
+                    data=request.data, 
+                    context={'user': user}  # Use retrieved user
                 )
                 
-            return Response(
-                {"message": result["message"]},
-                status=status.HTTP_200_OK
-            )
+                if not serializer.is_valid():
+                    return Response(
+                        serializer.errors, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                result = self.service.update_user_password(
+                    user,  # Use retrieved user
+                    serializer.validated_data['current_password'],
+                    serializer.validated_data['new_password']
+                )
+                
+                if not result["success"]:
+                    return Response(
+                        {"error": result["error"]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                    
+                return Response(
+                    {"message": result["message"]},
+                    status=status.HTTP_200_OK
+                )
+                
+            except jwt.ExpiredSignatureError:
+                return Response(
+                    {"error": "Token expired"}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            except jwt.InvalidTokenError:
+                return Response(
+                    {"error": "Invalid token"}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "User not found"}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
             
         except Exception as e:
             logger.error(f"Error changing password: {str(e)}")

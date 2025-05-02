@@ -8,16 +8,16 @@ from ..services import ClimateService, CacheService
 import uuid
 from unittest.mock import patch, MagicMock
 import os
-from .base_climate_test import BaseClimateRepositoryTest, BaseClimateServiceTest, BaseProvinceViewTest
+from .base_climate_test import BaseHumidityRepositoryTest, BaseHumidityServiceTest, BaseHumidityViewTest
 
-class ClimateRepositoryTest(BaseClimateRepositoryTest):
+class ClimateRepositoryTest(BaseHumidityRepositoryTest):
     def setUp(self):
         self.field_name = 'humidity'
         self.expected_aceh_value = 417.0
         self.expected_bali_value = 156.0
         super().setUp()
 
-class ClimateServiceTest(BaseClimateServiceTest):
+class ClimateServiceTest(BaseHumidityServiceTest):
     def setUp(self):
         self.field_name = 'humidity'
         self.service_method = 'get_province_humidity'
@@ -25,7 +25,7 @@ class ClimateServiceTest(BaseClimateServiceTest):
         self.expected_bali_value = 156.0
         super().setUp()
 
-class ProvinceHumidityViewTest(BaseProvinceViewTest):
+class ProvinceHumidityViewTest(BaseHumidityViewTest):
     def setUp(self):
         self.url_name = 'province-humidity'
         self.expected_aceh_value = 417.0
