@@ -60,6 +60,19 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data, {"error": "Some error occurred"})
 
+    @patch('pt_backend.services.ClimateService.get_province_temperature')
+    def test_serialization_error(self, mock_get_temperature):
+        """Test when serialization error occurs"""
+        mock_get_temperature.return_value = [
+            {"id": "Aceh", "value": "invalid_value"},  # Invalid value type
+            {"id": "Bali", "value": 27.0}
+        ]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn('error', response.data)
+
     def test_authentication_required(self):
         """Test that authentication is required"""
         # Remove API key header

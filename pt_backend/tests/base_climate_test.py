@@ -289,3 +289,7 @@ class BaseTemperatureViewTest(BaseClimateViewTest):
     @patch('pt_backend.services.ClimateService.get_province_temperature')
     def test_service_returns_error_dict(self, mock_get_data):
         super().test_service_returns_error_dict(mock_get_data)
+
+    @patch('pt_backend.services.ClimateService.get_province_temperature')
+    def test_serialization_error(self, mock_get_data):
+        super().test_serialization_error(mock_get_data)
