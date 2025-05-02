@@ -191,6 +191,25 @@ class BasePrecipitationRepositoryTest(BaseClimateRepositoryTest):
         self.assertEqual(getattr(aceh_data, self.field_name), self.expected_aceh_value)
         self.assertEqual(getattr(bali_data, self.field_name), self.expected_bali_value)
 
+class BaseTemperatureRepositoryTest(BaseClimateRepositoryTest):
+    def setUp(self):
+        super().setUp()
+        self.field_name = 'temperature'
+        self.expected_aceh_value = 25.5
+        self.expected_bali_value = 27.0
+
+    def test_get_latest_climate_data(self):
+        """Test repository method to get latest climate data"""
+        result = self.repository.get_latest_climate_data()
+        
+        self.assertEqual(len(result), 2)
+        
+        aceh_data = next(item for item in result if item.province == self.province1)
+        bali_data = next(item for item in result if item.province == self.province2)
+        
+        self.assertEqual(getattr(aceh_data, self.field_name), self.expected_aceh_value)
+        self.assertEqual(getattr(bali_data, self.field_name), self.expected_bali_value)
+
 class BaseHumidityServiceTest(BaseClimateServiceTest):
     def setUp(self):
         super().setUp()
@@ -206,6 +225,14 @@ class BasePrecipitationServiceTest(BaseClimateServiceTest):
         self.field_name = 'precipitation'
         self.expected_aceh_value = 100.0
         self.expected_bali_value = 80.0
+
+class BaseTemperatureServiceTest(BaseClimateServiceTest):
+    def setUp(self):
+        super().setUp()
+        self.service_method = 'get_province_temperature'
+        self.field_name = 'temperature'
+        self.expected_aceh_value = 25.5
+        self.expected_bali_value = 27.0
 
 class BaseHumidityViewTest(BaseClimateViewTest):
     def setUp(self):
@@ -246,3 +273,19 @@ class BasePrecipitationViewTest(BaseClimateViewTest):
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_serialization_error(self, mock_get_data):
         super().test_serialization_error(mock_get_data) 
+
+class BaseTemperatureViewTest(BaseClimateViewTest):
+    def setUp(self):
+        super().setUp()
+        self.url_name = 'province-temperature'
+        self.url = reverse(self.url_name)
+        self.expected_aceh_value = 25.5
+        self.expected_bali_value = 27.0
+
+    @patch('pt_backend.services.ClimateService.get_province_temperature')
+    def test_get_success(self, mock_get_data):
+        super().test_get_success(mock_get_data)
+
+    @patch('pt_backend.services.ClimateService.get_province_temperature')
+    def test_service_returns_error_dict(self, mock_get_data):
+        super().test_service_returns_error_dict(mock_get_data)
