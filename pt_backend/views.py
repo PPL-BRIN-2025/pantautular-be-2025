@@ -424,6 +424,8 @@ class ProvinceTemperatureView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
+    serializer_class = ProvinceClimateValueSerializer
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         cache_service = CacheService()
@@ -435,8 +437,9 @@ class ProvinceTemperatureView(APIView):
             if isinstance(temperature_data, dict) and "error" in temperature_data:
                 return Response(temperature_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
+            serialized_data = self.serializer_class(temperature_data, many=True).data
             return Response({
-                "data": temperature_data
+                "data": serialized_data
             }, status=status.HTTP_200_OK)
             
         except Exception:
