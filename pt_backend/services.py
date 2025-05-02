@@ -246,6 +246,7 @@ class SeverityFilteringService:
 class ClimateService:
     CACHE_KEY_HUMIDITY = "province_humidity"
     CACHE_KEY_PRECIPITATION = "province_precipitation"
+    CACHE_KEY_TEMPERATURE = "province_temperature"
     CACHE_TIMEOUT = 3600  # 1 jam dalam detik
 
     def __init__(self, repository=None, cache_service=None):
@@ -306,7 +307,7 @@ class ClimateService:
 
     def get_province_temperature(self):
         try:
-            cached_data = self.cache_service.get(self.CACHE_KEY_PRECIPITATION)
+            cached_data = self.cache_service.get(self.CACHE_KEY_TEMPERATURE)
             if cached_data is not None:
                 return cached_data
 
@@ -319,7 +320,7 @@ class ClimateService:
                     "value": float(climate.temperature)
                 })
             
-            self.cache_service.set(self.CACHE_KEY_PRECIPITATION, temperature_data, timeout=self.CACHE_TIMEOUT)
+            self.cache_service.set(self.CACHE_KEY_TEMPERATURE, temperature_data, timeout=self.CACHE_TIMEOUT)
             
             return temperature_data
         except Exception as e:
