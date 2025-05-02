@@ -324,5 +324,5 @@ class ClimateService:
             
             return temperature_data
         except Exception as e:
-            print(f"Error in get_province_precipitation: {str(e)}")
+            print(f"Error in get_province_temperature: {str(e)}")
             return {"error": str(e)}
