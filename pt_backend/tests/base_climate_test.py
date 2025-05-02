@@ -106,7 +106,7 @@ class BaseClimateViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.url_name = None  # To be set by child classes
-        self.url = reverse(self.url_name) if self.url_name else None
+        self.url = None  # To be set by child classes
         self.expected_aceh_value = None  # To be set by child classes
         self.expected_bali_value = None  # To be set by child classes
         
