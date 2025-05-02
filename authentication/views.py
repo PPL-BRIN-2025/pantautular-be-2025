@@ -98,6 +98,9 @@ class PasswordResetLinkValidateView(APIView):
         return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
     
 class PasswordResetConfirmView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
     def __init__(self, **kwargs):
         self.password_reset_service = PasswordResetService()
         self.password_validation_service = PasswordValidationService()
