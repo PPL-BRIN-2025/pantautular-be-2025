@@ -419,3 +419,28 @@ class ProvincePrecipitationView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class ProvinceTemperatureView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        cache_service = CacheService()
+        self.service = ClimateService(cache_service=cache_service)
+    
+    def get(self, request):
+        try:
+            temperature_data = self.service.get_province_temperature()
+            if isinstance(temperature_data, dict) and "error" in temperature_data:
+                return Response(temperature_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            return Response({
+                "data": temperature_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
