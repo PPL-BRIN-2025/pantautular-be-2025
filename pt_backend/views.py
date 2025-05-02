@@ -4,8 +4,8 @@ from rest_framework import status
 
 
 from pt_backend.models import Location
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer
-from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceClimateValueSerializer
+from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
 from .authentication import APIKeyAuthentication
@@ -361,3 +361,89 @@ class SeverityFilteringStatsView(APIView):
         cities = cities if cities else None
         
         return provinces, cities
+
+class ProvinceHumidityView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = ProvinceClimateValueSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        cache_service = CacheService()
+        self.service = ClimateService(cache_service=cache_service)
+    
+    def get(self, request):
+        try:
+            humidity_data = self.service.get_province_humidity()
+            
+            if isinstance(humidity_data, dict) and "error" in humidity_data:
+                return Response(humidity_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(humidity_data, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class ProvincePrecipitationView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = ProvinceClimateValueSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        cache_service = CacheService()
+        self.service = ClimateService(cache_service=cache_service)
+    
+    def get(self, request):
+        try:
+            precipitation_data = self.service.get_province_precipitation()
+            
+            if isinstance(precipitation_data, dict) and "error" in precipitation_data:
+                return Response(precipitation_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(precipitation_data, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class ProvinceTemperatureView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    serializer_class = ProvinceClimateValueSerializer
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        cache_service = CacheService()
+        self.service = ClimateService(cache_service=cache_service)
+    
+    def get(self, request):
+        try:
+            temperature_data = self.service.get_province_temperature()
+            if isinstance(temperature_data, dict) and "error" in temperature_data:
+                return Response(temperature_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            serialized_data = self.serializer_class(temperature_data, many=True).data
+            return Response({
+                "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
