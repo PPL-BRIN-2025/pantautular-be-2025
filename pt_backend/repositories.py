@@ -227,7 +227,8 @@ class CaseRepository(CaseRepositoryInterface):
             news__date_published__year=year
         ).distinct()
     
-    
+    def get_status_and_province(self):
+        return Case.objects.select_related('location').values('status', 'location__province')
 
     
 
