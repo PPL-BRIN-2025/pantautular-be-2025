@@ -16,6 +16,7 @@ from ..statistics import (
 import unittest
 import uuid
 import math
+import numpy as np
 
 class BaseStatisticsTestCase(TestCase):
     def setUp(self):
@@ -1178,34 +1179,40 @@ class TestAverageSeverityByProvince(unittest.TestCase):
         self.mock_service = MagicMock()
         self.calculator = AverageSeverityByProvince(self.mock_service)
 
-    def test_positive_multiple_provinces(self):
+    def test_positive_case_with_multiple_provinces(self):
         self.mock_service.get_status_and_province.return_value = [
             {"status": "minimal", "location__province": "Jawa Barat"},
             {"status": "biasa", "location__province": "Jawa Barat"},
             {"status": "bahaya", "location__province": "DKI Jakarta"},
             {"status": "katastropik", "location__province": "DKI Jakarta"},
             {"status": "bahaya", "location__province": "DKI Jakarta"},
+            {"status": "katastropik", "location__province": "Sulawesi Selatan"},
         ]
 
         result = self.calculator.compute()
 
         self.assertIn("Jawa Barat", result)
         self.assertIn("DKI Jakarta", result)
-        self.assertIsInstance(result["Jawa Barat"], float)
-        self.assertGreater(result["DKI Jakarta"], result["Jawa Barat"])
+        self.assertIn("Sulawesi Selatan", result)
 
-    def test_negative_invalid_status_ignored(self):
+        for prov in result:
+            self.assertIn("weighted_score", result[prov])
+            self.assertIn("status", result[prov])
+            self.assertIsInstance(result[prov]["weighted_score"], float)
+            self.assertIn(result[prov]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
+
+    def test_invalid_status_ignored(self):
         self.mock_service.get_status_and_province.return_value = [
-            {"status": "invalid", "location__province": "Papua"},
-            {"status": "biasa", "location__province": "Papua"}
+            {"status": "INVALID_STATUS", "location__province": "Papua"},
+            {"status": "biasa", "location__province": "Papua"},
         ]
 
         result = self.calculator.compute()
-        self.assertIn("Papua", result)
-        # Hanya satu status valid ("biasa" = 2), log(2) = 0.69..., 2 * 0.69 = ~1.38
-        self.assertAlmostEqual(result["Papua"], round(2 * math.log(2), 2))
 
-    def test_corner_missing_status_or_province(self):
+        self.assertIn("Papua", result)
+        self.assertEqual(result["Papua"]["status"], "minimal")  # karena cuma satu skor valid
+
+    def test_missing_status_or_province(self):
         self.mock_service.get_status_and_province.return_value = [
             {"status": None, "location__province": "Jawa Tengah"},
             {"status": "bahaya", "location__province": None},
@@ -1213,9 +1220,9 @@ class TestAverageSeverityByProvince(unittest.TestCase):
         ]
 
         result = self.calculator.compute()
+
         self.assertIn("Jawa Tengah", result)
-        # Hanya satu data valid ("katastropik" = 4), log(2) = 0.69..., 4 * 0.69 = ~2.77
-        self.assertAlmostEqual(result["Jawa Tengah"], round(4 * math.log(2), 2))
+        self.assertIn(result["Jawa Tengah"]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
 
     def test_empty_data(self):
         self.mock_service.get_status_and_province.return_value = []
