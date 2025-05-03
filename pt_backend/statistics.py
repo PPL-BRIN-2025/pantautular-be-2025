@@ -3,6 +3,9 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from .interfaces import CaseRepositoryInterface
 from .repositories import CaseRepository
+from .services import CaseService
+import math
+import numpy as np
 
 class StatisticsCoordinator:
     """
@@ -398,3 +401,65 @@ class LocalPortalStatisticsReport:
             "top_local": top_local,
             "all_local": all_local
         }
+    
+
+class AverageSeverityByProvince:
+    STATUS_ENCODING = {
+        "minimal": 1,
+        "biasa": 2,
+        "bahaya": 3,
+        "katastropik": 4
+    }
+
+    def __init__(self, case_service):
+        self.case_service = case_service
+
+    def compute(self):
+        """
+        Hitung weighted severity score dan kategorisasi status untuk setiap provinsi.
+        Output: dict { province: { "weighted_score": float, "status": str } }
+        """
+        data = self.case_service.get_status_and_province()
+        province_scores = defaultdict(list)
+
+        for record in data:
+            status = record.get("status")
+            province = record.get("location__province")
+
+            if status and province:
+                status = status.lower()
+                if status in self.STATUS_ENCODING:
+                    encoded = self.STATUS_ENCODING[status]
+                    province_scores[province].append(encoded)
+
+        if not province_scores:
+            return {}
+
+        weighted_result = {}
+        all_scores = []
+
+        for province, scores in province_scores.items():
+            avg = sum(scores) / len(scores)
+            weight = math.log(len(scores) + 1)
+            weighted_score = round(avg * weight, 2)
+            weighted_result[province] = {"weighted_score": weighted_score}
+            all_scores.append(weighted_score)
+
+        # Hitung kuartil dinamis
+        q1 = np.percentile(all_scores, 25)
+        q2 = np.percentile(all_scores, 50)
+        q3 = np.percentile(all_scores, 75)
+
+        # Klasifikasi berdasarkan score
+        for province, result in weighted_result.items():
+            score = result["weighted_score"]
+            if score <= q1:
+                result["status"] = "minimal"
+            elif score <= q2:
+                result["status"] = "biasa"
+            elif score <= q3:
+                result["status"] = "bahaya"
+            else:
+                result["status"] = "katastropik"
+
+        return weighted_result

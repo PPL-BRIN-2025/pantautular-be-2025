@@ -226,6 +226,11 @@ class CaseRepository(CaseRepositoryInterface):
         return Case.objects.filter(
             news__date_published__year=year
         ).distinct()
+    
+    def get_status_and_province(self):
+        return Case.objects.select_related('location').values('status', 'location__province')
+
+    
 
 class ClimateRepository:
     def get_latest_climate_data(self):

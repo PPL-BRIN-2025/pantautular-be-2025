@@ -149,6 +149,58 @@ class TestCaseService(unittest.TestCase):
         self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
         self.assertEqual(result, [])
 
+    def test_get_status_and_province_cache_hit(self):
+        """
+        Positive Case:
+        When the data is already in the cache, return it directly.
+        """
+        cached_data = [
+            {"status": "bahaya", "location__province": "Jawa Barat"},
+            {"status": "minimal", "location__province": "DKI Jakarta"}
+        ]
+        self.mock_cache.get.return_value = cached_data
+
+        result = self.service.get_status_and_province()
+
+        self.mock_cache.get.assert_called_once_with("status_province")
+        self.mock_repository.get_status_and_province.assert_not_called()
+        self.assertEqual(result, cached_data)
+
+    def test_get_status_and_province_cache_miss_repository_none(self):
+        """
+        Negative Case:
+        Cache is empty and repository returns None. Should return an empty list.
+        """
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_status_and_province.return_value = None
+
+        result = self.service.get_status_and_province()
+
+        self.mock_cache.get.assert_called_once_with("status_province")
+        self.mock_repository.get_status_and_province.assert_called_once()
+        self.mock_cache.set.assert_called_once_with("status_province", [], timeout=300)
+        self.assertEqual(result, [])
+
+    def test_get_status_and_province_cache_miss_repository_returns_data(self):
+        """
+        Corner Case:
+        Cache is empty and repository returns valid data.
+        Data should be cached and returned.
+        """
+        repo_data = [
+            {"status": "katastropik", "location__province": "Papua"},
+            {"status": "biasa", "location__province": "Sulawesi Selatan"}
+        ]
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_status_and_province.return_value = repo_data
+
+        result = self.service.get_status_and_province()
+
+        self.mock_cache.get.assert_called_once_with("status_province")
+        self.mock_repository.get_status_and_province.assert_called_once()
+        self.mock_cache.set.assert_called_once_with("status_province", repo_data, timeout=300)
+        self.assertEqual(result, repo_data)
+
 class TestCacheService(TestCase):
     def setUp(self):
         self.cache_service = CacheService()
