@@ -45,15 +45,29 @@ class SQLInjectionDetector:
         """
         Check request.query_params (GET) and request.data (POST/PUT) for SQL injection attempts.
         """
-        for key, value in request.query_params.items():
-            if cls._is_suspicious(value):
-                raise ValidationError(f"Input for '{key}' contains suspicious SQL injection pattern.")
+        cls._check_dict_for_injection(request.query_params)
 
         if hasattr(request, "data"):
-            for key, value in request.data.items():
-                if isinstance(value, str) and cls._is_suspicious(value):
-                    raise ValidationError(f"Input for '{key}' contains suspicious SQL injection pattern.")
-                if isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, str) and cls._is_suspicious(item):
-                            raise ValidationError(f"Input list for '{key}' contains suspicious SQL injection pattern.")
+            cls._check_data_for_injection(request.data)
+
+    @classmethod
+    def _check_dict_for_injection(cls, data_dict):
+        for key, value in data_dict.items():
+            cls._validate_input(key, value)
+
+    @classmethod
+    def _check_data_for_injection(cls, data):
+        for key, value in data.items():
+            if isinstance(value, str):
+                cls._validate_input(key, value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        cls._validate_input(key, item, is_list=True)
+
+    @classmethod
+    def _validate_input(cls, key, value, is_list=False):
+        if cls._is_suspicious(value):
+            source = "list for" if is_list else ""
+            raise ValidationError(f"Input {source} '{key}' contains suspicious SQL injection pattern.")
+
