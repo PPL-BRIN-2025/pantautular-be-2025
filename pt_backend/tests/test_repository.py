@@ -249,3 +249,16 @@ class CaseRepositoryTestCase(BaseTestCase):
         with patch('pt_backend.models.Case.objects.select_related', side_effect=Exception("Test error")):
             result = self.repository.get_case_detail_by_id(self.case1.id)
             self.assertIsNone(result)
+    
+    def test_get_status_and_province(self):
+        results = self.repository.get_status_and_province()
+        result_list = list(results)
+        
+        self.assertEqual(len(result_list), 2)
+        
+        # Periksa struktur data dan kolom
+        for item in result_list:
+            self.assertIn('status', item)
+            self.assertIn('location__province', item)
+            self.assertIsInstance(item['status'], str)
+            self.assertIsInstance(item['location__province'], str)

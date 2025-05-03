@@ -13,6 +13,7 @@ class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_KEY_ALL_LOCATIONS = "all_locations"
     CACHE_TIMEOUT = 300 
+    CACHE_KEY_STATUS_PROVINCE = "status_province"
 
     def __init__(self, repository: CaseRepositoryInterface, cache_service: CacheInterface):
         self.repository = repository
@@ -38,6 +39,14 @@ class CaseService(CaseRetrievalInterface):
             cases = self.repository.get_cases_by_year(year)
             self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
+    
+    def get_status_and_province(self):
+        data = self.cache_service.get(self.CACHE_KEY_STATUS_PROVINCE)
+        if data is None:
+            repo_data = self.repository.get_status_and_province()
+            data = list(repo_data) if repo_data else []
+            self.cache_service.set(self.CACHE_KEY_STATUS_PROVINCE, data, timeout=self.CACHE_TIMEOUT)
+        return data
 
 class CacheService(CacheInterface):
     def get(self, key):
