@@ -402,4 +402,33 @@ class LocalPortalStatisticsReport:
         }
     
 
+class AverageSeverityByProvince:
+    STATUS_ENCODING = {
+        "minimal": 1,
+        "biasa": 2,
+        "bahaya": 3,
+        "katastropik": 4
+    }
 
+    def __init__(self, case_service):
+        self.case_service = case_service
+
+    def compute(self):
+        data = self.case_service.get_status_and_province()
+        province_scores = defaultdict(list)
+        for record in data:
+            status = record.get("status")
+            province = record.get("location__province")
+
+            if status in self.STATUS_ENCODING and province:
+                encoded_status = self.STATUS_ENCODING[status]
+                province_scores[province].append(encoded_status)
+
+        weighted_scores = {}
+        for province, scores in province_scores.items():
+            avg = sum(scores) / len(scores)
+            weight = math.log(len(scores) + 1)
+            weighted_score = round(avg * weight, 2)
+            weighted_scores[province] = weighted_score
+
+        return weighted_scores
