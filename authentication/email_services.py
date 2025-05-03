@@ -5,6 +5,10 @@ import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 from sib_api_v3_sdk import TransactionalEmailsApi, ApiClient, SendSmtpEmail
 
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+
+
 class EmailService(ABC):
     @abstractmethod
     def send_password_reset_email(self, recipient_email, reset_link):
@@ -38,3 +42,18 @@ class BrevoEmailService(EmailService):
         except ApiException as e:
             print(f"Exception when calling TransactionalEmailsApi: {e}")
             raise
+
+class DjangoEmailService(EmailService):
+    """Django's built-in email service implementation"""
+    def send_password_reset_email(self, recipient_email, reset_link):
+        subject = "Password Reset Request"
+        from_email = f"PantauTular <{os.getenv("EMAIL_HOST_USER")}>"
+        to = [recipient_email]
+
+        html_content = render_to_string("email_reset_password.html", {
+            "reset_link": reset_link,
+        })
+        
+        msg = EmailMultiAlternatives(subject, "Please use a HTML-compatible email client", from_email, to)
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
