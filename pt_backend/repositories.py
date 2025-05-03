@@ -226,6 +226,10 @@ class CaseRepository(CaseRepositoryInterface):
         return Case.objects.filter(
             news__date_published__year=year
         ).distinct()
+    
+    
+
+    
 
 class ClimateRepository:
     def get_latest_climate_data(self):
