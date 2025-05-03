@@ -10,10 +10,12 @@ from ..statistics import (
     AgeGroupingReport, 
     GenderGroupingReport, LocalPortalStatisticsReport, NationalNewsStatisticsReport, 
     SeverityGroupingReport,
-    SeverityDatesCountReport
+    SeverityDatesCountReport,
+    AverageSeverityByProvince
 )
 import unittest
 import uuid
+import math
 
 class BaseStatisticsTestCase(TestCase):
     def setUp(self):
@@ -1169,3 +1171,54 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertIn("prevalence_statistics", result)
         self.assertNotIn("error", result["prevalence_statistics"])
         self.assertNotIn("error", result)  # Main result should not have an error
+
+class TestAverageSeverityByProvince(unittest.TestCase):
+
+    def setUp(self):
+        self.mock_service = MagicMock()
+        self.calculator = AverageSeverityByProvince(self.mock_service)
+
+    def test_positive_multiple_provinces(self):
+        self.mock_service.get_status_and_province.return_value = [
+            {"status": "minimal", "location__province": "Jawa Barat"},
+            {"status": "biasa", "location__province": "Jawa Barat"},
+            {"status": "bahaya", "location__province": "DKI Jakarta"},
+            {"status": "katastropik", "location__province": "DKI Jakarta"},
+            {"status": "bahaya", "location__province": "DKI Jakarta"},
+        ]
+
+        result = self.calculator.compute()
+
+        self.assertIn("Jawa Barat", result)
+        self.assertIn("DKI Jakarta", result)
+        self.assertIsInstance(result["Jawa Barat"], float)
+        self.assertGreater(result["DKI Jakarta"], result["Jawa Barat"])
+
+    def test_negative_invalid_status_ignored(self):
+        self.mock_service.get_status_and_province.return_value = [
+            {"status": "invalid", "location__province": "Papua"},
+            {"status": "biasa", "location__province": "Papua"}
+        ]
+
+        result = self.calculator.compute()
+        self.assertIn("Papua", result)
+        # Hanya satu status valid ("biasa" = 2), log(2) = 0.69..., 2 * 0.69 = ~1.38
+        self.assertAlmostEqual(result["Papua"], round(2 * math.log(2), 2))
+
+    def test_corner_missing_status_or_province(self):
+        self.mock_service.get_status_and_province.return_value = [
+            {"status": None, "location__province": "Jawa Tengah"},
+            {"status": "bahaya", "location__province": None},
+            {"status": "katastropik", "location__province": "Jawa Tengah"},
+        ]
+
+        result = self.calculator.compute()
+        self.assertIn("Jawa Tengah", result)
+        # Hanya satu data valid ("katastropik" = 4), log(2) = 0.69..., 4 * 0.69 = ~2.77
+        self.assertAlmostEqual(result["Jawa Tengah"], round(4 * math.log(2), 2))
+
+    def test_empty_data(self):
+        self.mock_service.get_status_and_province.return_value = []
+
+        result = self.calculator.compute()
+        self.assertEqual(result, {})

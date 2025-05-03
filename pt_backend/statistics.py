@@ -3,6 +3,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from .interfaces import CaseRepositoryInterface
 from .repositories import CaseRepository
+from .services import CaseService
+import math
 
 class StatisticsCoordinator:
     """
@@ -398,3 +400,6 @@ class LocalPortalStatisticsReport:
             "top_local": top_local,
             "all_local": all_local
         }
+    
+
+
