@@ -11,41 +11,12 @@ import os
 from .base_climate_test import BasePrecipitationRepositoryTest, BasePrecipitationServiceTest, BasePrecipitationViewTest
 
 class ClimateRepositoryTest(BasePrecipitationRepositoryTest):
-    def setUp(self):
-        self.field_name = 'precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
+    pass
 
 class ClimateServiceTest(BasePrecipitationServiceTest):
-    def setUp(self):
-        self.field_name = 'precipitation'
-        self.service_method = 'get_province_precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
-        
-    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
-    def test_get_province_data_success(self, mock_get_data):
-        """Test service method to get province data"""
-        mock_get_data.return_value = [
-            MagicMock(province="Aceh", **{self.field_name: self.expected_aceh_value}),
-            MagicMock(province="Bali", **{self.field_name: self.expected_bali_value})
-        ]
-        
-        result = getattr(self.service, self.service_method)()
-        
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], {"province": "Aceh", "value": self.expected_aceh_value})
-        self.assertEqual(result[1], {"province": "Bali", "value": self.expected_bali_value})
+    pass
 
 class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
-    def setUp(self):
-        self.url_name = 'province-precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
-
     def tearDown(self):
         # Clean up environment variable
         os.environ.pop('SECRET_API_KEY', None)
