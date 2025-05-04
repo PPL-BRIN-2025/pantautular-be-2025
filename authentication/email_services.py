@@ -7,6 +7,7 @@ from sib_api_v3_sdk import TransactionalEmailsApi, ApiClient, SendSmtpEmail
 
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
+from django.template import TemplateDoesNotExist
 
 
 class EmailService(ABC):
@@ -47,13 +48,20 @@ class DjangoEmailService(EmailService):
     """Django's built-in email service implementation"""
     def send_password_reset_email(self, recipient_email, reset_link):
         subject = "Password Reset Request"
-        from_email = f"PantauTular <{os.getenv("EMAIL_HOST_USER")}>"
+        from_email = f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
         to = [recipient_email]
 
-        html_content = render_to_string("email_reset_password.html", {
-            "reset_link": reset_link,
-        })
+        try:
+            html_content = render_to_string("email_reset_password.html", {
+                "reset_link": reset_link,
+            })
+        except TemplateDoesNotExist:
+            raise FileNotFoundError("The template 'email_reset_password.html' does not exist. Please ensure it is available.")
         
         msg = EmailMultiAlternatives(subject, "Please use a HTML-compatible email client", from_email, to)
         msg.attach_alternative(html_content, "text/html")
-        msg.send()
+        try:
+            msg.send()
+        except Exception as e:
+            print(f"Failed to send email: {e}")
+            raise
