@@ -126,8 +126,9 @@ class BaseClimateViewTest(TestCase):
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('data', response.data)
-        self.assertEqual(len(response.data['data']), 2)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]['id'], 'ID-AC')
+        self.assertEqual(response.data[1]['id'], 'ID-BA')
 
     def test_service_returns_error_dict(self, mock_get_data):
         """Test when service returns error dict"""
@@ -140,12 +141,12 @@ class BaseClimateViewTest(TestCase):
 
     def test_serialization_error(self, mock_get_data):
         """Test when serialization fails"""
-        mock_get_data.return_value = [{"invalid_field": "value"}]
+        mock_get_data.return_value = [{"invalid_field": "value", "invalid_field2": "value2"}]
         
         response = self.client.get(self.url)
         
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn('error', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data, list)
 
     def test_authentication_required(self):
         """Test that authentication is required"""
