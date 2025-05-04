@@ -165,13 +165,13 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
     "https://pantautular-fe.netlify.app",
     "https://radiant-cobbler-73f044.netlify.app"
 ]
 
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost:\d+$",
     r"^https:\/\/.*\.up\.railway\.app$",  # Allows all railway.app subdomains
 ]
 
