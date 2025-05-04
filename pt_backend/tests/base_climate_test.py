@@ -75,8 +75,8 @@ class BaseClimateServiceTest(TestCase):
         result = getattr(self.service, self.service_method)()
         
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0], {"id": "Aceh", "value": self.expected_aceh_value})
-        self.assertEqual(result[1], {"id": "Bali", "value": self.expected_bali_value})
+        self.assertEqual(result[0], {"province": "Aceh", "value": self.expected_aceh_value})
+        self.assertEqual(result[1], {"province": "Bali", "value": self.expected_bali_value})
 
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_data_error(self, mock_get_data):
@@ -98,9 +98,9 @@ class BaseClimateServiceTest(TestCase):
         getattr(self.service, self.service_method)()
         mock_set.assert_called_once()
         
-        mock_get.return_value = [{"id": "Test", "value": self.expected_aceh_value}]
+        mock_get.return_value = [{"province": "Test", "value": self.expected_aceh_value}]
         result = getattr(self.service, self.service_method)()
-        self.assertEqual(result, [{"id": "Test", "value": self.expected_aceh_value}])
+        self.assertEqual(result, [{"province": "Test", "value": self.expected_aceh_value}])
 
 class BaseClimateViewTest(TestCase):
     def setUp(self):
@@ -119,8 +119,8 @@ class BaseClimateViewTest(TestCase):
     def test_get_success(self, mock_get_data):
         """Test successful GET request"""
         mock_get_data.return_value = [
-            {"id": "Aceh", "value": self.expected_aceh_value},
-            {"id": "Bali", "value": self.expected_bali_value}
+            {"province": "Aceh", "value": self.expected_aceh_value},
+            {"province": "Bali", "value": self.expected_bali_value}
         ]
         
         response = self.client.get(self.url)
@@ -272,7 +272,7 @@ class BasePrecipitationViewTest(BaseClimateViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_serialization_error(self, mock_get_data):
-        super().test_serialization_error(mock_get_data) 
+        super().test_serialization_error(mock_get_data)
 
 class BaseTemperatureViewTest(BaseClimateViewTest):
     def setUp(self):

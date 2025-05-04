@@ -514,7 +514,7 @@ class WeightedSeverityAnalysisViewTest(TestCase):
         
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, {"data": mock_result})
+        self.assertEqual(response.data, mock_result)
         
     def test_get_no_data(self):
         # Setup mock to return empty result

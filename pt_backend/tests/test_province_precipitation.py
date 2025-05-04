@@ -24,6 +24,20 @@ class ClimateServiceTest(BasePrecipitationServiceTest):
         self.expected_aceh_value = 100.0
         self.expected_bali_value = 80.0
         super().setUp()
+        
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
+    def test_get_province_data_success(self, mock_get_data):
+        """Test service method to get province data"""
+        mock_get_data.return_value = [
+            MagicMock(province="Aceh", **{self.field_name: self.expected_aceh_value}),
+            MagicMock(province="Bali", **{self.field_name: self.expected_bali_value})
+        ]
+        
+        result = getattr(self.service, self.service_method)()
+        
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], {"province": "Aceh", "value": self.expected_aceh_value})
+        self.assertEqual(result[1], {"province": "Bali", "value": self.expected_bali_value})
 
 class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
     def setUp(self):
@@ -40,15 +54,17 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
     def test_get_success(self, mock_get_precipitation):
         """Test successful GET request"""
         mock_get_precipitation.return_value = [
-            {"id": "Aceh", "value": 100.0},
-            {"id": "Bali", "value": 80.0}
+            {"province": "Aceh", "value": 100.0},
+            {"province": "Bali", "value": 80.0}
         ]
         
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('data', response.data)
-        self.assertEqual(len(response.data['data']), 2)
+        self.assertEqual(len(response.data), 2)
+        # The response should contain ISO 3166-2 codes
+        self.assertEqual(response.data[0]['id'], 'ID-AC')
+        self.assertEqual(response.data[1]['id'], 'ID-BA')
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_service_returns_error_dict(self, mock_get_precipitation):

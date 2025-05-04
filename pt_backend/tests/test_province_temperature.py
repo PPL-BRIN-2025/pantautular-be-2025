@@ -24,6 +24,20 @@ class ClimateServiceTest(BaseTemperatureServiceTest):
         self.expected_aceh_value = 25.5
         self.expected_bali_value = 27.0
         super().setUp()
+        
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
+    def test_get_province_data_success(self, mock_get_data):
+        """Test service method to get province data"""
+        mock_get_data.return_value = [
+            MagicMock(province="Aceh", **{self.field_name: self.expected_aceh_value}),
+            MagicMock(province="Bali", **{self.field_name: self.expected_bali_value})
+        ]
+        
+        result = getattr(self.service, self.service_method)()
+        
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0], {"province": "Aceh", "value": self.expected_aceh_value})
+        self.assertEqual(result[1], {"province": "Bali", "value": self.expected_bali_value})
 
 class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
     def setUp(self):
@@ -40,8 +54,8 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
     def test_get_success(self, mock_get_temperature):
         """Test successful GET request"""
         mock_get_temperature.return_value = [
-            {"id": "Aceh", "value": 25.5},
-            {"id": "Bali", "value": 27.0}
+            {"province": "Aceh", "value": 25.5},
+            {"province": "Bali", "value": 27.0}
         ]
         
         response = self.client.get(self.url)
@@ -49,6 +63,9 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('data', response.data)
         self.assertEqual(len(response.data['data']), 2)
+        # The response should contain ISO 3166-2 codes
+        self.assertEqual(response.data['data'][0]['id'], 'ID-AC')
+        self.assertEqual(response.data['data'][1]['id'], 'ID-BA')
 
     @patch('pt_backend.services.ClimateService.get_province_temperature')
     def test_service_returns_error_dict(self, mock_get_temperature):
@@ -64,8 +81,8 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
     def test_serialization_error(self, mock_get_temperature):
         """Test when serialization error occurs"""
         mock_get_temperature.return_value = [
-            {"id": "Aceh", "value": "invalid_value"},  # Invalid value type
-            {"id": "Bali", "value": 27.0}
+            {"province": "Aceh", "value": "invalid_value"},  # Invalid value type
+            {"province": "Bali", "value": 27.0}
         ]
         
         response = self.client.get(self.url)
