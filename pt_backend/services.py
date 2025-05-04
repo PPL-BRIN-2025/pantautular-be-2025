@@ -276,7 +276,7 @@ class ClimateService:
             humidity_data = []
             for climate in latest_climate:
                 humidity_data.append({
-                    "id": climate.province,
+                    "province": climate.province,
                     "value": float(climate.humidity)
                 })
             
@@ -302,7 +302,7 @@ class ClimateService:
             precipitation_data = []
             for climate in latest_climate:
                 precipitation_data.append({
-                    "id": climate.province,
+                    "province": climate.province,
                     "value": float(climate.precipitation)
                 })
             
@@ -325,7 +325,7 @@ class ClimateService:
             temperature_data = []
             for climate in latest_climate:
                 temperature_data.append({
-                    "id": climate.province,
+                    "province": climate.province,
                     "value": float(climate.temperature)
                 })
             

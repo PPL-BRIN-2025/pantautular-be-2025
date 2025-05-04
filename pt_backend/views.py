@@ -4,7 +4,7 @@ from rest_framework import status
 
 
 from pt_backend.models import Location
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceClimateValueSerializer
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceClimateValueSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
 from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
@@ -366,7 +366,7 @@ class ProvinceHumidityView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
-    serializer_class = ProvinceClimateValueSerializer
+    serializer_class = ProvinceHumiditySerializer
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -381,9 +381,7 @@ class ProvinceHumidityView(APIView):
                 return Response(humidity_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(humidity_data, many=True).data
-            return Response({
-                "data": serialized_data
-            }, status=status.HTTP_200_OK)
+            return Response(serialized_data, status=status.HTTP_200_OK)
             
         except Exception:
             return Response(
@@ -395,7 +393,7 @@ class ProvincePrecipitationView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
-    serializer_class = ProvinceClimateValueSerializer
+    serializer_class = ProvincePrecipitationSerializer
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -410,9 +408,7 @@ class ProvincePrecipitationView(APIView):
                 return Response(precipitation_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(precipitation_data, many=True).data
-            return Response({
-                "data": serialized_data
-            }, status=status.HTTP_200_OK)
+            return Response(serialized_data, status=status.HTTP_200_OK)
             
         except Exception:
             return Response(
@@ -424,7 +420,7 @@ class ProvinceTemperatureView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
-    serializer_class = ProvinceClimateValueSerializer
+    serializer_class = ProvinceTemperatureSerializer
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -470,9 +466,7 @@ class WeightedSeverityAnalysisView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            return Response({
-                "data": result
-            }, status=status.HTTP_200_OK)
+            return Response(result, status=status.HTTP_200_OK)
             
         except Exception:
             return Response(
