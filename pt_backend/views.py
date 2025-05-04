@@ -11,7 +11,7 @@ from .repositories import CaseRepository, DiseaseRepository, LocationRepository,
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from .statistics import StatisticsCoordinator
+from .statistics import StatisticsCoordinator, AverageSeverityByProvince
 from .filter.grafana_config import (
     measure_time, count_calls,
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
@@ -440,6 +440,38 @@ class ProvinceTemperatureView(APIView):
             serialized_data = self.serializer_class(temperature_data, many=True).data
             return Response({
                 "data": serialized_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class WeightedSeverityAnalysisView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.case_service = CaseService(
+            repository=CaseRepository(),
+            cache_service=CacheService()
+        )
+        self.severity_analyzer = AverageSeverityByProvince(self.case_service)
+    
+    def get(self, request):
+        try:
+            result = self.severity_analyzer.compute()
+            
+            if not result:
+                return Response(
+                    {"error": "No case data available"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            return Response({
+                "data": result
             }, status=status.HTTP_200_OK)
             
         except Exception:
