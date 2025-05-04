@@ -45,20 +45,26 @@ class BrevoEmailService(EmailService):
             raise
 
 class DjangoEmailService(EmailService):
+    def __init__(self, from_email=None, subject="Password Reset Request", template_name="email_reset_password.html"):
+        self.from_email = from_email or f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
+        self.subject = subject
+        self.template_name = template_name
+
     """Django's built-in email service implementation"""
     def send_password_reset_email(self, recipient_email, reset_link):
-        subject = "Password Reset Request"
-        from_email = f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
+        subject = self.subject
+        from_email = self.from_email
         to = [recipient_email]
 
         try:
-            html_content = render_to_string("email_reset_password.html", {
+            html_content = render_to_string(self.template_name, {
                 "reset_link": reset_link,
             })
         except TemplateDoesNotExist:
             raise FileNotFoundError("The template 'email_reset_password.html' does not exist. Please ensure it is available.")
         
-        msg = EmailMultiAlternatives(subject, "Please use a HTML-compatible email client", from_email, to)
+        text_content = f"Reset your password by visiting this link: {reset_link}"
+        msg = EmailMultiAlternatives(subject, text_content, from_email, to)
         msg.attach_alternative(html_content, "text/html")
         try:
             msg.send()
