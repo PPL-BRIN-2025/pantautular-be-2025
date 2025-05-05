@@ -18,8 +18,27 @@ class ChainHandler(ABC):
         self._next_handler = handler
         return handler
 
-    @abstractmethod
     def handle(self, recipient_email, reset_link):
+        """Template method that defines the handling algorithm"""
+        try:
+            # Let subclasses decide if they can handle it
+            if self.can_handle(recipient_email, reset_link):
+                return True
+            else:
+                # Forward to next handler if available
+                if self._next_handler:
+                    return self._next_handler.handle(recipient_email, reset_link)
+                # No handler could process the request
+                raise Exception("No handler was able to process the request")
+        except Exception as e:
+            print(f"{self.__class__.__name__} failed: {e}")
+            if self._next_handler:
+                return self._next_handler.handle(recipient_email, reset_link)
+            raise
+
+    @abstractmethod
+    def can_handle(self, recipient_email, reset_link):
+        """Subclasses should implement this to check if they can handle the request."""
         pass
 
 class EmailSender(ABC):
@@ -29,18 +48,16 @@ class EmailSender(ABC):
         pass
 
 class EmailChainHandler(ChainHandler):
-    """Concrete implementation of a chain handling for emails services."""
-    def handle(self, recipient_email, reset_link):
+    """Base class for email-sending handlers"""
+    
+    def can_handle(self, recipient_email, reset_link):
+        """Attempt to send email and return success/failure"""
         try:
-            if isinstance(self, EmailSender):
-                self.send_password_reset_email(recipient_email, reset_link)
-                return True
-            raise NotImplementedError("This handler cannot send emails")
+            self.send_password_reset_email(recipient_email, reset_link)
+            return True
         except Exception as e:
-            print(f"{self.__class__.__name__} failed: {e}")
-            if self._next_handler:
-                return self._next_handler.handle(recipient_email, reset_link)
-            raise
+            print(f"Handler {self.__class__.__name__} could not process request: {e}")
+            return False
     
 class BrevoEmailService(EmailSender, EmailChainHandler):
     """Brevo-specific email service implementation"""
