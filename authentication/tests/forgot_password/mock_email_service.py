@@ -1,9 +1,8 @@
-from authentication.email_services import EmailHandler
+from authentication.email_services import EmailSender, EmailChainHandler
 
-# In mock_email_service.py
-class MockEmailService(EmailHandler):
+class MockEmailService(EmailSender, EmailChainHandler):
     def __init__(self, should_fail=False):
-        super().__init__()
+        super().__init__() 
         self.sent_emails = []
         self.should_fail = should_fail
     
