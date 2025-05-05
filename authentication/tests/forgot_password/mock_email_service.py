@@ -8,7 +8,7 @@ class MockEmailService(EmailSender, EmailChainHandler):
     
     def send_password_reset_email(self, recipient_email, reset_link, template_id=None):
         if self.should_fail:
-            raise Exception("Mock service failure")
+            raise RuntimeError("Mock service failure")
             
         self.sent_emails.append({
             "recipient": recipient_email,

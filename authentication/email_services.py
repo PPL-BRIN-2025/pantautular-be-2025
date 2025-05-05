@@ -29,7 +29,7 @@ class ChainHandler(ABC):
                 if self._next_handler:
                     return self._next_handler.handle(recipient_email, reset_link)
                 # No handler could process the request
-                raise Exception("No handler was able to process the request")
+                raise RuntimeError("No handler was able to process the request")
         except Exception as e:
             print(f"{self.__class__.__name__} failed: {e}")
             if self._next_handler:
