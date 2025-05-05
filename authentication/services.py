@@ -12,8 +12,7 @@ from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
 import os
-from authentication.email_services import BrevoEmailService, DjangoEmailService
-
+from authentication.email_services import create_default_email_chain
 
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
@@ -21,14 +20,7 @@ class PasswordResetService:
             'PROD_PASSWORD_RESET_URL') or os.getenv(
             'DEV_PASSWORD_RESET_URL')
         
-        # Set up the chain if not injected
-        if not email_chain:
-            brevo = BrevoEmailService()
-            django = DjangoEmailService()
-            brevo.set_next(django)
-            self.email_chain = brevo
-        else:
-            self.email_chain = email_chain
+        self.email_chain = email_chain or create_default_email_chain()
     
     def find_user_by_email(self, email):
         return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
@@ -40,7 +32,7 @@ class PasswordResetService:
 
     def create_password_reset_link(self, uid, token):
         return f"{self.reset_url_base}/{uid}/{token}"
-    
+
     def process_reset_request(self, email):
         user = self.find_user_by_email(email)
         if user:
@@ -48,7 +40,6 @@ class PasswordResetService:
             reset_link = self.create_password_reset_link(uid, token)
             self.email_chain.handle(email, reset_link)
         return True
-
 
     def get_user_from_uidb64(self, uidb64):
         """Decode uidb64 and retrieve the user"""

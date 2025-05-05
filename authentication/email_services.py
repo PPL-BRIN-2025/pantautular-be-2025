@@ -66,7 +66,7 @@ class BrevoEmailService(EmailSender, EmailChainHandler):
         super().__init__()
         self.api_key = api_key or os.getenv("BREVO_API_KEY")
         self.sender = {"name": sender_name, "email": sender_email}
-
+        
     def send_password_reset_email(self, recipient_email, reset_link):
         configuration = sib_api_v3_sdk.Configuration()
         configuration.api_key['api-key'] = self.api_key
@@ -116,3 +116,10 @@ class DjangoEmailService(EmailSender, EmailChainHandler):
         except Exception as e:
             print(f"Failed to send email: {e}")
             raise
+
+def create_default_email_chain():
+    """Create a default email chain with Brevo and Django services"""
+    brevo = BrevoEmailService()
+    django = DjangoEmailService()
+    brevo.set_next(django)
+    return brevo
