@@ -9,7 +9,8 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
 
-class EmailHandler(ABC):
+class ChainHandler(ABC):
+    """Interface for classes that can be part of a responsibility chain."""
     def __init__(self):
         self._next_handler = None
 
@@ -17,25 +18,35 @@ class EmailHandler(ABC):
         self._next_handler = handler
         return handler
 
+    @abstractmethod
     def handle(self, recipient_email, reset_link):
-        try:
-            self.send_password_reset_email(recipient_email, reset_link)
-            return True  
-        except Exception as e:
-            print(f"{self.__class__.__name__} failed: {e}")
-            if self._next_handler:
-                return self._next_handler.handle(recipient_email, reset_link)
-            raise  
+        pass
 
+class EmailSender(ABC):
+    """Interface for classes that send can send password reset emails."""
     @abstractmethod
     def send_password_reset_email(self, recipient_email, reset_link):
         pass
 
-
-class BrevoEmailService(EmailHandler):
+class EmailChainHandler(ChainHandler):
+    """Concrete implementation of a chain handling for emails services."""
+    def handle(self, recipient_email, reset_link):
+        try:
+            if isinstance(self, EmailSender):
+                self.send_password_reset_email(recipient_email, reset_link)
+                return True
+            raise NotImplementedError("This handler cannot send emails")
+        except Exception as e:
+            print(f"{self.__class__.__name__} failed: {e}")
+            if self._next_handler:
+                return self._next_handler.handle(recipient_email, reset_link)
+            raise
+    
+class BrevoEmailService(EmailSender, EmailChainHandler):
     """Brevo-specific email service implementation"""
 
     def __init__(self, api_key=None, sender_name="PPL BRIN", sender_email="pplbrin02@gmail.com"):
+        super().__init__()
         self.api_key = api_key or os.getenv("BREVO_API_KEY")
         self.sender = {"name": sender_name, "email": sender_email}
 
@@ -60,8 +71,9 @@ class BrevoEmailService(EmailHandler):
             print(f"Exception when calling TransactionalEmailsApi: {e}")
             raise
 
-class DjangoEmailService(EmailHandler):
+class DjangoEmailService(EmailSender, EmailChainHandler):
     def __init__(self, from_email=None, subject="Password Reset Request", template_name="email_reset_password.html"):
+        super().__init__()
         self.from_email = from_email or f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
         self.subject = subject
         self.template_name = template_name
