@@ -9,21 +9,37 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
 
+class EmailHandler(ABC):
+    def __init__(self):
+        self._next_handler = None
 
-class EmailService(ABC):
+    def set_next(self, handler):
+        self._next_handler = handler
+        return handler
+
+    def handle(self, recipient_email, reset_link):
+        try:
+            self.send_password_reset_email(recipient_email, reset_link)
+            return True  
+        except Exception as e:
+            print(f"{self.__class__.__name__} failed: {e}")
+            if self._next_handler:
+                return self._next_handler.handle(recipient_email, reset_link)
+            raise  
+
     @abstractmethod
     def send_password_reset_email(self, recipient_email, reset_link):
-        """Send an email with the reset link."""
         pass
 
-class BrevoEmailService(EmailService):
+
+class BrevoEmailService(EmailHandler):
     """Brevo-specific email service implementation"""
 
     def __init__(self, api_key=None, sender_name="PPL BRIN", sender_email="pplbrin02@gmail.com"):
         self.api_key = api_key or os.getenv("BREVO_API_KEY")
         self.sender = {"name": sender_name, "email": sender_email}
 
-    def send_password_reset_email(self, recipient_email, reset_link, template_id=1):
+    def send_password_reset_email(self, recipient_email, reset_link):
         configuration = sib_api_v3_sdk.Configuration()
         configuration.api_key['api-key'] = self.api_key
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
@@ -34,7 +50,7 @@ class BrevoEmailService(EmailService):
         send_smtp_email = SendSmtpEmail(
             to=recipients,
             sender=self.sender,
-            template_id=template_id,
+            template_id=1,
             params=params
         )
 
@@ -44,7 +60,7 @@ class BrevoEmailService(EmailService):
             print(f"Exception when calling TransactionalEmailsApi: {e}")
             raise
 
-class DjangoEmailService(EmailService):
+class DjangoEmailService(EmailHandler):
     def __init__(self, from_email=None, subject="Password Reset Request", template_name="email_reset_password.html"):
         self.from_email = from_email or f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
         self.subject = subject
