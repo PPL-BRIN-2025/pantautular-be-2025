@@ -1,13 +1,16 @@
-from authentication.email_services import EmailService
+from authentication.email_services import EmailHandler
 
-class MockEmailService(EmailService):
-    """Mock email service for testing"""
-    
-    def __init__(self):
+# In mock_email_service.py
+class MockEmailService(EmailHandler):
+    def __init__(self, should_fail=False):
+        super().__init__()
         self.sent_emails = []
+        self.should_fail = should_fail
     
     def send_password_reset_email(self, recipient_email, reset_link, template_id=None):
-        """Record emails instead of sending them"""
+        if self.should_fail:
+            raise Exception("Mock service failure")
+            
         self.sent_emails.append({
             "recipient": recipient_email,
             "reset_link": reset_link,
