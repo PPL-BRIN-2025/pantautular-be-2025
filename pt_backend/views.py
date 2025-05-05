@@ -434,9 +434,7 @@ class ProvinceTemperatureView(APIView):
                 return Response(temperature_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(temperature_data, many=True).data
-            return Response({
-                "data": serialized_data
-            }, status=status.HTTP_200_OK)
+            return Response(serialized_data, status=status.HTTP_200_OK)
             
         except Exception:
             return Response(
