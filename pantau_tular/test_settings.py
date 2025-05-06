@@ -52,3 +52,6 @@ class DisableMigrations:
         return None
 
 MIGRATION_MODULES = DisableMigrations() 
+
+# Define a simple SECRET_KEY for testing
+SECRET_KEY = 'test-secret-key-for-ci'
