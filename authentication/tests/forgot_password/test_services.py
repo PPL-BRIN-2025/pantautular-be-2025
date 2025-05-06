@@ -4,7 +4,7 @@ from django.utils.encoding import force_bytes
 from unittest.mock import MagicMock, patch
 from authentication.services import (
     PasswordResetService, PasswordValidationService,
-    UserFinderService, PasswordTokenService)
+    UserFinderService, PasswordTokenService, ResetLinkService)
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
@@ -498,6 +498,116 @@ class TestPasswordTokenService(TestCase):
         
         # Verify repository was called
         self.repository.get_user_by_id.assert_called_once()
+
+class TestResetLinkService(TestCase):
+    def setUp(self):
+        """Set up test environment for ResetLinkService"""
+        # Create a default service with a test URL base
+        self.default_url_base = "http://example.com/reset-password"
+        self.service = ResetLinkService(reset_url_base=self.default_url_base)
+        
+    def test_init_with_explicit_url(self):
+        """Test initialization with explicitly provided URL base"""
+        custom_url = "https://custom.example.com/reset"
+        service = ResetLinkService(reset_url_base=custom_url)
+        self.assertEqual(service.reset_url_base, custom_url)
+        
+    @patch('os.getenv')
+    def test_init_with_prod_env_url(self, mock_getenv):
+        """Test initialization using production URL from environment"""
+        # Setup mock to return prod URL for first call, dev URL for second call
+        mock_getenv.side_effect = ["https://prod.example.com/reset", "https://dev.example.com/reset"]
+        
+        service = ResetLinkService()
+        
+        # Should use prod URL since it's available
+        self.assertEqual(service.reset_url_base, "https://prod.example.com/reset")
+        
+    @patch('os.getenv')
+    def test_init_with_dev_env_url(self, mock_getenv):
+        """Test initialization using development URL from environment when prod is not available"""
+        # Setup mock to return None for prod URL, dev URL for second call
+        mock_getenv.side_effect = [None, "https://dev.example.com/reset"]
+        
+        service = ResetLinkService()
+        
+        # Should use dev URL since prod is not available
+        self.assertEqual(service.reset_url_base, "https://dev.example.com/reset")
+        
+    @patch('os.getenv')
+    @patch('builtins.print')
+    def test_init_with_no_url_available(self, mock_print, mock_getenv):
+        """Test initialization when no URL is available in env vars or parameters"""
+        # Setup mock to return None for both URLs
+        mock_getenv.return_value = None
+        
+        service = ResetLinkService()
+        
+        # URL base should be None
+        self.assertIsNone(service.reset_url_base)
+        
+        # Should print a warning
+        mock_print.assert_called_with("Warning: Password reset base URL is not configured.")
+        
+    def test_create_reset_link_successful(self):
+        """Test successful creation of a reset link"""
+        uid = "test-uid"
+        token = "test-token"
+        
+        link = self.service.create_password_reset_link(uid, token)
+        
+        # Verify the link format
+        expected_link = f"{self.default_url_base}/{uid}/{token}"
+        self.assertEqual(link, expected_link)
+        
+    @patch('builtins.print')
+    @patch('authentication.services.os.getenv')
+    def test_create_reset_link_with_no_base_url(self, mock_getenv, mock_print ):
+        """Test link creation when base URL is not set"""
+        mock_getenv.return_value = None
+
+        # Create service with no base URL
+        service = ResetLinkService(reset_url_base=None)
+        link = service.create_password_reset_link("uid", "token")
+        mock_print.assert_called_with('Error: Reset URL base is not set.')
+        self.assertIsNone(link)
+
+    def test_create_reset_link_with_special_characters(self):
+        """Test link creation with special characters in parameters"""
+        uid = "test+uid@special"
+        token = "test&token=special"
+        
+        link = self.service.create_password_reset_link(uid, token)
+        
+        # Verify special characters are preserved correctly
+        expected_link = f"{self.default_url_base}/{uid}/{token}"
+        self.assertEqual(link, expected_link)
+        self.assertTrue("test+uid@special" in link)
+        self.assertTrue("test&token=special" in link)
+        
+    def test_create_reset_link_with_unicode_characters(self):
+        """Test link creation with unicode characters"""
+        uid = "测试uid"
+        token = "测试token"
+        
+        link = self.service.create_password_reset_link(uid, token)
+        
+        # Verify unicode characters are preserved
+        expected_link = f"{self.default_url_base}/{uid}/{token}"
+        self.assertEqual(link, expected_link)
+        
+    def test_url_with_query_parameters(self):
+        """Test using a base URL that already contains query parameters"""
+        # Create service with a URL that has query parameters
+        url_with_params = "http://example.com/reset?param=value"
+        service = ResetLinkService(reset_url_base=url_with_params)
+        
+        link = service.create_password_reset_link("uid", "token")
+        
+        # Verify the parameters were kept
+        expected_link = f"{url_with_params}/uid/token"
+        self.assertEqual(link, expected_link)
+        self.assertTrue("param=value" in link)
 
 class TestPasswordValidationService(TestCase):
     def setUp(self):

@@ -54,6 +54,18 @@ class PasswordTokenService:
             return False
         return default_token_generator.check_token(user, token)
 
+class ResetLinkService:
+    def __init__(self, reset_url_base=None):
+        self.reset_url_base = reset_url_base or os.getenv(
+            'PROD_PASSWORD_RESET_URL') or os.getenv(
+            'DEV_PASSWORD_RESET_URL')
+        if not self.reset_url_base:
+            print("Warning: Password reset base URL is not configured.")
+    
+    def create_password_reset_link(self, uid, token):
+        """Create a password reset link"""
+        pass
+
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
         self.reset_url_base = reset_url_base or os.getenv(
