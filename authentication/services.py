@@ -64,7 +64,10 @@ class ResetLinkService:
     
     def create_password_reset_link(self, uid, token):
         """Create a password reset link"""
-        pass
+        if not self.reset_url_base:
+            print("Error: Reset URL base is not set.")
+            return None
+        return f"{self.reset_url_base}/{uid}/{token}"
 
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
