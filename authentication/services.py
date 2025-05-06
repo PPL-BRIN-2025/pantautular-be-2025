@@ -33,15 +33,26 @@ class PasswordTokenService:
     
     def generate_password_reset_token(self, user):
         """Generate a password reset token for the user"""
-        pass
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        return uid, token
 
     def get_user_from_uidb64(self, uidb64):
         """Decode uidb64 and retrieve the user"""
-        pass
+        if uidb64 is None:
+            return None
+        try:
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = self.user_repository.get_user_by_id(uid)
+            return user
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return None
 
     def validate_token(self, user, token):
         """Validate if the token is valid for the given user"""
-        pass
+        if not user or not token:
+            return False
+        return default_token_generator.check_token(user, token)
 
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
