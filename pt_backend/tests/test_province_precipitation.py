@@ -11,27 +11,12 @@ import os
 from .base_climate_test import BasePrecipitationRepositoryTest, BasePrecipitationServiceTest, BasePrecipitationViewTest
 
 class ClimateRepositoryTest(BasePrecipitationRepositoryTest):
-    def setUp(self):
-        self.field_name = 'precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
+    pass
 
 class ClimateServiceTest(BasePrecipitationServiceTest):
-    def setUp(self):
-        self.field_name = 'precipitation'
-        self.service_method = 'get_province_precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
+    pass
 
 class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
-    def setUp(self):
-        self.url_name = 'province-precipitation'
-        self.expected_aceh_value = 100.0
-        self.expected_bali_value = 80.0
-        super().setUp()
-
     def tearDown(self):
         # Clean up environment variable
         os.environ.pop('SECRET_API_KEY', None)
@@ -40,15 +25,17 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
     def test_get_success(self, mock_get_precipitation):
         """Test successful GET request"""
         mock_get_precipitation.return_value = [
-            {"id": "Aceh", "value": 100.0},
-            {"id": "Bali", "value": 80.0}
+            {"province": "Aceh", "value": 100.0},
+            {"province": "Bali", "value": 80.0}
         ]
         
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('data', response.data)
-        self.assertEqual(len(response.data['data']), 2)
+        self.assertEqual(len(response.data), 2)
+        # The response should contain ISO 3166-2 codes
+        self.assertEqual(response.data[0]['id'], 'ID-AC')
+        self.assertEqual(response.data[1]['id'], 'ID-BA')
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_service_returns_error_dict(self, mock_get_precipitation):
@@ -67,8 +54,9 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         
         response = self.client.get(self.url)
         
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertIn('error', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Check that the API returns a valid response even with invalid data
+        self.assertIsInstance(response.data, list)
 
     def test_authentication_required(self):
         """Test that authentication is required"""

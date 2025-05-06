@@ -466,3 +466,102 @@ class StatisticsViewTest(TestCase):
         # Both should be forbidden
         self.assertEqual(get_response.status_code, 403)
         self.assertEqual(post_response.status_code, 403)
+
+class WeightedSeverityAnalysisViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
+        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        self.url = reverse('province-weighted-severity')
+        
+        # Mock the APIKeyAuthentication to always authenticate successfully
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
+        
+        # Mock the CaseService and AverageSeverityByProvince
+        self.case_service_patcher = patch('pt_backend.views.CaseService')
+        self.mock_case_service = self.case_service_patcher.start()
+        self.mock_case_service_instance = Mock()
+        self.mock_case_service.return_value = self.mock_case_service_instance
+        
+        self.severity_analyzer_patcher = patch('pt_backend.views.AverageSeverityByProvince')
+        self.mock_severity_analyzer = self.severity_analyzer_patcher.start()
+        self.mock_severity_analyzer_instance = Mock()
+        self.mock_severity_analyzer.return_value = self.mock_severity_analyzer_instance
+        
+    def tearDown(self):
+        self.auth_patcher.stop()
+        self.case_service_patcher.stop()
+        self.severity_analyzer_patcher.stop()
+    
+    def test_get_success(self):
+        # Setup mock data
+        mock_result = {
+            "Jawa Barat": {
+                "weighted_score": 2.5,
+                "status": "biasa"
+            },
+            "Papua": {
+                "weighted_score": 4.2,
+                "status": "katastropik"
+            }
+        }
+        self.mock_severity_analyzer_instance.compute.return_value = mock_result
+        
+        # Make request
+        response = self.client.get(self.url)
+        
+        # Verify response
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, mock_result)
+        
+    def test_get_no_data(self):
+        # Setup mock to return empty result
+        self.mock_severity_analyzer_instance.compute.return_value = {}
+        
+        # Make request
+        response = self.client.get(self.url)
+        
+        # Verify response
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data, {"error": "No case data available"})
+        
+    def test_get_with_exception(self):
+        # Setup mock to raise exception
+        self.mock_severity_analyzer_instance.compute.side_effect = Exception("Test error")
+        
+        # Make request
+        response = self.client.get(self.url)
+        
+        # Verify error response
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
+    
+    def test_authentication_required(self):
+        # Stop the authentication mock to test real authentication
+        self.auth_patcher.stop()
+        
+        # Remove API key from request
+        self.client.credentials()
+        
+        # Make request
+        response = self.client.get(self.url)
+        
+        # Verify response
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data, {"detail": "Invalid API Key"})
+    
+    def test_invalid_api_key(self):
+        # Stop the authentication mock to test real authentication
+        self.auth_patcher.stop()
+        
+        # Set invalid API key
+        self.client.credentials(HTTP_X_API_KEY="invalid-key")
+        
+        # Make request
+        response = self.client.get(self.url)
+        
+        # Verify response
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data, {"detail": "Invalid API Key"})

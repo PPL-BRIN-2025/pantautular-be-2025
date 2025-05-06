@@ -3,6 +3,9 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from .interfaces import CaseRepositoryInterface
 from .repositories import CaseRepository
+from .services import CaseService
+import math
+import numpy as np
 
 class StatisticsCoordinator:
     """
@@ -398,3 +401,116 @@ class LocalPortalStatisticsReport:
             "top_local": top_local,
             "all_local": all_local
         }
+    
+
+class AverageSeverityByProvince:
+    STATUS_ENCODING = {
+        "minimal": 1,
+        "biasa": 2,
+        "bahaya": 3,
+        "katastropik": 4
+    }
+    
+    # Map of Indonesian province names to ISO 3166-2 codes
+    PROVINCE_TO_CODE = {
+        'Aceh': 'ID-AC',
+        'Bali': 'ID-BA',
+        'Bangka Belitung': 'ID-BB',
+        'Banten': 'ID-BT',
+        'Bengkulu': 'ID-BE',
+        'DI Yogyakarta': 'ID-YO',
+        'DKI Jakarta': 'ID-JK',
+        'Gorontalo': 'ID-GO',
+        'Jambi': 'ID-JA',
+        'Jawa Barat': 'ID-JB',
+        'Jawa Tengah': 'ID-JT',
+        'Jawa Timur': 'ID-JI',
+        'Kalimantan Barat': 'ID-KB',
+        'Kalimantan Selatan': 'ID-KS',
+        'Kalimantan Tengah': 'ID-KT',
+        'Kalimantan Timur': 'ID-KI',
+        'Kalimantan Utara': 'ID-KU',
+        'Kepulauan Riau': 'ID-KR',
+        'Lampung': 'ID-LA',
+        'Maluku': 'ID-MA',
+        'Maluku Utara': 'ID-MU',
+        'Nusa Tenggara Barat': 'ID-NB',
+        'Nusa Tenggara Timur': 'ID-NT',
+        'Papua': 'ID-PA',
+        'Papua Barat': 'ID-PB',
+        'Papua Tengah': 'ID-PC',
+        'Riau': 'ID-RI',
+        'Sulawesi Barat': 'ID-SR',
+        'Sulawesi Selatan': 'ID-SN',
+        'Sulawesi Tengah': 'ID-ST',
+        'Sulawesi Tenggara': 'ID-SG',
+        'Sulawesi Utara': 'ID-SA',
+        'Sumatera Barat': 'ID-SB',
+        'Sumatera Selatan': 'ID-SS',
+        'Sumatera Utara': 'ID-SU'
+    }
+
+    def __init__(self, case_service):
+        self.case_service = case_service
+
+    def compute(self):
+        """
+        Hitung weighted severity score dan kategorisasi status untuk setiap provinsi.
+        Output: list of dicts [{ "id": province_code, "value": float, "status": str }, ...]
+        """
+        data = self.case_service.get_status_and_province()
+        province_scores = defaultdict(list)
+
+        for record in data:
+            status = record.get("status")
+            province = record.get("location__province")
+
+            if status and province:
+                status = status.lower()
+                if status in self.STATUS_ENCODING:
+                    encoded = self.STATUS_ENCODING[status]
+                    province_scores[province].append(encoded)
+
+        if not province_scores:
+            return []
+
+        weighted_result = {}
+        all_scores = []
+
+        for province, scores in province_scores.items():
+            avg = sum(scores) / len(scores)
+            weight = math.log(len(scores) + 1)
+            weighted_score = round(avg * weight, 2)
+            weighted_result[province] = {"value": weighted_score}
+            all_scores.append(weighted_score)
+
+        # Hitung kuartil dinamis
+        q1 = np.percentile(all_scores, 25)
+        q2 = np.percentile(all_scores, 50)
+        q3 = np.percentile(all_scores, 75)
+
+        # Klasifikasi berdasarkan score
+        for province, result in weighted_result.items():
+            score = result["value"]
+            if score <= q1:
+                result["status"] = "minimal"
+            elif score <= q2:
+                result["status"] = "biasa"
+            elif score <= q3:
+                result["status"] = "bahaya"
+            else:
+                result["status"] = "katastropik"
+                
+            # Add province code
+            result["id"] = self.PROVINCE_TO_CODE.get(province, province)
+
+        # Convert dictionary to list format
+        formatted_result = [
+            {
+                "id": data["id"],
+                "value": data["value"],
+                "status": data["status"]
+            } for province, data in weighted_result.items()
+        ]
+
+        return formatted_result
