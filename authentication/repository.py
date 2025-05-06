@@ -9,7 +9,14 @@ class UserRepository:
             return User.objects.get(email=email)
         except ObjectDoesNotExist:
             return None #NOSONAR
-
+    
+    @staticmethod
+    def get_user_by_id(user_id: int) -> User: # NOSONAR
+        try:
+            return User.objects.get(id=user_id)
+        except ObjectDoesNotExist:
+            return None
+        
     @staticmethod
     def save_user(user: User) -> None:
         user.save()
