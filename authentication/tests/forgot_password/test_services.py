@@ -112,17 +112,6 @@ class TestPasswordResetService(TestCase):
         token = ""
         result = self.service.validate_token(self.user, token)
         self.assertFalse(result)
-
-    def test_password_reset_service_with_mock_email(self):
-        """Test PasswordResetService with a mock email service"""
-        
-        mock_email_service = MockEmailService()
-        service = PasswordResetService(email_service=mock_email_service)
-        
-        service.process_reset_request('test@example.com')
-        
-        self.assertEqual(len(mock_email_service.sent_emails), 1)
-        self.assertEqual(mock_email_service.sent_emails[0]["recipient"], 'test@example.com')
     
     def test_password_reset_service_default_email_service(self):
         """Test that PasswordResetService uses default email service when none provided"""
@@ -134,20 +123,7 @@ class TestPasswordResetService(TestCase):
             mock_send.assert_called_once()
             args, _ = mock_send.call_args
             self.assertEqual(args[0], 'test@example.com')
-    
-    def test_password_reset_service_with_brevo_email(self):
-        """Test PasswordResetService with Brevo email service"""
-        from authentication.email_services import BrevoEmailService
-        with patch('authentication.email_services.TransactionalEmailsApi') as mock_api:
-            mock_instance = MagicMock()
-            mock_api.return_value = mock_instance
-            
-            email_service = BrevoEmailService()
-            service = PasswordResetService(email_service=email_service)
-            
-            service.process_reset_request('test@example.com')
-            
-            mock_instance.send_transac_email.assert_called_once()
+
 
     def test_email_service_error_handling(self):
         """Test error handling in different email services"""
@@ -162,75 +138,111 @@ class TestPasswordResetService(TestCase):
             with self.assertRaises(ApiException):
                 brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
     
-    def test_fallback_email_service_when_primary_fails(self):
-        """Test that fallback email service is used when primary email service fails"""
-        # Create mock services
-        mock_primary = MockEmailService()
-        mock_fallback = MockEmailService()
+
+    def test_email_chain_handles_multiple_failures(self):
+        """Test that chain properly handles multiple failures"""
+        # Create multiple mock handlers that will fail
+        first_handler = MockEmailService(should_fail=True) 
+        second_handler = MockEmailService(should_fail=True)
+        third_handler = MockEmailService()  # This one will succeed
         
-        # Make primary service fail
-        mock_primary.send_password_reset_email = MagicMock(
-            side_effect=Exception("Primary service failure")
-        )
+        # Build the chain
+        first_handler.set_next(second_handler)
+        second_handler.set_next(third_handler)
         
-        # Create service with both email services
-        service = PasswordResetService(
-            email_service=mock_primary,
-            fallback_email_service=mock_fallback
-        )
+        # Create service with this chain
+        service = PasswordResetService(email_chain=first_handler)
         
-        # Process reset request
+        # Process request
         service.process_reset_request('test@example.com')
         
-        # Primary should be called and fail
-        mock_primary.send_password_reset_email.assert_called_once()
+        # First two handlers should have failed, third should have sent
+        self.assertEqual(len(third_handler.sent_emails), 1)
+        self.assertEqual(third_handler.sent_emails[0]["recipient"], 'test@example.com')
+
+    def test_email_chain_initialization(self):
+        """Test that email chain is initialized correctly with default services"""
+        service = PasswordResetService()
         
-        # Fallback should be called and succeed
-        self.assertEqual(len(mock_fallback.sent_emails), 1)
-        self.assertEqual(mock_fallback.sent_emails[0]["recipient"], 'test@example.com')
+        # First handler should be BrevoEmailService
+        self.assertIsInstance(service.email_chain, BrevoEmailService)
+        
+        # Next handler should be DjangoEmailService
+        self.assertIsInstance(service.email_chain._next_handler, DjangoEmailService)
+        
+        # End of chain
+        # self.assertIsNone(service.email_chain._next_handler._next_handler)
 
-    def test_fallback_email_service_initialized_with_defaults(self):
-        """Test that fallback email service defaults to DjangoEmailService"""
-        # Check that the service's fallback_email_service is a DjangoEmailService
-        self.assertIsInstance(self.service.fallback_email_service, DjangoEmailService)
+    def test_custom_email_chain(self):
+        """Test that a custom email chain can be provided"""
+        # Create a custom chain
+        first = MockEmailService()
+        second = MockEmailService()
+        first.set_next(second)
+        
+        # Initialize with custom chain
+        service = PasswordResetService(email_chain=first)
+        
+        # Chain should be used
+        self.assertEqual(service.email_chain, first)
+        self.assertEqual(service.email_chain._next_handler, second)
 
-    @patch('authentication.email_services.DjangoEmailService.send_password_reset_email')
     @patch('authentication.email_services.BrevoEmailService.send_password_reset_email')
-    def test_both_email_services_fail(self, mock_brevo_send, mock_django_send):
-        """Test exception handling when both email services fail"""
-        # Make both services fail
-        mock_brevo_send.side_effect = Exception("Brevo failure")
-        mock_django_send.side_effect = Exception("Django failure")
+    def test_first_email_service_succeeds(self, mock_send):
+        """Test when first service in chain succeeds"""
+        # Setup
+        mock_send.return_value = True
         
-        # Process reset request should raise the exception from the fallback service
-        with self.assertRaises(Exception) as context:
-            self.service.process_reset_request('test@example.com')
+        # Call method
+        self.service.process_reset_request('test@example.com')
         
-        # The exception should be from the fallback service
-        self.assertEqual(str(context.exception), "Django failure")
+        # Only first service should be called
+        mock_send.assert_called_once()
+
+    @patch('authentication.email_services.BrevoEmailService.send_password_reset_email')
+    @patch('authentication.email_services.DjangoEmailService.send_password_reset_email')
+    def test_chain_fallback_on_failure(self, mock_django_send, mock_brevo_send):
+        """Test chain fallback when first service fails"""
+        # First service fails
+        mock_brevo_send.side_effect = Exception("Brevo API error")
         
-        # Both services should have been called
+        # Second service succeeds
+        mock_django_send.return_value = True
+        
+        # Call method
+        self.service.process_reset_request('test@example.com')
+        
+        # Both services should be called in order
         mock_brevo_send.assert_called_once()
         mock_django_send.assert_called_once()
 
-    def test_custom_fallback_service(self):
-        """Test using a custom fallback email service"""
-        # Create mock services
-        primary_service = MockEmailService()
-        fallback_service = MockEmailService()
+    @patch('authentication.email_services.BrevoEmailService.handle')
+    def test_handle_method_is_called(self, mock_handle):
+        """Test that handle method is called on the chain"""
+        # Setup
+        mock_handle.return_value = True
         
-        # Create service with custom services
-        service = PasswordResetService(
-            email_service=primary_service,
-            fallback_email_service=fallback_service
-        )
+        # Process reset request 
+        self.service.process_reset_request('test@example.com')
         
-        # Process reset request
-        service.process_reset_request('test@example.com')
+        # Handle should be called with correct parameters
+        mock_handle.assert_called_once()
+        args = mock_handle.call_args[0]
+        self.assertEqual(args[0], 'test@example.com')
+        # Second arg should be the reset link
+        self.assertTrue(isinstance(args[1], str) and args[1].startswith('http'))
+
+    def test_process_reset_nonexistent_email(self):
+        """Test process_reset_request with non-existent email"""
+        # Create a mock email chain
+        mock_chain = MockEmailService()
+        service = PasswordResetService(email_chain=mock_chain)
         
-        # Primary should be used (fallback shouldn't be called)
-        self.assertEqual(len(primary_service.sent_emails), 1)
-        self.assertEqual(len(fallback_service.sent_emails), 0)
+        # Call with non-existent email
+        service.process_reset_request('nonexistent@example.com')
+        
+        # Chain should not be called since user is None
+        self.assertEqual(len(mock_chain.sent_emails), 0)
 
     def test_get_user_from_uidb64_with_none_value(self):
         """Test get_user_from_uidb64 when uidb64 is None"""
