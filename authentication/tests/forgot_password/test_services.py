@@ -4,7 +4,7 @@ from django.utils.encoding import force_bytes
 from unittest.mock import MagicMock, patch
 from authentication.services import (
     PasswordResetService, PasswordValidationService,
-    UserFinderService)
+    UserFinderService, PasswordTokenService)
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
@@ -356,6 +356,148 @@ class TestUserFinderService(TestCase):
             self.service.find_user_by_email("test@example.com")
             
         self.assertEqual(str(context.exception), "Database error")
+
+class TestPasswordTokenService(TestCase):
+    def setUp(self):
+        """Set up test environment for PasswordTokenService"""
+        # Create a test user
+        self.user = User.objects.create(
+            email='tokentest@example.com',
+            name='Token Test User',
+            password='password123',
+            role="TEST ROLE"
+        )
+        
+        # Create a mock repository
+        self.repository = MagicMock()
+        self.repository.get_user_by_id.return_value = self.user
+        
+        # Initialize the service with mock repository
+        self.service = PasswordTokenService(self.repository)
+    
+    def test_generate_token_creates_valid_pair(self):
+        """Test that token generation produces a valid UID and token pair"""
+        uid, token = self.service.generate_password_reset_token(self.user)
+        
+        # Verify uid is correctly encoded
+        decoded_uid = urlsafe_base64_decode(uid).decode()
+        self.assertEqual(int(decoded_uid), self.user.id)
+        
+        # Verify token is a non-empty string
+        self.assertTrue(token and isinstance(token, str))
+        
+        # Verify token is valid for the user
+        self.assertTrue(default_token_generator.check_token(self.user, token))
+    
+    def test_generate_token_with_none_user(self):
+        """Test token generation with None user"""
+        with self.assertRaises(AttributeError):
+            self.service.generate_password_reset_token(None)
+    
+    def test_get_user_from_valid_uidb64(self):
+        """Test retrieving a user from a valid uidb64"""
+        # Generate a valid uidb64
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        
+        # Get user from uidb64
+        user = self.service.get_user_from_uidb64(uidb64)
+        
+        # Verify repository was called correctly
+        self.repository.get_user_by_id.assert_called_once_with(str(self.user.pk))
+        
+        # Verify correct user was returned
+        self.assertEqual(user, self.user)
+    
+    def test_get_user_from_invalid_uidb64(self):
+        """Test retrieving a user with invalid uidb64 format"""
+        # Setup repository to return None for invalid ID
+        self.repository.get_user_by_id.return_value = None
+        
+        # Test with invalid base64
+        user = self.service.get_user_from_uidb64('invalid-base64!')
+        
+        # Verify no user was returned
+        self.assertIsNone(user)
+        
+        # Verify repository was not called with invalid data
+        self.repository.get_user_by_id.assert_not_called()
+    
+    def test_get_user_from_nonexistent_user_id(self):
+        """Test retrieving a non-existent user from uidb64"""
+        # Setup repository to return None for non-existent ID
+        self.repository.get_user_by_id.return_value = None
+        
+        # Generate uidb64 for a non-existent user ID
+        uidb64 = urlsafe_base64_encode(force_bytes(99999))
+        
+        # Get user from uidb64
+        user = self.service.get_user_from_uidb64(uidb64)
+        
+        # Verify repository was called with correct ID
+        self.repository.get_user_by_id.assert_called_once_with("99999")
+        
+        # Verify no user was returned
+        self.assertIsNone(user)
+    
+    def test_get_user_from_none_uidb64(self):
+        """Test retrieving a user with None uidb64"""
+        user = self.service.get_user_from_uidb64(None)
+        
+        # Verify no user was returned
+        self.assertIsNone(user)
+        
+        # Verify repository was not called
+        self.repository.get_user_by_id.assert_not_called()
+    
+    def test_validate_valid_token(self):
+        """Test validating a valid token"""
+        # Generate a valid token
+        token = default_token_generator.make_token(self.user)
+        
+        # Validate token
+        result = self.service.validate_token(self.user, token)
+        
+        # Verify token was validated successfully
+        self.assertTrue(result)
+    
+    def test_validate_invalid_token(self):
+        """Test validating an invalid token"""
+        # Test with an invalid token
+        result = self.service.validate_token(self.user, "invalid-token")
+        
+        # Verify token validation failed
+        self.assertFalse(result)
+    
+    def test_validate_token_with_none_user(self):
+        """Test validating a token with None user"""
+        result = self.service.validate_token(None, "any-token")
+        
+        # Verify validation fails with None user
+        self.assertFalse(result)
+    
+    def test_validate_empty_token(self):
+        """Test validating an empty token"""
+        result = self.service.validate_token(self.user, "")
+        
+        # Verify validation fails with empty token
+        self.assertFalse(result)
+    
+    def test_repository_exception_handling(self):
+        """Test exception handling when repository fails"""
+        # Setup repository to raise an exception
+        self.repository.get_user_by_id.side_effect = User.DoesNotExist("User not found")
+        
+        # Generate valid uidb64
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        
+        # Get user from uidb64 should catch the exception
+        user = self.service.get_user_from_uidb64(uidb64)
+        
+        # Verify no user was returned
+        self.assertIsNone(user)
+        
+        # Verify repository was called
+        self.repository.get_user_by_id.assert_called_once()
 
 class TestPasswordValidationService(TestCase):
     def setUp(self):

@@ -27,6 +27,22 @@ class UserFinderService:
         """Find user by ID"""
         return self.user_repository.get_user_by_id(user_id)
 
+class PasswordTokenService:
+    def __init__(self, user_repository):
+        self.user_repository = user_repository
+    
+    def generate_password_reset_token(self, user):
+        """Generate a password reset token for the user"""
+        pass
+
+    def get_user_from_uidb64(self, uidb64):
+        """Decode uidb64 and retrieve the user"""
+        pass
+
+    def validate_token(self, user, token):
+        """Validate if the token is valid for the given user"""
+        pass
+
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
         self.reset_url_base = reset_url_base or os.getenv(
