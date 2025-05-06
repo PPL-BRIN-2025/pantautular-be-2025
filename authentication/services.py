@@ -21,11 +21,11 @@ class UserFinderService:
     
     def find_user_by_email(self, email):
         """Find user by email"""
-        pass
+        return self.user_repository.get_user_by_email(email)
 
     def find_user_by_id(self, user_id):
         """Find user by ID"""
-        pass
+        return self.user_repository.get_user_by_id(user_id)
 
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
