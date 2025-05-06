@@ -11,8 +11,21 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
+
 import os
 from authentication.email_services import create_default_email_chain
+
+class UserFinderService:
+    def __init__(self, user_repository):
+        self.user_repository = user_repository
+    
+    def find_user_by_email(self, email):
+        """Find user by email"""
+        pass
+
+    def find_user_by_id(self, user_id):
+        """Find user by ID"""
+        pass
 
 class PasswordResetService:
     def __init__(self, reset_url_base=None, email_chain=None):
@@ -223,4 +236,3 @@ class AuthService:
         return {
             "access_token": str(refresh.access_token)
         }
-

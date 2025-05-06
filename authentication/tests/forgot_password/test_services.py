@@ -2,7 +2,9 @@ from django.test import TestCase
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import MagicMock, patch
-from authentication.services import PasswordResetService, ChangePasswordService, PasswordValidationService
+from authentication.services import (
+    PasswordResetService, PasswordValidationService,
+    UserFinderService)
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
@@ -32,15 +34,15 @@ class TestPasswordResetService(TestCase):
         self.assertEqual(int(decoded_uid), self.user.id)
         self.assertTrue(token and isinstance(token, str))
         
-    # def test_create_reset_link_successful(self):
-    #     """Test that reset link creation works properly"""
-    #     uid, token = self.service.generate_password_reset_token(self.user)
-    #     link = self.service.create_password_reset_link(uid, token)
+    def test_create_reset_link_successful(self):
+        """Test that reset link creation works properly"""
+        uid, token = self.service.generate_password_reset_token(self.user)
+        link = self.service.create_password_reset_link(uid, token)
         
-    #     self.assertTrue(link.startswith("http"))
+        self.assertTrue(link.startswith("https"))
         
-    #     expected_format = f"{self.service.reset_url_base}/{uid}/{token}"
-    #     self.assertEqual(link, expected_format)
+        expected_format = f"{self.service.reset_url_base}/{uid}/{token}"
+        self.assertEqual(link, expected_format)
         
     def test_find_nonexistent_user(self):
         """Test finding a user that doesn't exist"""
@@ -216,21 +218,21 @@ class TestPasswordResetService(TestCase):
         mock_brevo_send.assert_called_once()
         mock_django_send.assert_called_once()
 
-    # @patch('authentication.email_services.BrevoEmailService.handle')
-    # def test_handle_method_is_called(self, mock_handle):
-    #     """Test that handle method is called on the chain"""
-    #     # Setup
-    #     mock_handle.return_value = True
+    @patch('authentication.email_services.BrevoEmailService.handle')
+    def test_handle_method_is_called(self, mock_handle):
+        """Test that handle method is called on the chain"""
+        # Setup
+        mock_handle.return_value = True
         
-    #     # Process reset request 
-    #     self.service.process_reset_request('test@example.com')
+        # Process reset request 
+        self.service.process_reset_request('test@example.com')
         
-    #     # Handle should be called with correct parameters
-    #     mock_handle.assert_called_once()
-    #     args = mock_handle.call_args[0]
-    #     self.assertEqual(args[0], 'test@example.com')
-    #     # Second arg should be the reset link
-    #     self.assertTrue(isinstance(args[1], str) and args[1].startswith('http'))
+        # Handle should be called with correct parameters
+        mock_handle.assert_called_once()
+        args = mock_handle.call_args[0]
+        self.assertEqual(args[0], 'test@example.com')
+        # Second arg should be the reset link
+        self.assertTrue(isinstance(args[1], str) and args[1].startswith('https'))
 
     def test_process_reset_nonexistent_email(self):
         """Test process_reset_request with non-existent email"""
@@ -248,6 +250,112 @@ class TestPasswordResetService(TestCase):
         """Test get_user_from_uidb64 when uidb64 is None"""
         user = self.service.get_user_from_uidb64(None)
         self.assertIsNone(user)
+
+class TestUserFinderService(TestCase):
+    def setUp(self):
+        # Create a mock repository
+        self.repository = MagicMock()
+        # Create the service with the mock repository
+        self.service = UserFinderService(self.repository)
+        
+    def test_find_user_by_email_successful(self):
+        """Test finding a user by email successfully"""
+        # Setup mock to return a user when get_user_by_email is called
+        mock_user = MagicMock()
+        mock_user.email = "test@example.com"
+        mock_user.name = "Test User"
+        self.repository.get_user_by_email.return_value = mock_user
+        
+        # Call the service
+        result = self.service.find_user_by_email("test@example.com")
+        
+        # Verify repository was called with correct parameters
+        self.repository.get_user_by_email.assert_called_once_with("test@example.com")
+        
+        # Verify the result
+        self.assertEqual(result.email, "test@example.com")
+        self.assertEqual(result.name, "Test User")
+        
+    def test_find_user_by_email_not_found(self):
+        """Test finding a user by email when user doesn't exist"""
+        # Setup mock to return None when get_user_by_email is called
+        self.repository.get_user_by_email.return_value = None
+        
+        # Call the service
+        result = self.service.find_user_by_email("nonexistent@example.com")
+        
+        # Verify repository was called with correct parameters
+        self.repository.get_user_by_email.assert_called_once_with("nonexistent@example.com")
+        
+        # Verify the result is None
+        self.assertIsNone(result)
+        
+    def test_find_user_by_id_successful(self):
+        """Test finding a user by ID successfully"""
+        # Setup mock to return a user when get_user_by_id is called
+        mock_user = MagicMock()
+        mock_user.id = 123
+        mock_user.name = "Test User"
+        self.repository.get_user_by_id.return_value = mock_user
+        
+        # Call the service
+        result = self.service.find_user_by_id(123)
+        
+        # Verify repository was called with correct parameters
+        self.repository.get_user_by_id.assert_called_once_with(123)
+        
+        # Verify the result
+        self.assertEqual(result.id, 123)
+        self.assertEqual(result.name, "Test User")
+        
+    def test_find_user_by_id_not_found(self):
+        """Test finding a user by ID when user doesn't exist"""
+        # Setup mock to return None when get_user_by_id is called
+        self.repository.get_user_by_id.return_value = None
+        
+        # Call the service
+        result = self.service.find_user_by_id(999)
+        
+        # Verify repository was called with correct parameters
+        self.repository.get_user_by_id.assert_called_once_with(999)
+        
+        # Verify the result is None
+        self.assertIsNone(result)
+        
+    def test_find_user_by_email_with_empty_email(self):
+        """Test finding a user with an empty email string"""
+        # Call the service with empty email
+        self.service.find_user_by_email("")
+        
+        # Verify repository was called with empty string
+        self.repository.get_user_by_email.assert_called_once_with("")
+        
+    def test_find_user_by_email_handles_special_characters(self):
+        """Test finding a user with special characters in email"""
+        # Call the service with email containing special characters
+        self.service.find_user_by_email("test+special@example.com")
+        
+        # Verify repository was called with the special email
+        self.repository.get_user_by_email.assert_called_once_with("test+special@example.com")
+        
+    def test_find_user_by_id_with_invalid_id(self):
+        """Test finding a user with an invalid ID type"""
+        # Call the service with a string ID instead of an integer
+        self.service.find_user_by_id("not-an-id")
+        
+        # Verify repository was called with the string
+        self.repository.get_user_by_id.assert_called_once_with("not-an-id")
+        
+    def test_repository_exception_handling(self):
+        """Test that service properly passes through repository exceptions"""
+        # Setup repository to raise an exception
+        self.repository.get_user_by_email.side_effect = Exception("Database error")
+        
+        # Verify exception is propagated
+        with self.assertRaises(Exception) as context:
+            self.service.find_user_by_email("test@example.com")
+            
+        self.assertEqual(str(context.exception), "Database error")
 
 class TestPasswordValidationService(TestCase):
     def setUp(self):
