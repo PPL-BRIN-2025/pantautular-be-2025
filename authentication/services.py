@@ -3,17 +3,15 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from pt_backend.models import User
-from django.contrib.auth.hashers import make_password
+from django.contrib.auth.hashers import make_password, check_password
 from .repository import UserRepository
 from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
-from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from authentication.email_services import EmailChainFactory
 
 import os
-from authentication.email_services import create_default_email_chain
 
 class UserFinderService:
     def __init__(self, user_repository):
@@ -70,48 +68,65 @@ class ResetLinkService:
         return f"{self.reset_url_base}/{uid}/{token}"
 
 class PasswordResetService:
-    def __init__(self, reset_url_base=None, email_chain=None):
-        self.reset_url_base = reset_url_base or os.getenv(
-            'PROD_PASSWORD_RESET_URL') or os.getenv(
-            'DEV_PASSWORD_RESET_URL')
-        
-        self.email_chain = email_chain or create_default_email_chain()
+    def __init__(self, user_finder, password_token_service, reset_link_service, email_chain_factory=None):
+        self.user_finder = user_finder
+        self.password_token_service = password_token_service
+        self.reset_link_service = reset_link_service
+
+        factory = email_chain_factory or EmailChainFactory()
+        self.email_chain = factory.create_email_chain(["brevo", "django"])
     
-    def find_user_by_email(self, email):
-        return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
-    
-    def generate_password_reset_token(self, user):
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        return uid, token
-
-    def create_password_reset_link(self, uid, token):
-        return f"{self.reset_url_base}/{uid}/{token}"
-
-    def process_reset_request(self, email):
-        user = self.find_user_by_email(email)
-        if user:
-            uid, token = self.generate_password_reset_token(user)
-            reset_link = self.create_password_reset_link(uid, token)
-            self.email_chain.handle(email, reset_link)
-        return True
-
-    def get_user_from_uidb64(self, uidb64):
-        """Decode uidb64 and retrieve the user"""
-        if uidb64 is None:
-            return None
-        try:
-            uid = urlsafe_base64_decode(uidb64).decode()
-            user = User.objects.get(pk=uid)
-            return user
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return None
-
-    def validate_token(self, user, token):
-        """Validate if the token is valid for the given user"""
+    def initiate_password_reset(self, email):
+        """
+        Orchestrates the process of sending a password reset email.
+        Returns True if the email was successfully dispatched by a handler, False otherwise.
+        """
+        user = self.user_finder.find_user_by_email(email)
         if not user:
+            print(f"Password reset requested for non-existent email: {email}")
+            return True
+        
+        try:
+            uid, token = self.password_token_service.generate_password_reset_token(user)
+            reset_link = self.reset_link_service.create_password_reset_link(uid, token)
+            if not reset_link:
+                print(f"Failed to create password reset link for user: {user.email}. Check base URL config.")
+                return False
+            
+            # Delegate email sending to the chain
+            # The chain's handle method returns True if handled, raises error if not.
+            # Wrap in try-except to control the return value.
+            try:
+                self.email_chain.handle(email, reset_link)
+                print(f"Password reset email sent to {email}.")
+                return True
+            except RuntimeError as e:
+                print(f"Email chain failed for {email}: {e}")
+                return False
+            except Exception as e:
+                print(f"Unexpected error in email chain for {email}: {e}")
+                return False
+            
+        except Exception as e:
+            print(f"Error generating password reset token for {email}: {e}")
             return False
-        return default_token_generator.check_token(user, token)
+
+    def verify_reset_attempt(self, uidb64, token):
+        """
+        Verify token and uid from password reset link.
+        Returns the User object if valid, None otherwise.
+        """
+        user = self.password_token_service.get_user_from_uidb64(uidb64)
+        if not user:
+            print(f"Invalid UID: {uidb64}")
+            return None
+        
+        if user and self.password_token_service.validate_token(user, token):
+            print(f"Token is valid for user: {user.email}")
+            return user
+        else:
+            print(f"Invalid token for user: {user.email} or token expired.")
+            return None
 
 class ChangePasswordService:
     def __init__(self, repository: UserRepository = UserRepository()):
@@ -135,7 +150,6 @@ class ChangePasswordService:
         self.repository.save_user(user)
         return {"success": True, "message": "Password successfully updated"}
 
-    
 class PasswordValidationService:
     @staticmethod
     def validate_password_match(password, password_confirm):
@@ -164,7 +178,6 @@ class PasswordValidationService:
             return False, "Password harus mengandung minimal 1 karakter spesial"
             
         return True, ""
-
 
 class AuthService:
     def __init__(self, user_repository):
