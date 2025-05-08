@@ -41,12 +41,6 @@ class ChainHandler(ABC):
         """Subclasses should implement this to check if they can handle the request."""
         pass
 
-class EmailSender(ABC):
-    """Interface for classes that send can send password reset emails."""
-    @abstractmethod
-    def send_password_reset_email(self, recipient_email, reset_link):
-        pass
-
 class EmailChainHandler(ChainHandler):
     """Base class for email-sending handlers"""
     
@@ -58,6 +52,52 @@ class EmailChainHandler(ChainHandler):
         except Exception as e:
             print(f"Handler {self.__class__.__name__} could not process request: {e}")
             return False
+
+class EmailSender(ABC):
+    """Interface for classes that send can send password reset emails."""
+    @abstractmethod
+    def send_password_reset_email(self, recipient_email, reset_link):
+        pass
+
+class EmailServiceFactory(ABC):
+    """Abstract Factory for creating email service handlers."""
+    
+    @abstractmethod
+    def create_email_service(self):
+        pass
+
+class BrevoEmailServiceFactory(EmailServiceFactory):
+    def create_email_service(self):
+        return BrevoEmailService()
+
+class DjangoEmailServiceFactory(EmailServiceFactory):
+    def create_email_service(self):
+        return DjangoEmailService()
+
+class EmailChainFactory:
+    """Factory class for creating a chain of email services"""
+    
+    def __init__(self):
+        self.factories = {
+            "brevo": BrevoEmailServiceFactory(),
+            "django": DjangoEmailServiceFactory()
+        }
+    
+    def create_email_chain(self, services):
+        if not services:
+            raise ValueError("At least one service must be specified")
+        
+        # Create the first handler
+        first_service = self.factories[services[0]].create_email_service()
+        current_handler = first_service
+        
+        # Create the rest of the chain
+        for service_name in services[1:]:
+            next_service = self.factories[service_name].create_email_service()
+            current_handler.set_next(next_service)
+            current_handler = next_service
+        
+        return first_service
     
 class BrevoEmailService(EmailSender, EmailChainHandler):
     """Brevo-specific email service implementation"""
@@ -116,10 +156,3 @@ class DjangoEmailService(EmailSender, EmailChainHandler):
         except Exception as e:
             print(f"Failed to send email: {e}")
             raise
-
-def create_default_email_chain():
-    """Create a default email chain with Brevo and Django services"""
-    brevo = BrevoEmailService()
-    django = DjangoEmailService()
-    brevo.set_next(django)
-    return brevo
