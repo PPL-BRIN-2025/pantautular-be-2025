@@ -23,7 +23,6 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_temperature')
     def test_get_success(self, mock_get_temperature):
-        """Test successful GET request"""
         mock_get_temperature.return_value = [
             {"province": "Aceh", "value": 25.5},
             {"province": "Bali", "value": 27.0}
@@ -32,15 +31,13 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('data', response.data)
-        self.assertEqual(len(response.data['data']), 2)
+        self.assertEqual(len(response.data), 2)
         # The response should contain ISO 3166-2 codes
-        self.assertEqual(response.data['data'][0]['id'], 'ID-AC')
-        self.assertEqual(response.data['data'][1]['id'], 'ID-BA')
+        self.assertEqual(response.data[0]['id'], 'ID-AC')
+        self.assertEqual(response.data[1]['id'], 'ID-BA')
 
     @patch('pt_backend.services.ClimateService.get_province_temperature')
     def test_service_returns_error_dict(self, mock_get_temperature):
-        """Test when service returns error dict"""
         mock_get_temperature.return_value = {"error": "Some error occurred"}
         
         response = self.client.get(self.url)
@@ -50,7 +47,6 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_temperature')
     def test_serialization_error(self, mock_get_temperature):
-        """Test when serialization error occurs"""
         mock_get_temperature.return_value = [
             {"province": "Aceh", "value": "invalid_value"},  # Invalid value type
             {"province": "Bali", "value": 27.0}
@@ -62,7 +58,6 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.assertIn('error', response.data)
 
     def test_authentication_required(self):
-        """Test that authentication is required"""
         # Remove API key header
         self.client.credentials()
         response = self.client.get(self.url)

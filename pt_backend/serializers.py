@@ -50,10 +50,6 @@ class LocationSeverityStatsSerializer(serializers.Serializer):
     severity_counts = SeverityCountsSerializer()
     total_cases = serializers.IntegerField()
 
-class ProvinceClimateValueSerializer(serializers.Serializer):
-    id = serializers.CharField()
-    value = serializers.DecimalField(max_digits=8, decimal_places=2)
-
 # Map of Indonesian province names to ISO 3166-2 codes
 PROVINCE_TO_CODE = {
     'Aceh': 'ID-AC',
@@ -92,27 +88,18 @@ PROVINCE_TO_CODE = {
     'Sumatera Utara': 'ID-SU'
 }
 
-class BaseProvinceClimateSerializer(serializers.Serializer):
+class ProvinceClimateSerializer(serializers.Serializer):
     province = serializers.CharField()
     value = serializers.DecimalField(max_digits=8, decimal_places=2)
     
     def to_representation(self, instance):
-        # Get province name from the instance data structure
         province_name = instance.get('province', None)
         if province_name is None:
             province_name = instance.get('id', '')
         
-        # Return data with province converted to ISO code
         return {
             'id': PROVINCE_TO_CODE.get(province_name, province_name),
             'value': float(instance.get('value', 0))
         }
 
-class ProvinceHumiditySerializer(BaseProvinceClimateSerializer):
-    pass
-
-class ProvinceTemperatureSerializer(BaseProvinceClimateSerializer):
-    pass
-
-class ProvincePrecipitationSerializer(BaseProvinceClimateSerializer):
-    pass
+ProvincePrecipitationSerializer = ProvinceClimateSerializer
