@@ -23,7 +23,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_get_success(self, mock_get_precipitation):
-        """Test successful GET request"""
         mock_get_precipitation.return_value = [
             {"province": "Aceh", "value": 100.0},
             {"province": "Bali", "value": 80.0}
@@ -39,7 +38,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_service_returns_error_dict(self, mock_get_precipitation):
-        """Test when service returns error dict"""
         mock_get_precipitation.return_value = {"error": "Some error occurred"}
         
         response = self.client.get(self.url)
@@ -49,7 +47,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_serialization_error(self, mock_get_precipitation):
-        """Test when serialization fails"""
         mock_get_precipitation.return_value = [{"invalid_field": "value"}]
         
         response = self.client.get(self.url)
@@ -59,8 +56,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertIsInstance(response.data, list)
 
     def test_authentication_required(self):
-        """Test that authentication is required"""
-        # Remove API key header
         self.client.credentials()
         response = self.client.get(self.url)
         
