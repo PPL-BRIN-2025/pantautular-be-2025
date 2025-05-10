@@ -264,9 +264,115 @@ class ClimateService:
         self.repository = repository or ClimateRepository()
         self.cache_service = cache_service or CacheService()
 
+    def validate_humidity_data(self, data):
+        if not data:
+            return "No humidity data available."
+        
+        if not isinstance(data, list):
+            return "Invalid data format"
+        
+        seen_provinces = set()
+        for item in data:
+            if not isinstance(item, dict):
+                return "Invalid data format"
+            
+            if "province" not in item:
+                return "Missing province field"
+            
+            province = item["province"]
+            if not province:
+                return "Missing province field"
+            
+            if province not in PROVINCE_TO_CODE:
+                return f"Invalid province name: {province}"
+            
+            if province in seen_provinces:
+                return f"Duplicate province found: {province}"
+            seen_provinces.add(province)
+            
+            if "value" not in item:
+                return "Invalid data format"
+            
+            value = item["value"]
+            if not isinstance(value, (int, float)):
+                return "Invalid value type"
+        
+        return None
+
+    def validate_precipitation_data(self, data):
+        """Validate precipitation data"""
+        if not data:
+            return "No precipitation data available."
+        
+        if not isinstance(data, list):
+            return "Invalid data format"
+        
+        seen_provinces = set()
+        for item in data:
+            if not isinstance(item, dict):
+                return "Invalid data format"
+            
+            if "province" not in item:
+                return "Missing province field"
+            
+            province = item["province"]
+            if not province:
+                return "Missing province field"
+            
+            if province not in PROVINCE_TO_CODE:
+                return f"Invalid province name: {province}"
+            
+            if province in seen_provinces:
+                return f"Duplicate province found: {province}"
+            seen_provinces.add(province)
+            
+            if "value" not in item:
+                return "Invalid data format"
+            
+            value = item["value"]
+            if not isinstance(value, (int, float)):
+                return "Invalid value type"
+        
+        return None
+
+    def validate_temperature_data(self, data):
+        if not data:
+            return "No temperature data available."
+        
+        if not isinstance(data, list):
+            return "Invalid data format"
+        
+        seen_provinces = set()
+        for item in data:
+            if not isinstance(item, dict):
+                return "Invalid data format"
+            
+            if "province" not in item:
+                return "Missing province field"
+            
+            province = item["province"]
+            if not province:
+                return "Missing province field"
+            
+            if province not in PROVINCE_TO_CODE:
+                return f"Invalid province name: {province}"
+            
+            if province in seen_provinces:
+                return f"Duplicate province found: {province}"
+            seen_provinces.add(province)
+            
+            if "value" not in item:
+                return "Invalid data format"
+            
+            value = item["value"]
+            if not isinstance(value, (int, float)):
+                return "Invalid value type"
+        
+        return None
+
     def get_province_humidity(self):
         try:
-            # Coba ambil dari cache dulu
+            # Try to get from cache first
             cached_data = self.cache_service.get(self.CACHE_KEY_HUMIDITY)
             if cached_data is not None:
                 return cached_data
@@ -282,7 +388,12 @@ class ClimateService:
                     "value": float(climate.humidity)
                 })
             
-            # Simpan ke cache
+            # Validate data first
+            validation_error = self.validate_humidity_data(humidity_data)
+            if validation_error:
+                return {"error": validation_error}
+            
+            # Save to cache after validation
             self.cache_service.set(self.CACHE_KEY_HUMIDITY, humidity_data, timeout=self.CACHE_TIMEOUT)
             
             return humidity_data
@@ -292,7 +403,7 @@ class ClimateService:
 
     def get_province_precipitation(self):
         try:
-            # Coba ambil dari cache dulu
+            # Try to get from cache first
             cached_data = self.cache_service.get(self.CACHE_KEY_PRECIPITATION)
             if cached_data is not None:
                 return cached_data
@@ -308,7 +419,12 @@ class ClimateService:
                     "value": float(climate.precipitation)
                 })
             
-            # Simpan ke cache
+            # Validate data first
+            validation_error = self.validate_precipitation_data(precipitation_data)
+            if validation_error:
+                return {"error": validation_error}
+            
+            # Save to cache after validation
             self.cache_service.set(self.CACHE_KEY_PRECIPITATION, precipitation_data, timeout=self.CACHE_TIMEOUT)
             
             return precipitation_data
@@ -318,12 +434,15 @@ class ClimateService:
 
     def get_province_temperature(self):
         try:
+            # Try to get from cache first
             cached_data = self.cache_service.get(self.CACHE_KEY_TEMPERATURE)
             if cached_data is not None:
                 return cached_data
 
+            # Get latest climate data for each province
             latest_climate = self.repository.get_latest_climate_data()
             
+            # Format the data
             temperature_data = []
             for climate in latest_climate:
                 temperature_data.append({
@@ -331,51 +450,15 @@ class ClimateService:
                     "value": float(climate.temperature)
                 })
             
+            # Validate data first
+            validation_error = self.validate_temperature_data(temperature_data)
+            if validation_error:
+                return {"error": validation_error}
+            
+            # Save to cache after validation
             self.cache_service.set(self.CACHE_KEY_TEMPERATURE, temperature_data, timeout=self.CACHE_TIMEOUT)
             
             return temperature_data
         except Exception as e:
             print(f"Error in get_province_temperature: {str(e)}")
             return {"error": str(e)}
-
-    def validate_humidity_data(self, data):
-        """
-        Validates humidity data format and values.
-        
-        Args:
-            data (list): List of humidity records
-            
-        Returns:
-            dict: Error message if validation fails, None if validation passes
-        """
-        if not isinstance(data, list):
-            return {"error": "Invalid data format. Expected a list of humidity records."}
-        
-        seen_provinces = set()
-        for record in data:
-            # Check for missing province
-            if 'province' not in record:
-                return {"error": "Missing province field"}
-            
-            # Check for missing value
-            if 'value' not in record:
-                return {"error": "Missing value field"}
-            
-            # Check for invalid province name
-            if record['province'] not in PROVINCE_TO_CODE and record['province'] != '':
-                return {"error": "Invalid province name"}
-            
-            # Check for duplicate provinces
-            if record['province'] in seen_provinces:
-                return {"error": "Duplicate province entries"}
-            seen_provinces.add(record['province'])
-            
-            # Check for invalid humidity values
-            try:
-                value = float(record['value'])
-                if value < 0 or value > 100:  # Humidity should be between 0 and 100
-                    return {"error": "Invalid humidity value"}
-            except (ValueError, TypeError):
-                return {"error": "Invalid humidity value type"}
-        
-        return None
