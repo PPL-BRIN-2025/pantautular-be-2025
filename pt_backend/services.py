@@ -263,39 +263,63 @@ class ClimateService:
         self.repository = repository or ClimateRepository()
         self.cache_service = cache_service or CacheService()
 
-    def _validate_climate_data(self, data, field_name):
-        """Common validation logic for all climate data"""
+    def _validate_data_format(self, data, field_name):
         if not data:
             return f"No {field_name} data available."
         
         if not isinstance(data, list):
             return "Invalid data format"
         
+        return None
+
+    def _validate_item_format(self, item):
+        if not isinstance(item, dict):
+            return "Invalid data format"
+        
+        if "province" not in item:
+            return "Missing province field"
+        
+        if "value" not in item:
+            return "Invalid data format"
+        
+        return None
+
+    def _validate_province(self, province, seen_provinces):
+        if not province:
+            return "Missing province field"
+        
+        if province not in PROVINCE_TO_CODE:
+            return f"Invalid province name: {province}"
+        
+        if province in seen_provinces:
+            return f"Duplicate province found: {province}"
+        
+        seen_provinces.add(province)
+        return None
+
+    def _validate_value(self, value):
+        if not isinstance(value, (int, float)):
+            return "Invalid value type"
+        return None
+
+    def _validate_climate_data(self, data, field_name):
+        format_error = self._validate_data_format(data, field_name)
+        if format_error:
+            return format_error
+        
         seen_provinces = set()
         for item in data:
-            if not isinstance(item, dict):
-                return "Invalid data format"
+            item_error = self._validate_item_format(item)
+            if item_error:
+                return item_error
             
-            if "province" not in item:
-                return "Missing province field"
+            province_error = self._validate_province(item["province"], seen_provinces)
+            if province_error:
+                return province_error
             
-            province = item["province"]
-            if not province:
-                return "Missing province field"
-            
-            if province not in PROVINCE_TO_CODE:
-                return f"Invalid province name: {province}"
-            
-            if province in seen_provinces:
-                return f"Duplicate province found: {province}"
-            seen_provinces.add(province)
-            
-            if "value" not in item:
-                return "Invalid data format"
-            
-            value = item["value"]
-            if not isinstance(value, (int, float)):
-                return "Invalid value type"
+            value_error = self._validate_value(item["value"])
+            if value_error:
+                return value_error
         
         return None
 
