@@ -78,7 +78,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_invalid_province(self):
-        mock_data = [{"province": "InvalidProvince", "value": 80.0}]
         self.service.get_province_precipitation.return_value = {"error": "Invalid province name: InvalidProvince"}
         
         response = self.view.get(self.request)
@@ -87,10 +86,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "Invalid province name: InvalidProvince"})
 
     def test_duplicate_provinces(self):
-        mock_data = [
-            {"province": "Aceh", "value": 80.0},
-            {"province": "Aceh", "value": 85.0}
-        ]
         self.service.get_province_precipitation.return_value = {"error": "Duplicate province found: Aceh"}
         
         response = self.view.get(self.request)
