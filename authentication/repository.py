@@ -4,12 +4,19 @@ from django.core.exceptions import ObjectDoesNotExist
 
 class UserRepository:
     @staticmethod
-    def get_user_by_email(email: str) -> User: # NOSONAR
+    def get_user_by_email(email: str) -> User | None:  # NOSONAR
         try:
             return User.objects.get(email=email)
         except ObjectDoesNotExist:
-            return None #NOSONAR
-
+            return None  # NOSONAR
+    
+    @staticmethod
+    def get_user_by_id(user_id: int) -> User | None: # NOSONAR
+        try:
+            return User.objects.get(id=user_id)
+        except ObjectDoesNotExist:
+            return None # NOSONAR
+        
     @staticmethod
     def save_user(user: User) -> None:
         user.save()

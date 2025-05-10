@@ -3,61 +3,135 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from pt_backend.models import User
-from django.contrib.auth.hashers import make_password
+from django.contrib.auth.hashers import make_password, check_password
 from .repository import UserRepository
 from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
-from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
+from authentication.email_services import EmailService, PasswordResetEmailStrategy
 
 import os
-from authentication.email_services import BrevoEmailService
+import logging
 
-class PasswordResetService:
-    def __init__(self, reset_url_base=None, email_service=None):
-        self.reset_url_base = reset_url_base or os.getenv(
-            'PROD_PASSWORD_RESET_URL') or os.getenv(
-            'DEV_PASSWORD_RESET_URL')
-        
-        self.email_service = email_service or BrevoEmailService()
+logger = logging.getLogger(__name__)
+
+class UserFinderService:
+    def __init__(self, user_repository):
+        self.user_repository = user_repository
     
     def find_user_by_email(self, email):
-        return User.objects.get(email=email) if User.objects.filter(email=email).exists() else None
+        """Find user by email"""
+        return self.user_repository.get_user_by_email(email)
+
+    def find_user_by_id(self, user_id):
+        """Find user by ID"""
+        return self.user_repository.get_user_by_id(user_id)
+
+class PasswordTokenService:
+    def __init__(self, user_repository):
+        self.user_repository = user_repository
     
     def generate_password_reset_token(self, user):
+        """Generate a password reset token for the user"""
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         return uid, token
 
-    def create_password_reset_link(self, uid, token):
-        return f"{self.reset_url_base}/{uid}/{token}"
-    
-    def process_reset_request(self, email):
-        user = self.find_user_by_email(email)
-        if user:
-            uid, token = self.generate_password_reset_token(user)
-            reset_link = self.create_password_reset_link(uid, token)
-            self.email_service.send_password_reset_email(email, reset_link)
-        return True
-    
     def get_user_from_uidb64(self, uidb64):
         """Decode uidb64 and retrieve the user"""
         if uidb64 is None:
             return None
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
-            user = User.objects.get(pk=uid)
+            user = self.user_repository.get_user_by_id(uid)
             return user
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return None
-    
+
     def validate_token(self, user, token):
         """Validate if the token is valid for the given user"""
-        if not user:
+        if not user or not token:
             return False
         return default_token_generator.check_token(user, token)
+
+class ResetLinkService:
+    def __init__(self, reset_url_base=None):
+        self.reset_url_base = reset_url_base or os.getenv(
+            'PROD_PASSWORD_RESET_URL') or os.getenv(
+            'DEV_PASSWORD_RESET_URL')
+        if not self.reset_url_base:
+            logger.warning("Password reset base URL is not configured.")
     
+    def create_password_reset_link(self, uid, token):
+        """Create a password reset link"""
+        if not self.reset_url_base:
+            logger.error("Reset URL base is not set.")
+            return None
+        return f"{self.reset_url_base}/{uid}/{token}"
+
+class PasswordResetService:
+    def __init__(self, user_finder, password_token_service, reset_link_service, email_service=None):
+        self.user_finder = user_finder
+        self.password_token_service = password_token_service
+        self.reset_link_service = reset_link_service
+        self.email_service = email_service or EmailService()
+        self.reset_strategy = PasswordResetEmailStrategy()
+    
+    def initiate_password_reset(self, email):
+        """
+        Orchestrates the process of sending a password reset email.
+        Returns True if the email was successfully dispatched, False otherwise.
+        """
+        user = self.user_finder.find_user_by_email(email)
+        if not user:
+            logger.info(f"Password reset requested for non-existent email: {email}")
+            return True
+        
+        try:
+            uid, token = self.password_token_service.generate_password_reset_token(user)
+            reset_link = self.reset_link_service.create_password_reset_link(uid, token)
+            if not reset_link:
+                logger.error(f"Failed to create password reset link for user: {user.email}. Check base URL config.")
+                return False
+            
+            # Use the email service with strategy pattern
+            try:
+                self.email_service.send_email(
+                    recipient_email=email,
+                    strategy=self.reset_strategy,
+                    reset_link=reset_link
+                )
+                logger.info(f"Password reset email sent to {email}.")
+                return True
+            except RuntimeError as e:
+                logger.error(f"Email service failed for {email}: {e}")
+                return False
+            except Exception as e:
+                logger.error(f"Unexpected error in email service for {email}: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error generating password reset token for {email}: {e}")
+            return False
+
+    def verify_reset_attempt(self, uidb64, token):
+        """
+        Verify token and uid from password reset link.
+        Returns the User object if valid, None otherwise.
+        """
+        user = self.password_token_service.get_user_from_uidb64(uidb64)
+        if not user:
+            logger.warning(f"Invalid UID: {uidb64}")
+            return None
+        
+        if self.password_token_service.validate_token(user, token):
+            print(f"Token is valid for user: {user.email}")
+            return user
+        else:
+            logger.warning(f"Invalid token for user: {user.email if user else 'unknown'} or token expired.")
+            return None
+        
 class ChangePasswordService:
     def __init__(self, repository: UserRepository = UserRepository()):
         self.repository = repository
@@ -80,7 +154,6 @@ class ChangePasswordService:
         self.repository.save_user(user)
         return {"success": True, "message": "Password successfully updated"}
 
-    
 class PasswordValidationService:
     @staticmethod
     def validate_password_match(password, password_confirm):
@@ -109,7 +182,6 @@ class PasswordValidationService:
             return False, "Password harus mengandung minimal 1 karakter spesial"
             
         return True, ""
-
 
 class AuthService:
     def __init__(self, user_repository):
@@ -223,4 +295,3 @@ class AuthService:
         return {
             "access_token": str(refresh.access_token)
         }
-
