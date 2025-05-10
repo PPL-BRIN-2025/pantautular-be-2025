@@ -17,6 +17,7 @@ import unittest
 import uuid
 import math
 import numpy as np
+from ..constants import PROVINCE_TO_CODE
 
 class BaseStatisticsTestCase(TestCase):
     def setUp(self):
@@ -1174,58 +1175,80 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertNotIn("error", result)  # Main result should not have an error
 
 class TestAverageSeverityByProvince(unittest.TestCase):
-
     def setUp(self):
-        self.mock_service = MagicMock()
-        self.calculator = AverageSeverityByProvince(self.mock_service)
+        self.case_service = MagicMock()
+        self.analyzer = AverageSeverityByProvince(self.case_service)
+        self.analyzer.PROVINCE_TO_CODE = PROVINCE_TO_CODE  # Add the province code mapping
 
     def test_positive_case_with_multiple_provinces(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": "minimal", "location__province": "Jawa Barat"},
-            {"status": "biasa", "location__province": "Jawa Barat"},
-            {"status": "bahaya", "location__province": "DKI Jakarta"},
-            {"status": "katastropik", "location__province": "DKI Jakarta"},
-            {"status": "bahaya", "location__province": "DKI Jakarta"},
-            {"status": "katastropik", "location__province": "Sulawesi Selatan"},
+        """Test with multiple provinces having different severities"""
+        # Mock data with multiple provinces
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "biasa", "location__province": "Bali"},
+            {"status": "minimal", "location__province": "Aceh"}
         ]
+        self.case_service.get_status_and_province.return_value = mock_data
 
-        result = self.calculator.compute()
+        result = self.analyzer.compute()
 
-        self.assertIn("Jawa Barat", result)
-        self.assertIn("DKI Jakarta", result)
-        self.assertIn("Sulawesi Selatan", result)
-
-        for prov in result:
-            self.assertIn("weighted_score", result[prov])
-            self.assertIn("status", result[prov])
-            self.assertIsInstance(result[prov]["weighted_score"], float)
-            self.assertIn(result[prov]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: average of bahaya (3) and minimal (1) = 2, weight = log(2 + 1) ≈ 1.1
+        # 2 * 1.1 = 2.2
+        self.assertAlmostEqual(result[0]["value"], 2.2, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
 
     def test_invalid_status_ignored(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": "INVALID_STATUS", "location__province": "Papua"},
-            {"status": "biasa", "location__province": "Papua"},
+        """Test that cases with invalid status are ignored"""
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "invalid", "location__province": "Aceh"},  # Invalid status
+            {"status": "biasa", "location__province": "Bali"}
         ]
+        self.case_service.get_status_and_province.return_value = mock_data
 
-        result = self.calculator.compute()
+        result = self.analyzer.compute()
 
-        self.assertIn("Papua", result)
-        self.assertEqual(result["Papua"]["status"], "minimal")  # karena cuma satu skor valid
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: bahaya (3), weight = log(1 + 1) ≈ 0.69
+        # 3 * 0.69 = 2.08
+        self.assertAlmostEqual(result[0]["value"], 2.08, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
 
     def test_missing_status_or_province(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": None, "location__province": "Jawa Tengah"},
-            {"status": "bahaya", "location__province": None},
-            {"status": "katastropik", "location__province": "Jawa Tengah"},
+        """Test handling of cases with missing status or province"""
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "biasa", "location__province": None},  # Missing province
+            {"status": None, "location__province": "Bali"},   # Missing status
+            {"status": "biasa", "location__province": "Bali"}
         ]
+        self.case_service.get_status_and_province.return_value = mock_data
 
-        result = self.calculator.compute()
+        result = self.analyzer.compute()
 
-        self.assertIn("Jawa Tengah", result)
-        self.assertIn(result["Jawa Tengah"]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: bahaya (3), weight = log(1 + 1) ≈ 0.69
+        # 3 * 0.69 = 2.08
+        self.assertAlmostEqual(result[0]["value"], 2.08, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
 
     def test_empty_data(self):
-        self.mock_service.get_status_and_province.return_value = []
-
-        result = self.calculator.compute()
-        self.assertEqual(result, {})
+        """Test handling of empty data"""
+        self.case_service.get_status_and_province.return_value = []
+        
+        result = self.analyzer.compute()
+        
+        self.assertEqual(result, [])

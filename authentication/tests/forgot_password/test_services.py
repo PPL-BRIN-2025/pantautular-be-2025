@@ -9,6 +9,7 @@ from pt_backend.models import User
 from authentication.tests.forgot_password.mock_email_service import MockEmailService
 from authentication.email_services import BrevoEmailService
 from sib_api_v3_sdk.rest import ApiException
+import os
 
 class TestPasswordResetService(TestCase):
     def setUp(self):
@@ -18,7 +19,13 @@ class TestPasswordResetService(TestCase):
             password='oldpassword123',
             role="TEST ROLE"
         )
+        # Set the reset URL base for testing
+        os.environ['DEV_PASSWORD_RESET_URL'] = 'http://localhost:3000/forgot-password/reset'
         self.service = PasswordResetService()
+        
+    def tearDown(self):
+        # Clean up environment variable
+        os.environ.pop('DEV_PASSWORD_RESET_URL', None)
         
     def test_find_user_by_email_successful(self):
         """Test that a user can be found by email"""
