@@ -414,6 +414,7 @@ class AverageSeverityByProvince:
 
     def __init__(self, case_service):
         self.case_service = case_service
+        self.PROVINCE_TO_CODE = PROVINCE_TO_CODE
 
     def compute(self):
         """
