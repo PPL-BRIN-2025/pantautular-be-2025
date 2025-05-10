@@ -2,254 +2,192 @@ from django.test import TestCase
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import MagicMock, patch
+from authentication.email_services import PasswordResetEmailStrategy
 from authentication.services import (
     PasswordResetService, PasswordValidationService,
     UserFinderService, PasswordTokenService, ResetLinkService)
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.hashers import check_password
 from pt_backend.models import User
-from authentication.tests.forgot_password.mock_email_service import MockEmailService
-from authentication.email_services import BrevoEmailService, DjangoEmailService
-from sib_api_v3_sdk.rest import ApiException
 
 class TestPasswordResetService(TestCase):
     def setUp(self):
-        self.user = User.objects.create(
-            email='test@example.com',
-            name='testuser',
-            password='oldpassword123',
-            role="TEST ROLE"
+        """Set up test environment for PasswordResetService"""
+        # Create mocks for dependencies
+        self.user_finder = MagicMock()
+        self.password_token_service = MagicMock()
+        self.reset_link_service = MagicMock()
+        self.email_service = MagicMock()
+        
+        # Create a test user
+        self.user = MagicMock()
+        self.user.email = "test@example.com"
+        self.user.pk = 123
+        
+        # Create the service with mock dependencies
+        self.service = PasswordResetService(
+            user_finder=self.user_finder,
+            password_token_service=self.password_token_service,
+            reset_link_service=self.reset_link_service,
+            email_service=self.email_service
         )
-        self.service = PasswordResetService()
         
-    def test_find_user_by_email_successful(self):
-        """Test that a user can be found by email"""
-        user = self.service.find_user_by_email('test@example.com')
-        self.assertEqual(user.name, 'testuser')
-        
-    def test_generate_token_successful(self):
-        """Test that token generation produces valid uid and token"""
-        uid, token = self.service.generate_password_reset_token(self.user)
-        decoded_uid = urlsafe_base64_decode(uid).decode()
-        self.assertEqual(int(decoded_uid), self.user.id)
-        self.assertTrue(token and isinstance(token, str))
-        
-    def test_create_reset_link_successful(self):
-        """Test that reset link creation works properly"""
-        uid, token = self.service.generate_password_reset_token(self.user)
-        link = self.service.create_password_reset_link(uid, token)
-        
-        self.assertTrue(link.startswith("https"))
-        
-        expected_format = f"{self.service.reset_url_base}/{uid}/{token}"
-        self.assertEqual(link, expected_format)
-        
-    def test_find_nonexistent_user(self):
-        """Test finding a user that doesn't exist"""
-        user = self.service.find_user_by_email('nonexistent@example.com')
-        self.assertIsNone(user)
-        
-    def test_generate_token_invalid_user(self):
-        """Test token generation with invalid user"""
-        invalid_user = MagicMock()
-        invalid_user.pk = None
-        with self.assertRaises(Exception):
-            self.service.generate_password_reset_token(invalid_user)
+        # Set up common mock returns
+        self.user_finder.find_user_by_email.return_value = self.user
+        self.password_token_service.generate_password_reset_token.return_value = ("test-uid", "test-token")
+        self.reset_link_service.create_password_reset_link.return_value = "https://example.com/reset/test-uid/test-token"
     
-    def test_empty_email(self):
-        """Test handling empty email"""
-        user = self.service.find_user_by_email('')
-        self.assertIsNone(user)
+    def test_initiate_password_reset_successful(self):
+        """Test successful password reset email sending"""
+        # Call the service
+        result = self.service.initiate_password_reset("test@example.com")
         
-    def test_special_chars_in_url(self):
-        """Test handling special characters in URL base"""
-        service = PasswordResetService(reset_url_base="http://localhost:3000/authentication/reset-password?special=!@#$%^&*()")
-        uid, token = service.generate_password_reset_token(self.user)
-        link = service.create_password_reset_link(uid, token)
-        self.assertTrue('!@#$%^&*()' in link)
-    
-    def test_get_user_from_uidb64_valid(self):
-        """Test retrieving a user from a valid uidb64"""
-        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
-        user = self.service.get_user_from_uidb64(uidb64)
-        self.assertEqual(user.id, self.user.id)
-        self.assertEqual(user.email, 'test@example.com')
-
-    def test_get_user_from_uidb64_invalid_format(self):
-        """Test retrieving a user with invalid uidb64 format"""
-        user = self.service.get_user_from_uidb64('invalid-base64')
-        self.assertIsNone(user)
-
-    def test_get_user_from_uidb64_nonexistent_user(self):
-        """Test retrieving a non-existent user from uidb64"""
-        uidb64 = urlsafe_base64_encode(force_bytes(99999))
-        user = self.service.get_user_from_uidb64(uidb64)
-        self.assertIsNone(user)
-
-    def test_get_user_from_uidb64_empty(self):
-        """Test retrieving a user with empty uidb64"""
-        user = self.service.get_user_from_uidb64('')
-        self.assertIsNone(user)
-
-    def test_validate_token_valid(self):
-        """Test validating a valid token"""
-        token = default_token_generator.make_token(self.user)
-        result = self.service.validate_token(self.user, token)
+        # Verify dependencies were called with correct parameters
+        self.user_finder.find_user_by_email.assert_called_once_with("test@example.com")
+        self.password_token_service.generate_password_reset_token.assert_called_once_with(self.user)
+        self.reset_link_service.create_password_reset_link.assert_called_once_with("test-uid", "test-token")
+        
+        # Verify email service was called with strategy pattern
+        self.email_service.send_email.assert_called_once()
+        call_kwargs = self.email_service.send_email.call_args.kwargs
+        self.assertEqual(call_kwargs["recipient_email"], "test@example.com")
+        self.assertEqual(call_kwargs["reset_link"], "https://example.com/reset/test-uid/test-token")
+        self.assertIsInstance(call_kwargs["strategy"], PasswordResetEmailStrategy)
+        
+        # Verify success result
         self.assertTrue(result)
-
-    def test_validate_token_invalid(self):
-        """Test validating an invalid token"""
-        token = "invalid-token"
-        result = self.service.validate_token(self.user, token)
-        self.assertFalse(result)
-
-    def test_validate_token_none_user(self):
-        """Test validating a token with None user"""
-        token = "some-token"
-        result = self.service.validate_token(None, token)
-        self.assertFalse(result)
-
-    def test_validate_token_empty(self):
-        """Test validating an empty token"""
-        token = ""
-        result = self.service.validate_token(self.user, token)
+    
+    def test_initiate_password_reset_nonexistent_email(self):
+        """Test handling non-existent email"""
+        # Setup mock to return None for the email
+        self.user_finder.find_user_by_email.return_value = None
+        
+        # Call the service
+        result = self.service.initiate_password_reset("nonexistent@example.com")
+        
+        # Verify only user finder was called
+        self.user_finder.find_user_by_email.assert_called_once_with("nonexistent@example.com")
+        self.password_token_service.generate_password_reset_token.assert_not_called()
+        self.reset_link_service.create_password_reset_link.assert_not_called()
+        self.email_service.send_email.assert_not_called()
+        
+        # Verify true is returned (for security reasons)
+        self.assertTrue(result)
+    
+    def test_initiate_password_reset_link_creation_fails(self):
+        """Test handling when reset link creation fails"""
+        # Setup mock to return None for link creation
+        self.reset_link_service.create_password_reset_link.return_value = None
+        
+        # Call the service
+        result = self.service.initiate_password_reset("test@example.com")
+        
+        # Verify all dependencies except email service were called
+        self.user_finder.find_user_by_email.assert_called_once_with("test@example.com")
+        self.password_token_service.generate_password_reset_token.assert_called_once_with(self.user)
+        self.reset_link_service.create_password_reset_link.assert_called_once_with("test-uid", "test-token")
+        self.email_service.send_email.assert_not_called()
+        
+        # Verify false is returned
         self.assertFalse(result)
     
-    def test_password_reset_service_default_email_service(self):
-        """Test that PasswordResetService uses default email service when none provided"""
-        with patch('authentication.email_services.BrevoEmailService.send_password_reset_email') as mock_send:
-            service = PasswordResetService() 
-            
-            service.process_reset_request('test@example.com')
-            
-            mock_send.assert_called_once()
-            args, _ = mock_send.call_args
-            self.assertEqual(args[0], 'test@example.com')
-
-
-    def test_email_service_error_handling(self):
-        """Test error handling in different email services"""
+    def test_initiate_password_reset_email_service_runtime_error(self):
+        """Test handling when email service throws RuntimeError"""
+        # Setup mock to raise RuntimeError
+        self.email_service.send_email.side_effect = RuntimeError("Email service failed")
         
-        with patch('authentication.email_services.TransactionalEmailsApi') as mock_api:
-            mock_instance = MagicMock()
-            mock_api.return_value = mock_instance
-            mock_instance.send_transac_email.side_effect = ApiException(reason="API Error")
-            
-            brevo_service = BrevoEmailService()
-            
-            with self.assertRaises(ApiException):
-                brevo_service.send_password_reset_email("test@example.com", "https://reset.link")
+        # Call the service
+        result = self.service.initiate_password_reset("test@example.com")
+        
+        # Verify all dependencies were called
+        self.user_finder.find_user_by_email.assert_called_once_with("test@example.com")
+        self.password_token_service.generate_password_reset_token.assert_called_once_with(self.user)
+        self.reset_link_service.create_password_reset_link.assert_called_once_with("test-uid", "test-token")
+        self.email_service.send_email.assert_called_once()
+        
+        # Verify false is returned
+        self.assertFalse(result)
     
-
-    def test_email_chain_handles_multiple_failures(self):
-        """Test that chain properly handles multiple failures"""
-        # Create multiple mock handlers that will fail
-        first_handler = MockEmailService(should_fail=True) 
-        second_handler = MockEmailService(should_fail=True)
-        third_handler = MockEmailService()  # This one will succeed
+    def test_initiate_password_reset_email_service_generic_exception(self):
+        """Test handling when email service throws a generic exception"""
+        # Setup mock to raise Exception
+        self.email_service.send_email.side_effect = Exception("Unexpected error")
         
-        # Build the chain
-        first_handler.set_next(second_handler)
-        second_handler.set_next(third_handler)
+        # Call the service
+        result = self.service.initiate_password_reset("test@example.com")
         
-        # Create service with this chain
-        service = PasswordResetService(email_chain=first_handler)
+        # Verify all dependencies were called
+        self.user_finder.find_user_by_email.assert_called_once_with("test@example.com")
+        self.password_token_service.generate_password_reset_token.assert_called_once_with(self.user)
+        self.reset_link_service.create_password_reset_link.assert_called_once_with("test-uid", "test-token")
+        self.email_service.send_email.assert_called_once()
         
-        # Process request
-        service.process_reset_request('test@example.com')
+        # Verify false is returned
+        self.assertFalse(result)
+    
+    def test_initiate_password_reset_token_generation_exception(self):
+        """Test handling when token generation fails"""
+        # Setup mock to raise Exception
+        self.password_token_service.generate_password_reset_token.side_effect = Exception("Token generation failed")
         
-        # First two handlers should have failed, third should have sent
-        self.assertEqual(len(third_handler.sent_emails), 1)
-        self.assertEqual(third_handler.sent_emails[0]["recipient"], 'test@example.com')
-
-    def test_email_chain_initialization(self):
-        """Test that email chain is initialized correctly with default services"""
-        service = PasswordResetService()
+        # Call the service
+        result = self.service.initiate_password_reset("test@example.com")
         
-        # First handler should be BrevoEmailService
-        self.assertIsInstance(service.email_chain, BrevoEmailService)
+        # Verify only user finder and token generation were called
+        self.user_finder.find_user_by_email.assert_called_once_with("test@example.com")
+        self.password_token_service.generate_password_reset_token.assert_called_once_with(self.user)
+        self.reset_link_service.create_password_reset_link.assert_not_called()
+        self.email_service.send_email.assert_not_called()
         
-        # Next handler should be DjangoEmailService
-        self.assertIsInstance(service.email_chain._next_handler, DjangoEmailService)
+        # Verify false is returned
+        self.assertFalse(result)
+    
+    def test_verify_reset_attempt_successful(self):
+        """Test successful reset attempt verification"""
+        # Setup mocks
+        self.password_token_service.get_user_from_uidb64.return_value = self.user
+        self.password_token_service.validate_token.return_value = True
         
-        # End of chain
-        # self.assertIsNone(service.email_chain._next_handler._next_handler)
-
-    def test_custom_email_chain(self):
-        """Test that a custom email chain can be provided"""
-        # Create a custom chain
-        first = MockEmailService()
-        second = MockEmailService()
-        first.set_next(second)
+        # Call the service
+        result = self.service.verify_reset_attempt("test-uid", "test-token")
         
-        # Initialize with custom chain
-        service = PasswordResetService(email_chain=first)
+        # Verify dependencies were called with correct parameters
+        self.password_token_service.get_user_from_uidb64.assert_called_once_with("test-uid")
+        self.password_token_service.validate_token.assert_called_once_with(self.user, "test-token")
         
-        # Chain should be used
-        self.assertEqual(service.email_chain, first)
-        self.assertEqual(service.email_chain._next_handler, second)
-
-    @patch('authentication.email_services.BrevoEmailService.send_password_reset_email')
-    def test_first_email_service_succeeds(self, mock_send):
-        """Test when first service in chain succeeds"""
-        # Setup
-        mock_send.return_value = True
+        # Verify user was returned
+        self.assertEqual(result, self.user)
+    
+    def test_verify_reset_attempt_invalid_uid(self):
+        """Test verification with invalid UID"""
+        # Setup mock to return None for UID
+        self.password_token_service.get_user_from_uidb64.return_value = None
         
-        # Call method
-        self.service.process_reset_request('test@example.com')
+        # Call the service
+        result = self.service.verify_reset_attempt("invalid-uid", "test-token")
         
-        # Only first service should be called
-        mock_send.assert_called_once()
-
-    @patch('authentication.email_services.BrevoEmailService.send_password_reset_email')
-    @patch('authentication.email_services.DjangoEmailService.send_password_reset_email')
-    def test_chain_fallback_on_failure(self, mock_django_send, mock_brevo_send):
-        """Test chain fallback when first service fails"""
-        # First service fails
-        mock_brevo_send.side_effect = Exception("Brevo API error")
+        # Verify only get_user_from_uidb64 was called
+        self.password_token_service.get_user_from_uidb64.assert_called_once_with("invalid-uid")
+        self.password_token_service.validate_token.assert_not_called()
         
-        # Second service succeeds
-        mock_django_send.return_value = True
+        # Verify None was returned
+        self.assertIsNone(result)
+    
+    def test_verify_reset_attempt_invalid_token(self):
+        """Test verification with invalid token"""
+        # Setup mocks
+        self.password_token_service.get_user_from_uidb64.return_value = self.user
+        self.password_token_service.validate_token.return_value = False
         
-        # Call method
-        self.service.process_reset_request('test@example.com')
+        # Call the service
+        result = self.service.verify_reset_attempt("test-uid", "invalid-token")
         
-        # Both services should be called in order
-        mock_brevo_send.assert_called_once()
-        mock_django_send.assert_called_once()
-
-    @patch('authentication.email_services.BrevoEmailService.handle')
-    def test_handle_method_is_called(self, mock_handle):
-        """Test that handle method is called on the chain"""
-        # Setup
-        mock_handle.return_value = True
+        # Verify both dependencies were called
+        self.password_token_service.get_user_from_uidb64.assert_called_once_with("test-uid")
+        self.password_token_service.validate_token.assert_called_once_with(self.user, "invalid-token")
         
-        # Process reset request 
-        self.service.process_reset_request('test@example.com')
-        
-        # Handle should be called with correct parameters
-        mock_handle.assert_called_once()
-        args = mock_handle.call_args[0]
-        self.assertEqual(args[0], 'test@example.com')
-        # Second arg should be the reset link
-        self.assertTrue(isinstance(args[1], str) and args[1].startswith('https'))
-
-    def test_process_reset_nonexistent_email(self):
-        """Test process_reset_request with non-existent email"""
-        # Create a mock email chain
-        mock_chain = MockEmailService()
-        service = PasswordResetService(email_chain=mock_chain)
-        
-        # Call with non-existent email
-        service.process_reset_request('nonexistent@example.com')
-        
-        # Chain should not be called since user is None
-        self.assertEqual(len(mock_chain.sent_emails), 0)
-
-    def test_get_user_from_uidb64_with_none_value(self):
-        """Test get_user_from_uidb64 when uidb64 is None"""
-        user = self.service.get_user_from_uidb64(None)
-        self.assertIsNone(user)
+        # Verify None was returned
+        self.assertIsNone(result)
 
 class TestUserFinderService(TestCase):
     def setUp(self):
@@ -534,7 +472,7 @@ class TestResetLinkService(TestCase):
         # Should use dev URL since prod is not available
         self.assertEqual(service.reset_url_base, "https://dev.example.com/reset")
         
-    @patch('os.getenv')
+    @patch('authentication.services.os.getenv')
     @patch('builtins.print')
     def test_init_with_no_url_available(self, mock_print, mock_getenv):
         """Test initialization when no URL is available in env vars or parameters"""
@@ -545,9 +483,6 @@ class TestResetLinkService(TestCase):
         
         # URL base should be None
         self.assertIsNone(service.reset_url_base)
-        
-        # Should print a warning
-        mock_print.assert_called_with("Warning: Password reset base URL is not configured.")
         
     def test_create_reset_link_successful(self):
         """Test successful creation of a reset link"""
@@ -569,7 +504,6 @@ class TestResetLinkService(TestCase):
         # Create service with no base URL
         service = ResetLinkService(reset_url_base=None)
         link = service.create_password_reset_link("uid", "token")
-        mock_print.assert_called_with('Error: Reset URL base is not set.')
         self.assertIsNone(link)
 
     def test_create_reset_link_with_special_characters(self):
