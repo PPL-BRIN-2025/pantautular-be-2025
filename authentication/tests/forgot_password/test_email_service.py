@@ -17,7 +17,7 @@ class MockEmailProvider(EmailProvider):
         
     def send_email(self, recipient_email, subject, template_name, context):
         if self.should_fail:
-            raise Exception("Mock provider failure")
+            raise RuntimeError("Mock provider failure")
             
         self.sent_emails.append({
             "recipient": recipient_email,
@@ -107,10 +107,11 @@ class TestEmailService(TestCase):
         
         # First provider should have sent the email
         self.assertEqual(len(provider1.sent_emails), 1)
-        self.assertEqual(provider1.sent_emails[0]["recipient"], "test@example.com")
-        self.assertEqual(provider1.sent_emails[0]["subject"], "Password Reset Request")
-        self.assertEqual(provider1.sent_emails[0]["template"], "email_reset_password.html")
-        self.assertEqual(provider1.sent_emails[0]["context"], {"reset_link": "https://example.com/reset"})
+        if provider1.sent_emails:
+            self.assertEqual(provider1.sent_emails[0]["recipient"], "test@example.com")
+            self.assertEqual(provider1.sent_emails[0]["subject"], "Password Reset Request")
+            self.assertEqual(provider1.sent_emails[0]["template"], "email_reset_password.html")
+            self.assertEqual(provider1.sent_emails[0]["context"], {"reset_link": "https://example.com/reset"})
         
         # Second provider should not have been called
         self.assertEqual(len(provider2.sent_emails), 0)
@@ -139,7 +140,8 @@ class TestEmailService(TestCase):
         
         # Second provider should have sent the email
         self.assertEqual(len(provider2.sent_emails), 1)
-        self.assertEqual(provider2.sent_emails[0]["recipient"], "test@example.com")
+        if provider2.sent_emails:
+            self.assertEqual(provider2.sent_emails[0]["recipient"], "test@example.com")
         
         # Result should be True
         self.assertTrue(result)
