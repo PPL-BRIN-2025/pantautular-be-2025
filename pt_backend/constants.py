@@ -34,4 +34,9 @@ PROVINCE_TO_CODE = {
     'Sumatera Barat': 'ID-SB',
     'Sumatera Selatan': 'ID-SS',
     'Sumatera Utara': 'ID-SU'
-} 
+}
+
+# Climate data validation error messages
+CLIMATE_ERROR_INVALID_FORMAT = "Invalid data format"
+CLIMATE_ERROR_MISSING_PROVINCE = "Missing province field"
+CLIMATE_ERROR_INVALID_VALUE = "Invalid value type" 

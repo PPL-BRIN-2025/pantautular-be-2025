@@ -17,6 +17,7 @@ from .filter.grafana_config import (
     measure_time, count_calls,
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
 )
+from .constants import CLIMATE_ERROR_INVALID_FORMAT
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
@@ -387,7 +388,7 @@ class ProvinceHumidityView(APIView):
             
             serializer = ProvinceHumiditySerializer(data=data, many=True)
             if not serializer.is_valid():
-                return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
             
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -417,7 +418,7 @@ class ProvincePrecipitationView(APIView):
             
             serializer = ProvincePrecipitationSerializer(data=data, many=True)
             if not serializer.is_valid():
-                return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
             
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
@@ -447,7 +448,7 @@ class ProvinceTemperatureView(APIView):
             
             serializer = ProvinceTemperatureSerializer(data=data, many=True)
             if not serializer.is_valid():
-                return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
             
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:

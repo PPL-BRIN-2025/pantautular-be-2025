@@ -8,6 +8,7 @@ from ..services import ClimateService, CacheService
 import uuid
 from unittest.mock import patch, MagicMock
 import os
+from ..constants import CLIMATE_ERROR_INVALID_FORMAT, CLIMATE_ERROR_MISSING_PROVINCE, CLIMATE_ERROR_INVALID_VALUE
 
 class BaseClimateRepositoryTest(TestCase):
     def setUp(self):
@@ -91,13 +92,9 @@ class BaseClimateServiceTest(TestCase):
         self.assertEqual(result, f"No {self.field_name} data available.")
 
     def test_validate_invalid_data_format(self):
-        if not self.service_method:
-            return
-            
-        validation_method = f"validate_{self.field_name}_data"
-        result = getattr(self.service, validation_method)(["not a dictionary"])
-        
-        self.assertEqual(result, "Invalid data format")
+        data = ["not a dictionary"]
+        result = getattr(self.service, f"validate_{self.field_name}_data")(data)
+        self.assertEqual(result, CLIMATE_ERROR_INVALID_FORMAT)
 
     def test_validate_missing_value(self):
         if not self.service_method:
@@ -130,40 +127,36 @@ class BaseClimateServiceTest(TestCase):
         if not self.service_method:
             return
             
-        validation_method = f"validate_{self.field_name}_data"
-        result = getattr(self.service, validation_method)([{"value": 80.0}])
-        
-        self.assertEqual(result, "Missing province field")
+        data = [{"value": 80.0}]
+        result = getattr(self.service, f"validate_{self.field_name}_data")(data)
+        self.assertEqual(result, CLIMATE_ERROR_MISSING_PROVINCE)
 
     def test_validate_invalid_province(self):
         if not self.service_method:
             return
             
-        validation_method = f"validate_{self.field_name}_data"
-        result = getattr(self.service, validation_method)([{"province": "InvalidProvince", "value": 80.0}])
-        
+        data = [{"province": "InvalidProvince", "value": 80.0}]
+        result = getattr(self.service, f"validate_{self.field_name}_data")(data)
         self.assertEqual(result, "Invalid province name: InvalidProvince")
 
     def test_validate_duplicate_province(self):
         if not self.service_method:
             return
             
-        validation_method = f"validate_{self.field_name}_data"
-        result = getattr(self.service, validation_method)([
+        data = [
             {"province": "Aceh", "value": 80.0},
             {"province": "Aceh", "value": 85.0}
-        ])
-        
+        ]
+        result = getattr(self.service, f"validate_{self.field_name}_data")(data)
         self.assertEqual(result, "Duplicate province found: Aceh")
 
     def test_validate_invalid_value_type(self):
         if not self.service_method:
             return
             
-        validation_method = f"validate_{self.field_name}_data"
-        result = getattr(self.service, validation_method)([{"province": "Aceh", "value": "invalid"}])
-        
-        self.assertEqual(result, "Invalid value type")
+        data = [{"province": "Aceh", "value": "invalid"}]
+        result = getattr(self.service, f"validate_{self.field_name}_data")(data)
+        self.assertEqual(result, CLIMATE_ERROR_INVALID_VALUE)
 
     def test_validate_valid_data(self):
         if not self.service_method:

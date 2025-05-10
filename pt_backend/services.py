@@ -2,7 +2,7 @@ from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheIn
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from .constants import PROVINCE_TO_CODE
+from .constants import PROVINCE_TO_CODE, CLIMATE_ERROR_INVALID_FORMAT, CLIMATE_ERROR_MISSING_PROVINCE, CLIMATE_ERROR_INVALID_VALUE
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -268,25 +268,25 @@ class ClimateService:
             return f"No {field_name} data available."
         
         if not isinstance(data, list):
-            return "Invalid data format"
+            return CLIMATE_ERROR_INVALID_FORMAT
         
         return None
 
     def _validate_item_format(self, item):
         if not isinstance(item, dict):
-            return "Invalid data format"
+            return CLIMATE_ERROR_INVALID_FORMAT
         
         if "province" not in item:
-            return "Missing province field"
+            return CLIMATE_ERROR_MISSING_PROVINCE
         
         if "value" not in item:
-            return "Invalid data format"
+            return CLIMATE_ERROR_INVALID_FORMAT
         
         return None
 
     def _validate_province(self, province, seen_provinces):
         if not province:
-            return "Missing province field"
+            return CLIMATE_ERROR_MISSING_PROVINCE
         
         if province not in PROVINCE_TO_CODE:
             return f"Invalid province name: {province}"
@@ -299,7 +299,7 @@ class ClimateService:
 
     def _validate_value(self, value):
         if not isinstance(value, (int, float)):
-            return "Invalid value type"
+            return CLIMATE_ERROR_INVALID_VALUE
         return None
 
     def _validate_climate_data(self, data, field_name):
