@@ -2,6 +2,8 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
+
+from pt_backend.views import INTERNAL_SERVER_ERR_MSG
 from ..models import Climate
 from ..repositories import ClimateRepository
 from ..services import ClimateService, CacheService
@@ -20,6 +22,16 @@ class ProvinceHumidityViewTest(BaseHumidityViewTest):
     def tearDown(self):
         # Clean up environment variable
         os.environ.pop('SECRET_API_KEY', None)
+
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_unexpected_exception(self, mock_get_humidity):
+        # Configure mock to raise an unexpected exception
+        mock_get_humidity.side_effect = Exception("Unexpected error")
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": INTERNAL_SERVER_ERR_MSG})
 
     # Positive Test Cases
     @patch('pt_backend.services.ClimateService.get_province_humidity')

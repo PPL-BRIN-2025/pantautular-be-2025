@@ -373,39 +373,6 @@ class ProvinceHumidityView(APIView):
         cache_service = CacheService()
         self.service = ClimateService(cache_service=cache_service)
     
-    def validate_humidity_data(self, data):
-        if not isinstance(data, list):
-            return {"error": "Invalid data format. Expected a list of humidity records."}
-        
-        seen_provinces = set()
-        for record in data:
-            # Check for missing province
-            if 'province' not in record:
-                return {"error": "Missing province field"}
-            
-            # Check for missing value
-            if 'value' not in record:
-                return {"error": "Missing value field"}
-            
-            # Check for invalid province name
-            if record['province'] not in PROVINCE_TO_CODE and record['province'] != '':
-                return {"error": "Invalid province name"}
-            
-            # Check for duplicate provinces
-            if record['province'] in seen_provinces:
-                return {"error": "Duplicate province entries"}
-            seen_provinces.add(record['province'])
-            
-            # Check for invalid humidity values
-            try:
-                value = float(record['value'])
-                if value < 0 or value > 100:  # Humidity should be between 0 and 100
-                    return {"error": "Invalid humidity value"}
-            except (ValueError, TypeError):
-                return {"error": "Invalid humidity value type"}
-        
-        return None
-    
     def get(self, request):
         try:
             humidity_data = self.service.get_province_humidity()
@@ -413,8 +380,8 @@ class ProvinceHumidityView(APIView):
             if isinstance(humidity_data, dict) and "error" in humidity_data:
                 return Response(humidity_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            # Validate the data
-            validation_error = self.validate_humidity_data(humidity_data)
+            # Validate the data using the service validator
+            validation_error = self.service.validate_humidity_data(humidity_data)
             if validation_error:
                 return Response(validation_error, status=status.HTTP_400_BAD_REQUEST)
             

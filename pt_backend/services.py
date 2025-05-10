@@ -9,6 +9,8 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
 
+from .serializers import PROVINCE_TO_CODE
+
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_KEY_ALL_LOCATIONS = "all_locations"
@@ -335,3 +337,45 @@ class ClimateService:
         except Exception as e:
             print(f"Error in get_province_temperature: {str(e)}")
             return {"error": str(e)}
+
+    def validate_humidity_data(self, data):
+        """
+        Validates humidity data format and values.
+        
+        Args:
+            data (list): List of humidity records
+            
+        Returns:
+            dict: Error message if validation fails, None if validation passes
+        """
+        if not isinstance(data, list):
+            return {"error": "Invalid data format. Expected a list of humidity records."}
+        
+        seen_provinces = set()
+        for record in data:
+            # Check for missing province
+            if 'province' not in record:
+                return {"error": "Missing province field"}
+            
+            # Check for missing value
+            if 'value' not in record:
+                return {"error": "Missing value field"}
+            
+            # Check for invalid province name
+            if record['province'] not in PROVINCE_TO_CODE and record['province'] != '':
+                return {"error": "Invalid province name"}
+            
+            # Check for duplicate provinces
+            if record['province'] in seen_provinces:
+                return {"error": "Duplicate province entries"}
+            seen_provinces.add(record['province'])
+            
+            # Check for invalid humidity values
+            try:
+                value = float(record['value'])
+                if value < 0 or value > 100:  # Humidity should be between 0 and 100
+                    return {"error": "Invalid humidity value"}
+            except (ValueError, TypeError):
+                return {"error": "Invalid humidity value type"}
+        
+        return None
