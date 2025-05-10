@@ -19,5 +19,14 @@ class UserRepositoryTest(TestCase):
         UserRepository.save_user(user)
         saved = User.objects.get(email="bob@example.com")
         self.assertEqual(saved.name, "Bob")
+        
+    def test_get_user_by_id_success(self):
+        user = User.objects.create(name="Charlie", email="charlie@example.com", password="secret", role="USER")  # NOSONAR – test data
+        result = UserRepository.get_user_by_id(user.id)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.id, user.id)
+        self.assertEqual(result.email, "charlie@example.com")
 
-
+    def test_get_user_by_id_not_found(self):
+        result = UserRepository.get_user_by_id(99999)
+        self.assertIsNone(result)

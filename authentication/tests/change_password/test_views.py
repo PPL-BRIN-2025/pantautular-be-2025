@@ -5,12 +5,15 @@ from rest_framework import status
 from django.contrib.auth.hashers import make_password, check_password
 from pt_backend.models import User
 from unittest.mock import patch, PropertyMock
+import os
+import jwt
+from django.conf import settings
 
 class ChangePasswordViewTest(TestCase):
     
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse('change-password')  # Pastikan nama URL sesuai dengan yang ada di urls.py
+        self.url = reverse('change-password')
         
         # Buat user untuk test
         self.user = User.objects.create(
@@ -20,13 +23,23 @@ class ChangePasswordViewTest(TestCase):
             role="USER"
         )
         
-        # Simulasi APIKeyAuthentication
-        self.patcher = patch('authentication.security.APIKeyAuthentication.authenticate')
-        self.mock_auth = self.patcher.start()
-        self.mock_auth.return_value = (self.user, None)
+        # Set up API key authentication
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        
+        # Create JWT token for the user
+        token = jwt.encode(
+            {'user_id': str(self.user.id)},
+            settings.SECRET_KEY,
+            algorithm='HS256'
+        )
+        self.client.credentials(
+            HTTP_X_API_KEY='test-api-key',
+            HTTP_AUTHORIZATION=f'Bearer {token}'
+        )
     
     def tearDown(self):
-        self.patcher.stop()
+        os.environ.pop('SECRET_API_KEY', None)
     
     def test_change_password_success(self):
         # Mock update_user_password untuk mengembalikan success
@@ -85,11 +98,10 @@ class ChangePasswordViewTest(TestCase):
                     self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
                     self.assertIn('error', response.data)
     
-    
     def test_change_password_no_auth(self):
         """Test tanpa autentikasi"""
-        # Atur mock untuk simulasi tidak ada autentikasi
-        self.mock_auth.return_value = None
+        # Remove all credentials
+        self.client.credentials()
         
         data = {
             'current_password': 'current_password',  # NOSONAR - test data
