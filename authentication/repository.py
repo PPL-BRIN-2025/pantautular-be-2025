@@ -11,11 +11,11 @@ class UserRepository:
             return None  # NOSONAR
     
     @staticmethod
-    def get_user_by_id(user_id: int) -> User: # NOSONAR
+    def get_user_by_id(user_id: int) -> User | None: # NOSONAR
         try:
             return User.objects.get(id=user_id)
         except ObjectDoesNotExist:
-            return None
+            return None # NOSONAR
         
     @staticmethod
     def save_user(user: User) -> None:
