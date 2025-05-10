@@ -98,6 +98,4 @@ class ProvinceClimateSerializer(serializers.Serializer):
             'value': float(instance['value'])
         }
 
-ProvinceHumiditySerializer = ProvinceClimateSerializer
-ProvinceTemperatureSerializer = ProvinceClimateSerializer
-ProvincePrecipitationSerializer = ProvinceClimateSerializer
+

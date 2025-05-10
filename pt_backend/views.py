@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 
 
 from pt_backend.models import Location
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer, PROVINCE_TO_CODE
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceClimateSerializer
 from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
@@ -385,7 +385,7 @@ class ProvinceHumidityView(APIView):
             if not data:
                 return Response({"error": "No humidity data available."}, status=status.HTTP_400_BAD_REQUEST)
             
-            serializer = ProvinceHumiditySerializer(data=data, many=True)
+            serializer = ProvinceClimateSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -415,7 +415,7 @@ class ProvincePrecipitationView(APIView):
             if not data:
                 return Response({"error": "No precipitation data available."}, status=status.HTTP_400_BAD_REQUEST)
             
-            serializer = ProvincePrecipitationSerializer(data=data, many=True)
+            serializer = ProvinceClimateSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -445,7 +445,7 @@ class ProvinceTemperatureView(APIView):
             if not data:
                 return Response({"error": "No temperature data available."}, status=status.HTTP_400_BAD_REQUEST)
             
-            serializer = ProvinceTemperatureSerializer(data=data, many=True)
+            serializer = ProvinceClimateSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": "Invalid data format"}, status=status.HTTP_400_BAD_REQUEST)
             
