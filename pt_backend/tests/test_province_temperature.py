@@ -35,10 +35,14 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         os.environ.pop('SECRET_API_KEY', None)
         self.client.credentials()
 
+    def _make_request(self, mock_data):
+        """Helper method to make a request with mock data"""
+        self.service.get_province_temperature.return_value = mock_data
+        return self.view.get(self.request)
+
     def test_unexpected_exception(self):
         self.service.get_province_temperature.side_effect = Exception("Unexpected error")
-        
-        response = self.view.get(self.request)
+        response = self._make_request(None)
         
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.data, {"error": "Unexpected error"})
@@ -48,9 +52,7 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
             {"province": "Aceh", "value": 25.0},
             {"province": "Bali", "value": 30.0}
         ]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        response = self._make_request(mock_data)
         
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 2)
@@ -60,89 +62,64 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.assertEqual(response.data[1]["value"], 30.0)
 
     def test_serialization_error(self):
-        mock_data = [{"invalid": "data"}]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        response = self._make_request([{"invalid": "data"}])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_invalid_temperature_value(self):
-        mock_data = [{"province": "Aceh", "value": "invalid"}]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        response = self._make_request([{"province": "Aceh", "value": "invalid"}])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_invalid_province(self):
-        mock_data = {"error": "Invalid province name: InvalidProvince"}
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        response = self._make_request({"error": "Invalid province name: InvalidProvince"})
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data, {"error": "Invalid province name: InvalidProvince"})
 
     def test_duplicate_provinces(self):
-        mock_data = {"error": "Duplicate province found: Aceh"}
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        response = self._make_request({"error": "Duplicate province found: Aceh"})
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data, {"error": "Duplicate province found: Aceh"})
 
     def test_missing_province(self):
-        mock_data = [
+        response = self._make_request([
             {"value": 25.0},  # Missing province
             {"province": "Bali", "value": 30.0}
-        ]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        ])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_missing_value(self):
-        mock_data = [
+        response = self._make_request([
             {"province": "Aceh"},  # Missing value
             {"province": "Bali", "value": 25.0}
-        ]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        ])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_serialization_error_with_invalid_value_type(self):
-        mock_data = [
+        response = self._make_request([
             {"province": "Aceh", "value": "invalid_value"},
             {"province": "Bali", "value": 30.0}
-        ]
-        self.service.get_province_temperature.return_value = mock_data
-        
-        response = self.view.get(self.request)
+        ])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_empty_data(self):
-        self.service.get_province_temperature.return_value = []
-        
-        response = self.view.get(self.request)
+        response = self._make_request([])
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data, {"error": "No temperature data available."})
 
     def test_service_returns_error_dict(self):
-        self.service.get_province_temperature.return_value = {"error": "Some error occurred"}
-        
-        response = self.view.get(self.request)
+        response = self._make_request({"error": "Some error occurred"})
         
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.data, {"error": "Some error occurred"})
