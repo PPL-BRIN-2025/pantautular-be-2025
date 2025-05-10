@@ -36,7 +36,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.client.credentials()
 
     def test_unexpected_exception(self):
-        """Test handling of unexpected exceptions"""
         self.service.get_province_precipitation.side_effect = Exception("Unexpected error")
         
         response = self.view.get(self.request)
@@ -45,7 +44,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "Unexpected error"})
 
     def test_successful_response(self):
-        """Test successful response with valid data"""
         mock_data = [
             {"province": "Aceh", "value": 100.0},
             {"province": "Bali", "value": 150.0}
@@ -80,7 +78,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_invalid_province(self):
-        """Test handling of invalid province name"""
         mock_data = [{"province": "InvalidProvince", "value": 80.0}]
         self.service.get_province_precipitation.return_value = {"error": "Invalid province name: InvalidProvince"}
         
@@ -90,7 +87,6 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "Invalid province name: InvalidProvince"})
 
     def test_duplicate_provinces(self):
-        """Test handling of duplicate province entries"""
         mock_data = [
             {"province": "Aceh", "value": 80.0},
             {"province": "Aceh", "value": 85.0}
