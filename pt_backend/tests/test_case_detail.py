@@ -17,29 +17,77 @@ from rest_framework import status
 from django.utils import timezone
 
 
-
-class CaseDetailFormatterTest(TestCase):
+class BaseCaseDetailTest(TestCase):
     def setUp(self):
+        self.client = APIClient()
+        # Set up API key authentication
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        
+        # Create test data
+        self.disease = Disease.objects.create(
+            name="Test Disease",
+            level_of_alertness=1
+        )
+        
+        self.location = Location.objects.create(
+            latitude=0.0,
+            longitude=0.0,
+            city="Test City",
+            province="Test Province"
+        )
+        
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=25,
+            city="Test City",
+            status="terjangkit",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.location
+        )
+        
+        self.news = News.objects.create(
+            title="Test News",
+            content="Test Content",
+            url="https://test.com",
+            portal="Test Portal",
+            type="article",
+            author="Test Author",
+            date_published=timezone.now(),
+            case=self.case
+        )
+
+    def tearDown(self):
+        # Clean up environment variable
+        os.environ.pop('SECRET_API_KEY', None)
+
+    def _assert_case_detail_response(self, response):
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(response.data['id']), str(self.case.id))
+        self.assertEqual(response.data['gender'], self.case.gender)
+        self.assertEqual(response.data['age'], self.case.age)
+        self.assertEqual(response.data['location'], self.location.province)
+        self.assertEqual(len(response.data['news']), 1)
+        self.assertEqual(response.data['news'][0]['title'], self.news.title)
+
+class CaseDetailFormatterTest(BaseCaseDetailTest):
+    def setUp(self):
+        super().setUp()
         self.news_formatter = CaseNewsDetailFormatter()
         self.protocol_formatter = CaseHealthProtocolDetailFormatter()
         self.gender_formatter = CaseGenderDetailFormatter()
 
     def test_news_formatter(self):
-        news = Mock()
-        news.img_url = "https://example.com/image.jpg"
-        news.url = "https://example.com/news/1"
-        news.date_published = datetime.strptime("2024-03-20T00:00:00Z", "%Y-%m-%dT%H:%M:%SZ")
-        news.title = "Test News"
-        news.content = "News content"
-
-        result = self.news_formatter.format(news)
+        result = self.news_formatter.format(self.news)
         
-        self.assertEqual(result["img_url"], "https://example.com/image.jpg")
-        self.assertEqual(result["url"], "https://example.com/news/1")
+        self.assertEqual(result["img_url"], "")  # News model doesn't have img_url
+        self.assertEqual(result["url"], "https://test.com")
         self.assertEqual(result["title"], "Test News")
-        self.assertEqual(result["domain"], "example.com")
-        self.assertEqual(result["date"], "20 Mar 2024")
-        self.assertEqual(result["content"], "News content")
+        self.assertEqual(result["domain"], "test.com")
+        self.assertEqual(result["date"], timezone.now().strftime("%d %b %Y"))
+        self.assertEqual(result["content"], "Test Content")
 
     def test_protocol_formatter(self):
         protocol = Mock()
@@ -64,9 +112,9 @@ class CaseDetailFormatterTest(TestCase):
         result = CaseNewsDetailFormatter._extract_domain("invalid-url")
         self.assertEqual(result, "")
 
-
-class CaseDetailServiceTest(TestCase):
+class CaseDetailServiceTest(BaseCaseDetailTest):
     def setUp(self):
+        super().setUp()
         self.repository = Mock()
         self.cache_service = Mock()
         self.news_formatter = CaseNewsDetailFormatter()
@@ -82,7 +130,7 @@ class CaseDetailServiceTest(TestCase):
         )
         
         # Common test data
-        self.case_id = uuid.uuid4()
+        self.case_id = self.case.id
         self.mock_case = self._create_mock_case()
         self.mock_news = self._create_mock_news()
         self.mock_protocol = self._create_mock_protocol()
@@ -198,77 +246,31 @@ class CaseDetailServiceTest(TestCase):
         with self.assertRaises(Exception):
             self.service.get_case_detail(self.case_id)
 
-class CaseRepositoryTest(TestCase):
-   def test_get_case_detail_by_id_exception(self):
-       # Create a mock Case model with DoesNotExist exception
-       mock_case = Mock()
-       mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
-       mock_case.objects.select_related.side_effect = Exception("Database error")
-       
-       with patch('pt_backend.repositories.Case', mock_case):
-           repository = CaseRepository()
-           result = repository.get_case_detail_by_id(uuid.uuid4())
-           self.assertIsNone(result)
-
-   def test_get_case_detail_by_id_not_found(self):
-       # Create a mock Case model with DoesNotExist exception
-       mock_case = Mock()
-       mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
-       mock_case.objects.select_related.side_effect = mock_case.DoesNotExist("Case not found")
-       
-       with patch('pt_backend.repositories.Case', mock_case):
-           repository = CaseRepository()
-           non_existent_id = uuid.uuid4()
-           result = repository.get_case_detail_by_id(non_existent_id)
-           self.assertIsNone(result)
-
-
-class CaseDetailViewTest(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        # Set up API key authentication
-        os.environ['SECRET_API_KEY'] = 'test-api-key'
-        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+class CaseRepositoryTest(BaseCaseDetailTest):
+    def test_get_case_detail_by_id_exception(self):
+        # Create a mock Case model with DoesNotExist exception
+        mock_case = Mock()
+        mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
+        mock_case.objects.select_related.side_effect = Exception("Database error")
         
-        # Create test data
-        self.disease = Disease.objects.create(
-            name="Test Disease",
-            level_of_alertness=1
-        )
-        
-        self.location = Location.objects.create(
-            latitude=0.0,
-            longitude=0.0,
-            city="Test City",
-            province="Test Province"
-        )
-        
-        self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Pria",
-            age=25,
-            city="Test City",
-            status="terjangkit",
-            severity="hospitalisasi",
-            disease=self.disease,
-            location=self.location
-        )
-        
-        self.news = News.objects.create(
-            title="Test News",
-            content="Test Content",
-            url="https://test.com",
-            portal="Test Portal",
-            type="article",
-            author="Test Author",
-            date_published=timezone.now(),
-            case=self.case
-        )
+        with patch('pt_backend.repositories.Case', mock_case):
+            repository = CaseRepository()
+            result = repository.get_case_detail_by_id(uuid.uuid4())
+            self.assertIsNone(result)
 
-    def tearDown(self):
-        # Clean up environment variable
-        os.environ.pop('SECRET_API_KEY', None)
+    def test_get_case_detail_by_id_not_found(self):
+        # Create a mock Case model with DoesNotExist exception
+        mock_case = Mock()
+        mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
+        mock_case.objects.select_related.side_effect = mock_case.DoesNotExist("Case not found")
+        
+        with patch('pt_backend.repositories.Case', mock_case):
+            repository = CaseRepository()
+            non_existent_id = uuid.uuid4()
+            result = repository.get_case_detail_by_id(non_existent_id)
+            self.assertIsNone(result)
 
+class CaseDetailViewTest(BaseCaseDetailTest):
     def test_get_case_detail_not_found(self):
         """Test getting a non-existent case detail"""
         non_existent_id = uuid.uuid4()
@@ -282,13 +284,7 @@ class CaseDetailViewTest(TestCase):
         """Test getting an existing case detail"""
         url = reverse('case-detail', args=[self.case.id])
         response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(str(response.data['id']), str(self.case.id))
-        self.assertEqual(response.data['gender'], self.case.gender)
-        self.assertEqual(response.data['age'], self.case.age)
-        self.assertEqual(response.data['location'], self.location.province)
-        self.assertEqual(len(response.data['news']), 1)
-        self.assertEqual(response.data['news'][0]['title'], self.news.title)
+        self._assert_case_detail_response(response)
 
     def test_get_case_detail_unauthorized(self):
         """Test getting case detail without authentication"""
