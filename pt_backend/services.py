@@ -264,9 +264,10 @@ class ClimateService:
         self.repository = repository or ClimateRepository()
         self.cache_service = cache_service or CacheService()
 
-    def validate_humidity_data(self, data):
+    def _validate_climate_data(self, data, field_name):
+        """Common validation logic for all climate data"""
         if not data:
-            return "No humidity data available."
+            return f"No {field_name} data available."
         
         if not isinstance(data, list):
             return "Invalid data format"
@@ -298,167 +299,52 @@ class ClimateService:
                 return "Invalid value type"
         
         return None
+
+    def validate_humidity_data(self, data):
+        return self._validate_climate_data(data, "humidity")
 
     def validate_precipitation_data(self, data):
-        """Validate precipitation data"""
-        if not data:
-            return "No precipitation data available."
-        
-        if not isinstance(data, list):
-            return "Invalid data format"
-        
-        seen_provinces = set()
-        for item in data:
-            if not isinstance(item, dict):
-                return "Invalid data format"
-            
-            if "province" not in item:
-                return "Missing province field"
-            
-            province = item["province"]
-            if not province:
-                return "Missing province field"
-            
-            if province not in PROVINCE_TO_CODE:
-                return f"Invalid province name: {province}"
-            
-            if province in seen_provinces:
-                return f"Duplicate province found: {province}"
-            seen_provinces.add(province)
-            
-            if "value" not in item:
-                return "Invalid data format"
-            
-            value = item["value"]
-            if not isinstance(value, (int, float)):
-                return "Invalid value type"
-        
-        return None
+        return self._validate_climate_data(data, "precipitation")
 
     def validate_temperature_data(self, data):
-        if not data:
-            return "No temperature data available."
-        
-        if not isinstance(data, list):
-            return "Invalid data format"
-        
-        seen_provinces = set()
-        for item in data:
-            if not isinstance(item, dict):
-                return "Invalid data format"
+        return self._validate_climate_data(data, "temperature")
+
+    def _get_province_climate_data(self, cache_key, field_name):
+        try:
+            # Try to get from cache first
+            cached_data = self.cache_service.get(cache_key)
+            if cached_data is not None:
+                return cached_data
+
+            # Get latest climate data for each province
+            latest_climate = self.repository.get_latest_climate_data()
             
-            if "province" not in item:
-                return "Missing province field"
+            # Format the data
+            climate_data = []
+            for climate in latest_climate:
+                climate_data.append({
+                    "province": climate.province,
+                    "value": float(getattr(climate, field_name))
+                })
             
-            province = item["province"]
-            if not province:
-                return "Missing province field"
+            # Validate data first
+            validation_error = getattr(self, f"validate_{field_name}_data")(climate_data)
+            if validation_error:
+                return {"error": validation_error}
             
-            if province not in PROVINCE_TO_CODE:
-                return f"Invalid province name: {province}"
+            # Save to cache after validation
+            self.cache_service.set(cache_key, climate_data, timeout=self.CACHE_TIMEOUT)
             
-            if province in seen_provinces:
-                return f"Duplicate province found: {province}"
-            seen_provinces.add(province)
-            
-            if "value" not in item:
-                return "Invalid data format"
-            
-            value = item["value"]
-            if not isinstance(value, (int, float)):
-                return "Invalid value type"
-        
-        return None
+            return climate_data
+        except Exception as e:
+            print(f"Error in get_province_{field_name}: {str(e)}")
+            return {"error": str(e)}
 
     def get_province_humidity(self):
-        try:
-            # Try to get from cache first
-            cached_data = self.cache_service.get(self.CACHE_KEY_HUMIDITY)
-            if cached_data is not None:
-                return cached_data
-
-            # Get latest climate data for each province
-            latest_climate = self.repository.get_latest_climate_data()
-            
-            # Format the data
-            humidity_data = []
-            for climate in latest_climate:
-                humidity_data.append({
-                    "province": climate.province,
-                    "value": float(climate.humidity)
-                })
-            
-            # Validate data first
-            validation_error = self.validate_humidity_data(humidity_data)
-            if validation_error:
-                return {"error": validation_error}
-            
-            # Save to cache after validation
-            self.cache_service.set(self.CACHE_KEY_HUMIDITY, humidity_data, timeout=self.CACHE_TIMEOUT)
-            
-            return humidity_data
-        except Exception as e:
-            print(f"Error in get_province_humidity: {str(e)}")
-            return {"error": str(e)}
+        return self._get_province_climate_data(self.CACHE_KEY_HUMIDITY, "humidity")
 
     def get_province_precipitation(self):
-        try:
-            # Try to get from cache first
-            cached_data = self.cache_service.get(self.CACHE_KEY_PRECIPITATION)
-            if cached_data is not None:
-                return cached_data
-
-            # Get latest climate data for each province
-            latest_climate = self.repository.get_latest_climate_data()
-            
-            # Format the data
-            precipitation_data = []
-            for climate in latest_climate:
-                precipitation_data.append({
-                    "province": climate.province,
-                    "value": float(climate.precipitation)
-                })
-            
-            # Validate data first
-            validation_error = self.validate_precipitation_data(precipitation_data)
-            if validation_error:
-                return {"error": validation_error}
-            
-            # Save to cache after validation
-            self.cache_service.set(self.CACHE_KEY_PRECIPITATION, precipitation_data, timeout=self.CACHE_TIMEOUT)
-            
-            return precipitation_data
-        except Exception as e:
-            print(f"Error in get_province_precipitation: {str(e)}")
-            return {"error": str(e)}
+        return self._get_province_climate_data(self.CACHE_KEY_PRECIPITATION, "precipitation")
 
     def get_province_temperature(self):
-        try:
-            # Try to get from cache first
-            cached_data = self.cache_service.get(self.CACHE_KEY_TEMPERATURE)
-            if cached_data is not None:
-                return cached_data
-
-            # Get latest climate data for each province
-            latest_climate = self.repository.get_latest_climate_data()
-            
-            # Format the data
-            temperature_data = []
-            for climate in latest_climate:
-                temperature_data.append({
-                    "province": climate.province,
-                    "value": float(climate.temperature)
-                })
-            
-            # Validate data first
-            validation_error = self.validate_temperature_data(temperature_data)
-            if validation_error:
-                return {"error": validation_error}
-            
-            # Save to cache after validation
-            self.cache_service.set(self.CACHE_KEY_TEMPERATURE, temperature_data, timeout=self.CACHE_TIMEOUT)
-            
-            return temperature_data
-        except Exception as e:
-            print(f"Error in get_province_temperature: {str(e)}")
-            return {"error": str(e)}
+        return self._get_province_climate_data(self.CACHE_KEY_TEMPERATURE, "temperature")
