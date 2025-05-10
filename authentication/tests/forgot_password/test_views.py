@@ -5,7 +5,9 @@ from authentication.security import APIKeyAuthentication
 from pt_backend.models import User
 from rest_framework.exceptions import ParseError
 
-class TestPasswordResetLinkRequestView(TestCase):
+class BasePasswordResetTestCase(TestCase):
+    """Base class with shared setup and helper methods for password reset tests"""
+    
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create(
@@ -14,19 +16,27 @@ class TestPasswordResetLinkRequestView(TestCase):
             password='oldpassword123',
             role="TEST ROLE"
         )
-        self.reset_url = '/authentication/password-reset-request'
+        # API Key mock to use consistently
+        self.auth_patcher = patch('authentication.security.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (self.user, 'some-token')
+        
+        # Valid password for tests that need it
+        self.valid_password = "TestPass123!"
     
-    @patch('authentication.views.UserRepository')
-    @patch('authentication.views.UserFinderService')
-    @patch('authentication.views.PasswordTokenService')
-    @patch('authentication.views.ResetLinkService')
-    @patch('authentication.views.PasswordResetService')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_view_initialization(self, mock_auth, mock_reset_service, mock_link_service, 
-                                 mock_token_service, mock_finder_service, mock_repository):
-        """Test proper initialization of services in view"""
-        # Setup mocks
-        mock_auth.return_value = (self.user, 'some-token')
+    def tearDown(self):
+        self.auth_patcher.stop()
+    
+    def setup_service_mocks(self):
+        """Sets up common service mocks and returns them"""
+        # Create the mocks
+        mock_repository = patch('authentication.views.UserRepository').start()
+        mock_finder_service = patch('authentication.views.UserFinderService').start()
+        mock_token_service = patch('authentication.views.PasswordTokenService').start() 
+        mock_link_service = patch('authentication.views.ResetLinkService').start()
+        mock_reset_service = patch('authentication.views.PasswordResetService').start()
+        
+        # Create mock instances
         mock_repo_instance = MagicMock()
         mock_repository.return_value = mock_repo_instance
         mock_finder_instance = MagicMock()
@@ -37,7 +47,44 @@ class TestPasswordResetLinkRequestView(TestCase):
         mock_link_service.return_value = mock_link_instance
         mock_reset_instance = MagicMock()
         mock_reset_service.return_value = mock_reset_instance
-        mock_reset_instance.initiate_password_reset.return_value = True
+        
+        return {
+            'repository': mock_repository,
+            'finder_service': mock_finder_service,
+            'token_service': mock_token_service,
+            'link_service': mock_link_service,
+            'reset_service': mock_reset_service,
+            'repo_instance': mock_repo_instance,
+            'finder_instance': mock_finder_instance,
+            'token_instance': mock_token_instance,
+            'link_instance': mock_link_instance,
+            'reset_instance': mock_reset_instance
+        }
+    
+    def assert_services_initialized(self, mock_services):
+        """Asserts that services were initialized correctly"""
+        mock_services['repository'].assert_called_once()
+        mock_services['finder_service'].assert_called_once_with(mock_services['repo_instance'])
+        mock_services['token_service'].assert_called_once_with(mock_services['repo_instance'])
+        mock_services['link_service'].assert_called_once()
+        mock_services['reset_service'].assert_called_once_with(
+            user_finder=mock_services['finder_instance'],
+            password_token_service=mock_services['token_instance'],
+            reset_link_service=mock_services['link_instance']
+        )
+
+class TestPasswordResetLinkRequestView(BasePasswordResetTestCase):
+    """Tests for the password reset request view"""
+    
+    def setUp(self):
+        super().setUp()
+        self.reset_url = '/authentication/password-reset-request'
+    
+    def test_view_initialization(self):
+        """Test proper initialization of services in view"""
+        # Setup mocks
+        mock_services = self.setup_service_mocks()
+        mock_services['reset_instance'].initiate_password_reset.return_value = True
         
         # Make request to trigger view initialization
         response = self.client.post(
@@ -47,28 +94,18 @@ class TestPasswordResetLinkRequestView(TestCase):
         )
         
         # Verify services were initialized properly
-        mock_repository.assert_called_once()
-        mock_finder_service.assert_called_once_with(mock_repo_instance)
-        mock_token_service.assert_called_once_with(mock_repo_instance)
-        mock_link_service.assert_called_once()
-        mock_reset_service.assert_called_once_with(
-            user_finder=mock_finder_instance,
-            password_token_service=mock_token_instance,
-            reset_link_service=mock_link_instance
-        )
+        self.assert_services_initialized(mock_services)
         
         # Verify email was passed to the service
-        mock_reset_instance.initiate_password_reset.assert_called_once_with('test@example.com')
+        mock_services['reset_instance'].initiate_password_reset.assert_called_once_with('test@example.com')
         
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('message', response.json())
     
     @patch('authentication.views.PasswordResetService.initiate_password_reset')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_successful_password_reset_request(self, mock_auth, mock_initiate_reset):
+    def test_successful_password_reset_request(self, mock_initiate_reset):
         """Test successful password reset request"""
-        mock_auth.return_value = (self.user, 'some-token')
         mock_initiate_reset.return_value = True
         
         response = self.client.post(
@@ -86,10 +123,8 @@ class TestPasswordResetLinkRequestView(TestCase):
         mock_initiate_reset.assert_called_once_with('test@example.com')
     
     @patch('authentication.views.PasswordResetService.initiate_password_reset')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_failed_password_reset_request(self, mock_auth, mock_initiate_reset):
+    def test_failed_password_reset_request(self, mock_initiate_reset):
         """Test when reset service returns False"""
-        mock_auth.return_value = (self.user, 'some-token')
         mock_initiate_reset.return_value = False
         
         response = self.client.post(
@@ -103,11 +138,8 @@ class TestPasswordResetLinkRequestView(TestCase):
         self.assertIn('message', response.json())
         mock_initiate_reset.assert_called_once_with('test@example.com')
     
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_missing_email(self, mock_auth):
+    def test_missing_email(self):
         """Test password reset request with missing email"""
-        mock_auth.return_value = (self.user, 'some-token')
-        
         response = self.client.post(
             self.reset_url, 
             {}, 
@@ -118,11 +150,8 @@ class TestPasswordResetLinkRequestView(TestCase):
         self.assertIn('error', response.json())
         self.assertEqual(response.json()['error'], "Email is required")
     
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_empty_email(self, mock_auth):
+    def test_empty_email(self):
         """Test password reset request with empty email string"""
-        mock_auth.return_value = (self.user, 'some-token')
-        
         response = self.client.post(
             self.reset_url, 
             {'email': ''}, 
@@ -134,10 +163,8 @@ class TestPasswordResetLinkRequestView(TestCase):
         self.assertEqual(response.json()['error'], "Email is required")
     
     @patch('authentication.views.PasswordResetService.initiate_password_reset')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_user_does_not_exist(self, mock_auth, mock_initiate_reset):
+    def test_user_does_not_exist(self, mock_initiate_reset):
         """Test handling User.DoesNotExist exception"""
-        mock_auth.return_value = (self.user, 'some-token')
         mock_initiate_reset.side_effect = User.DoesNotExist
         
         response = self.client.post(
@@ -155,10 +182,8 @@ class TestPasswordResetLinkRequestView(TestCase):
         )
     
     @patch('rest_framework.request.Request.data')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_parse_error_handling(self, mock_auth, mock_data):
+    def test_parse_error_handling(self, mock_data):
         """Test handling ParseError exception"""
-        mock_auth.return_value = (self.user, 'some-token')
         mock_data.get.side_effect = ParseError("Invalid JSON")
         
         response = self.client.post(
@@ -172,10 +197,8 @@ class TestPasswordResetLinkRequestView(TestCase):
     
     @patch('authentication.views.logger')
     @patch('authentication.views.PasswordResetService.initiate_password_reset')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_generic_exception_handling(self, mock_auth, mock_initiate_reset, mock_logger):
+    def test_generic_exception_handling(self, mock_initiate_reset, mock_logger):
         """Test handling generic exceptions"""
-        mock_auth.return_value = (self.user, 'some-token')
         mock_initiate_reset.side_effect = ValueError("Some unexpected error")
         
         response = self.client.post(
@@ -192,92 +215,72 @@ class TestPasswordResetLinkRequestView(TestCase):
         self.assertIn('error', response.json())
         self.assertEqual(response.json()['error'], "An unexpected error occurred. Please try again later.")
 
-class TestPasswordResetLinkValidateView(TestCase):
+class TestPasswordResetLinkValidateView(BasePasswordResetTestCase):
+    """Tests for the password reset validation view"""
+    
     def setUp(self):
-        self.client = Client()
-        self.user = User.objects.create(
-            name='testuser',
-            email='test@example.com',
-            password='oldpassword123',
-            role="TEST ROLE"
-        )
+        super().setUp()
+        # Make sure this matches exactly your URL pattern 
         self.validate_url_base = '/authentication/password-reset-validate'
     
-    @patch('authentication.views.UserRepository')
-    @patch('authentication.views.UserFinderService')
-    @patch('authentication.views.PasswordTokenService')
-    @patch('authentication.views.ResetLinkService')
-    @patch('authentication.views.PasswordResetService')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_view_initialization(self, mock_auth, mock_reset_service, mock_link_service, 
-                                 mock_token_service, mock_finder_service, mock_repository):
+    def test_view_initialization(self):
         """Test proper initialization of services in view"""
         # Setup mocks
-        mock_auth.return_value = (self.user, 'some-token')
-        mock_repo_instance = MagicMock()
-        mock_repository.return_value = mock_repo_instance
-        mock_finder_instance = MagicMock()
-        mock_finder_service.return_value = mock_finder_instance
-        mock_token_instance = MagicMock()
-        mock_token_service.return_value = mock_token_instance
-        mock_link_instance = MagicMock()
-        mock_link_service.return_value = mock_link_instance
-        mock_reset_instance = MagicMock()
-        mock_reset_service.return_value = mock_reset_instance
-        mock_reset_instance.verify_reset_attempt.return_value = self.user
+        mock_services = self.setup_service_mocks()
+        mock_services['reset_instance'].verify_reset_attempt.return_value = self.user
         
         # Make request to trigger view initialization
         response = self.client.get(
-            f"{self.validate_url_base}/someuid/sometoken"
+            f"{self.validate_url_base}/someuid/sometoken"  # No trailing slash
         )
         
         # Verify services were initialized properly
-        mock_repository.assert_called_once()
-        mock_finder_service.assert_called_once_with(mock_repo_instance)
-        mock_token_service.assert_called_once_with(mock_repo_instance)
-        mock_link_service.assert_called_once()
-        mock_reset_service.assert_called_once_with(
-            user_finder=mock_finder_instance,
-            password_token_service=mock_token_instance,
-            reset_link_service=mock_link_instance
-        )
+        self.assert_services_initialized(mock_services)
         
         # Verify uidb64 and token were passed to the service
-        mock_reset_instance.verify_reset_attempt.assert_called_once_with('someuid', 'sometoken')
+        mock_services['reset_instance'].verify_reset_attempt.assert_called_once_with('someuid', 'sometoken')
         
         # Verify response for valid user
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), {"valid": True})
     
-    @patch('authentication.views.PasswordResetService.verify_reset_attempt')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_valid_token(self, mock_auth, mock_verify_attempt):
+    @patch('authentication.views.PasswordResetService')
+    def test_valid_token(self, mock_reset_service_class):
         """Test validation with valid token"""
-        mock_auth.return_value = (self.user, 'some-token')
-        mock_verify_attempt.return_value = self.user
+        # Set up the mock service instance with the right return value
+        mock_service = MagicMock()
+        mock_reset_service_class.return_value = mock_service
+        mock_service.verify_reset_attempt.return_value = self.user
         
         response = self.client.get(
-            f"{self.validate_url_base}/validuid/validtoken"
+            f"{self.validate_url_base}/validuid/validtoken"  # No trailing slash
         )
         
+        # Check the mock was called correctly
+        mock_service.verify_reset_attempt.assert_called_once_with('validuid', 'validtoken')
+        
+        # Verify the response
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), {"valid": True})
-        mock_verify_attempt.assert_called_once_with('validuid', 'validtoken')
     
-    @patch('authentication.views.PasswordResetService.verify_reset_attempt')
-    @patch('authentication.security.APIKeyAuthentication.authenticate')
-    def test_invalid_token(self, mock_auth, mock_verify_attempt):
+    @patch('authentication.views.PasswordResetService')
+    def test_invalid_token(self, mock_reset_service_class):
         """Test validation with invalid token"""
-        mock_auth.return_value = (self.user, 'some-token')
-        mock_verify_attempt.return_value = None
+        # Set up the mock service instance with None return value
+        mock_service = MagicMock()
+        mock_reset_service_class.return_value = mock_service
+        mock_service.verify_reset_attempt.return_value = None
         
         response = self.client.get(
-            f"{self.validate_url_base}/invaliduid/invalidtoken"
+            f"{self.validate_url_base}/invaliduid/invalidtoken"  # No trailing slash
         )
         
+        # Check the mock was called correctly
+        mock_service.verify_reset_attempt.assert_called_once_with('invaliduid', 'invalidtoken')
+        
+        # Update the expected status code to match your view's behavior
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.json(), {"valid": False})
-        mock_verify_attempt.assert_called_once_with('invaliduid', 'invalidtoken')
 
 class TestPasswordResetConfirmView(TestCase):
     def setUp(self):
