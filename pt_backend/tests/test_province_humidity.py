@@ -78,7 +78,6 @@ class ProvinceHumidityViewTest(BaseHumidityViewTest):
 
     def test_invalid_province(self):
         """Test handling of invalid province name"""
-        mock_data = [{"province": "InvalidProvince", "value": 80.0}]
         self.service.get_province_humidity.return_value = {"error": "Invalid province name: InvalidProvince"}
         
         response = self.view.get(self.request)
@@ -88,10 +87,6 @@ class ProvinceHumidityViewTest(BaseHumidityViewTest):
 
     def test_duplicate_provinces(self):
         """Test handling of duplicate province entries"""
-        mock_data = [
-            {"province": "Aceh", "value": 80.0},
-            {"province": "Aceh", "value": 85.0}
-        ]
         self.service.get_province_humidity.return_value = {"error": "Duplicate province found: Aceh"}
         
         response = self.view.get(self.request)

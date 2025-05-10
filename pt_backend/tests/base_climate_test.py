@@ -103,7 +103,7 @@ class BaseClimateServiceTest(TestCase):
         validation_method = f"validate_{self.field_name}_data"
         result = getattr(self.service, validation_method)([{"province": "Aceh"}])
         
-        self.assertEqual(result, "Invalid data format")
+        self.assertEqual(result, CLIMATE_ERROR_INVALID_FORMAT)
 
     def test_validate_non_list_data(self):
         if not self.service_method:
@@ -112,7 +112,7 @@ class BaseClimateServiceTest(TestCase):
         validation_method = f"validate_{self.field_name}_data"
         result = getattr(self.service, validation_method)("not a list")
         
-        self.assertEqual(result, "Invalid data format")
+        self.assertEqual(result, CLIMATE_ERROR_INVALID_FORMAT)
 
     def test_validate_empty_province(self):
         if not self.service_method:
@@ -121,7 +121,7 @@ class BaseClimateServiceTest(TestCase):
         validation_method = f"validate_{self.field_name}_data"
         result = getattr(self.service, validation_method)([{"province": "", "value": 80.0}])
         
-        self.assertEqual(result, "Missing province field")
+        self.assertEqual(result, CLIMATE_ERROR_MISSING_PROVINCE)
 
     def test_validate_missing_province(self):
         if not self.service_method:
