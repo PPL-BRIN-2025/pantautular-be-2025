@@ -52,7 +52,6 @@ class BaseClimateRepositoryTest(TestCase):
         )
 
     def test_get_latest_climate_data_empty(self):
-        """Test repository method when no data exists"""
         Climate.objects.all().delete()
         result = self.repository.get_latest_climate_data()
         self.assertEqual(len(result), 0)
@@ -82,6 +81,102 @@ class BaseClimateServiceTest(TestCase):
         self.expected_aceh_value = None  # To be set by child classes
         self.expected_bali_value = None  # To be set by child classes
 
+    def test_validate_empty_data(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([])
+        
+        self.assertEqual(result, f"No {self.field_name} data available.")
+
+    def test_validate_invalid_data_format(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)(["not a dictionary"])
+        
+        self.assertEqual(result, "Invalid data format")
+
+    def test_validate_missing_value(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([{"province": "Aceh"}])
+        
+        self.assertEqual(result, "Invalid data format")
+
+    def test_validate_non_list_data(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)("not a list")
+        
+        self.assertEqual(result, "Invalid data format")
+
+    def test_validate_empty_province(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([{"province": "", "value": 80.0}])
+        
+        self.assertEqual(result, "Missing province field")
+
+    def test_validate_missing_province(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([{"value": 80.0}])
+        
+        self.assertEqual(result, "Missing province field")
+
+    def test_validate_invalid_province(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([{"province": "InvalidProvince", "value": 80.0}])
+        
+        self.assertEqual(result, "Invalid province name: InvalidProvince")
+
+    def test_validate_duplicate_province(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([
+            {"province": "Aceh", "value": 80.0},
+            {"province": "Aceh", "value": 85.0}
+        ])
+        
+        self.assertEqual(result, "Duplicate province found: Aceh")
+
+    def test_validate_invalid_value_type(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([{"province": "Aceh", "value": "invalid"}])
+        
+        self.assertEqual(result, "Invalid value type")
+
+    def test_validate_valid_data(self):
+        if not self.service_method:
+            return
+            
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)([
+            {"province": "Aceh", "value": 80.0},
+            {"province": "Bali", "value": 85.0}
+        ])
+        
+        self.assertIsNone(result)
+
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_data_success(self, mock_get_data):
         if not self.service_method or not self.field_name:  # Skip if not properly configured
@@ -106,7 +201,7 @@ class BaseClimateServiceTest(TestCase):
 
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_data_error(self, mock_get_data):
-        if not self.service_method:  # Skip if not properly configured
+        if not self.service_method:  
             return
             
         mock_get_data.side_effect = Exception("Database error")
@@ -146,6 +241,30 @@ class BaseClimateServiceTest(TestCase):
         mock_get.return_value = [{"province": "Test", "value": self.expected_aceh_value}]
         result = getattr(self.service, self.service_method)()
         self.assertEqual(result, [{"province": "Test", "value": self.expected_aceh_value}])
+
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
+    def test_validation_error_returns_dict(self, mock_get_data):
+        if not self.service_method:  # Skip if not properly configured
+            return
+            
+        # Create mock data that will fail validation
+        mock_aceh = MagicMock()
+        mock_aceh.province = "InvalidProvince"  # This will fail validation
+        setattr(mock_aceh, self.field_name, self.expected_aceh_value)
+        
+        mock_bali = MagicMock()
+        mock_bali.province = "Bali"
+        setattr(mock_bali, self.field_name, self.expected_bali_value)
+        
+        mock_get_data.return_value = [mock_aceh, mock_bali]
+        
+        # Mock the cache service to return None so we hit the validation
+        with patch.object(self.cache_service, 'get', return_value=None):
+            result = getattr(self.service, self.service_method)()
+            
+            self.assertIsInstance(result, dict)
+            self.assertIn("error", result)
+            self.assertEqual(result["error"], "Invalid province name: InvalidProvince")
 
 class BaseClimateViewTest(TestCase):
     def setUp(self):
@@ -189,7 +308,6 @@ class BaseClimateViewTest(TestCase):
             self.assertEqual(response.data[1]['value'], self.expected_bali_value)
 
     def test_service_returns_error_dict(self):
-        """Test when service returns error dict"""
         if not self.url or not self.get_patch_path():  # Skip if not properly configured
             return
             
@@ -204,7 +322,6 @@ class BaseClimateViewTest(TestCase):
 
     @patch('pt_backend.services.ClimateService.get_province_humidity')
     def test_serialization_error(self, mock_get_humidity):
-        """Test when serialization fails"""
         mock_get_humidity.return_value = [{"invalid_field": "value"}]
         
         response = self.client.get(self.url)
@@ -277,7 +394,6 @@ class BaseHumidityViewTest(BaseClimateViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_humidity')
     def test_serialization_error(self, mock_get_humidity):
-        """Test when serialization fails"""
         mock_get_humidity.return_value = [{"invalid_field": "value"}]
         
         response = self.client.get(self.url)
@@ -296,7 +412,6 @@ class BasePrecipitationViewTest(BaseClimateViewTest):
 
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
     def test_serialization_error(self, mock_get_precipitation):
-        """Test when serialization fails"""
         mock_get_precipitation.return_value = [{"invalid_field": "value"}]
         
         response = self.client.get(self.url)
