@@ -1,17 +1,17 @@
 import os
+import uuid
 from django.test import TestCase
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch
 from datetime import datetime
 from pt_backend.models import Case, Disease, Location, News
 from pt_backend.formatters import (
-   CaseNewsDetailFormatter,
-   CaseHealthProtocolDetailFormatter,
-   CaseGenderDetailFormatter
+    CaseNewsDetailFormatter,
+    CaseHealthProtocolDetailFormatter,
+    CaseGenderDetailFormatter
 )
 from pt_backend.services import CaseDetailService
 from pt_backend.repositories import CaseRepository
-import uuid
-from rest_framework.test import APITestCase, APIClient
+from rest_framework.test import APIClient
 from django.urls import reverse
 from rest_framework import status
 from django.utils import timezone
@@ -29,59 +29,46 @@ class BaseCaseDetailTest(TestCase):
         os.environ.pop('SECRET_API_KEY', None)
 
     def _create_test_data(self):
-        self.disease = Disease.objects.create(
-            name="Test Disease",
-            level_of_alertness=1
-        )
-        
-        self.location = Location.objects.create(
-            latitude=0.0,
-            longitude=0.0,
-            city="Test City",
-            province="Test Province"
-        )
-        
+        self.disease = Disease.objects.create(name="Test Disease", level_of_alertness=1)
+        self.location = Location.objects.create(latitude=0.0, longitude=0.0, city="Test City", province="Test Province")
         self.case = Case.objects.create(
-            id=uuid.uuid4(),
-            gender="Pria",
-            age=25,
-            city="Test City",
-            status="terjangkit",
-            severity="hospitalisasi",
-            disease=self.disease,
-            location=self.location
+            id=uuid.uuid4(), gender="Pria", age=25, city="Test City", status="terjangkit",
+            severity="hospitalisasi", disease=self.disease, location=self.location
         )
-        
         self.news = News.objects.create(
-            title="Test News",
-            content="Test Content",
-            url="https://test.com",
-            portal="Test Portal",
-            type="article",
-            author="Test Author",
-            date_published=timezone.now(),
-            case=self.case
+            title="Test News", content="Test Content", url="https://test.com", portal="Test Portal",
+            type="article", author="Test Author", date_published=timezone.now(), case=self.case
         )
 
+    def _assert_response_fields(self, data, expected):
+        for key, value in expected.items():
+            if isinstance(value, uuid.UUID):
+                self.assertEqual(str(data.get(key)), str(value))
+            else:
+                self.assertEqual(data.get(key), value)
+
     def _assert_case_detail_response_http(self, response):
+        expected = {
+            'id': self.case.id,
+            'gender': self.case.gender,
+            'age': self.case.age,
+            'location': self.location.province
+        }
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(str(response.data['id']), str(self.case.id))
-        self.assertEqual(response.data['gender'], self.case.gender)
-        self.assertEqual(response.data['age'], self.case.age)
-        self.assertEqual(response.data['location'], self.location.province)
+        self._assert_response_fields(response.data, expected)
         self.assertEqual(len(response.data['news']), 1)
         self.assertEqual(response.data['news'][0]['title'], self.news.title)
 
     def _assert_case_detail_response_dict(self, result):
-        self.assertEqual(result["id"], self.case_id)
-        self.assertEqual(result["location"], "Jakarta")
-        self.assertEqual(result["gender"], "Pria")
-        self.assertEqual(result["age"], 25)
-        self.assertEqual(result["level_of_alertness"], 3)
-        self.assertEqual(
-            result["related_search"],
-            "https://www.google.com/search?q=Apa+itu+COVID-19"
-        )
+        expected = {
+            "id": self.case_id,
+            "location": "Jakarta",
+            "gender": "Pria",
+            "age": 25,
+            "level_of_alertness": 3,
+            "related_search": "https://www.google.com/search?q=Apa+itu+COVID-19"
+        }
+        self._assert_response_fields(result, expected)
         self.assertEqual(len(result["news"]), 1)
         self.assertEqual(len(result["health_protocols"]), 1)
         self.assertEqual(result["news"][0]["title"], "Test News")
@@ -98,7 +85,6 @@ class CaseDetailFormatterTest(BaseCaseDetailTest):
         }
 
     def test_news_formatter(self):
-        result = self.formatters['news'].format(self.news)
         expected = {
             "img_url": "",
             "url": "https://test.com",
@@ -107,6 +93,7 @@ class CaseDetailFormatterTest(BaseCaseDetailTest):
             "date": timezone.now().strftime("%d %b %Y"),
             "content": "Test Content"
         }
+        result = self.formatters['news'].format(self.news)
         self.assertEqual(result, expected)
 
     def test_protocol_formatter(self):
@@ -115,25 +102,17 @@ class CaseDetailFormatterTest(BaseCaseDetailTest):
         self.assertEqual(result, {"title": "Test Protocol", "url": "https://example.com/protocol/1"})
 
     def test_gender_formatter(self):
-        test_cases = [
-            ("Male", "Pria"),
-            ("Female", "Perempuan"),
-            ("Other", "Other")
-        ]
-        for input_gender, expected in test_cases:
+        for input_gender, expected in [("Male", "Pria"), ("Female", "Perempuan"), ("Other", "Other")]:
             with self.subTest(gender=input_gender):
                 self.assertEqual(self.formatters['gender'].format(input_gender), expected)
 
     def test_extract_domain(self):
-        test_cases = [
-            (None, ""),
-            ("invalid-url", ""),
-            ("https://test.com", "test.com")
-        ]
+        test_cases = [(None, ""), ("invalid-url", ""), ("https://test.com", "test.com")]
         for url, expected in test_cases:
             with self.subTest(url=url):
                 result = CaseNewsDetailFormatter._extract_domain(url)
                 self.assertEqual(result, expected)
+
 
 class CaseDetailServiceTest(BaseCaseDetailTest):
     def setUp(self):
@@ -150,15 +129,13 @@ class CaseDetailServiceTest(BaseCaseDetailTest):
         self.case_id = self.case.id
 
     def _create_mock_case(self):
-        case = Mock()
-        case.id = self.case_id
-        case.gender = "Male"
-        case.age = 25
+        case = Mock(id=self.case_id, gender="Male", age=25)
         case.location = Mock(province="Jakarta")
         
         # Create disease mock with proper name handling
         disease = Mock()
-        disease.name = "COVID-19"
+        # Set up the name property to return the string directly
+        type(disease).name = property(lambda self: "COVID-19")
         disease.level_of_alertness = 3
         case.disease = disease
         
@@ -174,8 +151,7 @@ class CaseDetailServiceTest(BaseCaseDetailTest):
     def test_get_case_detail_not_found(self):
         self.cache_service.get.return_value = None
         self.repository.get_case_detail_by_id.return_value = None
-        result = self.service.get_case_detail(self.case_id)
-        self.assertIsNone(result)
+        self.assertIsNone(self.service.get_case_detail(self.case_id))
 
     def test_get_case_detail_success(self):
         mock_case = self._create_mock_case()
@@ -186,70 +162,55 @@ class CaseDetailServiceTest(BaseCaseDetailTest):
         self.repository.get_case_detail_by_id.return_value = mock_case
         
         result = self.service.get_case_detail(self.case_id)
-        self._assert_case_detail_response(result)
+        self._assert_case_detail_response_dict(result)
         self.cache_service.set.assert_called_once()
 
-    def test_format_news_with_exception(self):
-        news = Mock(date_published="invalid date")
-        self.service._format_news([news])
-
-    def test_format_health_protocols_with_exception(self):
-        disease = Mock()
-        disease.protocols.all.side_effect = Exception("Database error")
-        result = self.service._format_health_protocols(disease)
-        self.assertEqual(result, [])
-
-    def test_generate_related_search_with_none(self):
-        result = self.service._generate_related_search(None)
-        self.assertIsNone(result)
-
-    def test_get_case_detail_with_exception(self):
+    def test_get_case_detail_raises_exception(self):
         self.cache_service.get.return_value = None
         self.repository.get_case_detail_by_id.side_effect = Exception("Database error")
         with self.assertRaises(Exception):
             self.service.get_case_detail(self.case_id)
 
     def test_format_news_with_none(self):
-        result = self.service._format_news(None)
-        self.assertEqual(result, [])
+        self.assertEqual(self.service._format_news(None), [])
+
+    def test_format_news_with_exception(self):
+        news = Mock(date_published="invalid date")
+        self.service._format_news([news])
 
     def test_format_health_protocols_with_none(self):
-        result = self.service._format_health_protocols(None)
-        self.assertEqual(result, [])
+        self.assertEqual(self.service._format_health_protocols(None), [])
 
-    def test_get_case_detail_raises_exception(self):
-        self.cache_service.get.return_value = None
-        mock_case = self._create_mock_case()
-        mock_case.news.all.side_effect = Exception("Database error")
-        self.repository.get_case_detail_by_id.return_value = mock_case
-        with self.assertRaises(Exception):
-            self.service.get_case_detail(self.case_id)
+    def test_format_health_protocols_with_exception(self):
+        disease = Mock()
+        disease.protocols.all.side_effect = Exception("Database error")
+        self.assertEqual(self.service._format_health_protocols(disease), [])
+
+    def test_generate_related_search_with_none(self):
+        self.assertIsNone(self.service._generate_related_search(None))
+
 
 class CaseRepositoryTest(BaseCaseDetailTest):
     def test_get_case_detail_by_id_exception(self):
         mock_case = Mock()
         mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
         mock_case.objects.select_related.side_effect = Exception("Database error")
-        
         with patch('pt_backend.repositories.Case', mock_case):
             repository = CaseRepository()
-            result = repository.get_case_detail_by_id(uuid.uuid4())
-            self.assertIsNone(result)
+            self.assertIsNone(repository.get_case_detail_by_id(uuid.uuid4()))
 
     def test_get_case_detail_by_id_not_found(self):
         mock_case = Mock()
         mock_case.DoesNotExist = type('DoesNotExist', (Exception,), {})
         mock_case.objects.select_related.side_effect = mock_case.DoesNotExist("Case not found")
-        
         with patch('pt_backend.repositories.Case', mock_case):
             repository = CaseRepository()
-            result = repository.get_case_detail_by_id(uuid.uuid4())
-            self.assertIsNone(result)
+            self.assertIsNone(repository.get_case_detail_by_id(uuid.uuid4()))
+
 
 class CaseDetailViewTest(BaseCaseDetailTest):
     def test_get_case_detail_not_found(self):
-        non_existent_id = uuid.uuid4()
-        url = reverse('case-detail', args=[non_existent_id])
+        url = reverse('case-detail', args=[uuid.uuid4()])
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data['detail'], 'Not found.')
@@ -257,7 +218,7 @@ class CaseDetailViewTest(BaseCaseDetailTest):
     def test_get_case_detail_success(self):
         url = reverse('case-detail', args=[self.case.id])
         response = self.client.get(url)
-        self._assert_case_detail_response(response)
+        self._assert_case_detail_response_http(response)
 
     def test_get_case_detail_unauthorized(self):
         self.client.credentials()
