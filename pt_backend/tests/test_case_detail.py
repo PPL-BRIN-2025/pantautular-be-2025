@@ -2,7 +2,7 @@ import os
 from django.test import TestCase
 from unittest.mock import Mock, patch, call
 from datetime import datetime
-from pt_backend.models import Case
+from pt_backend.models import Case, Disease, Location, News
 from pt_backend.formatters import (
    CaseNewsDetailFormatter,
    CaseHealthProtocolDetailFormatter,
@@ -11,7 +11,9 @@ from pt_backend.formatters import (
 from pt_backend.services import CaseDetailService
 from pt_backend.repositories import CaseRepository
 import uuid
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
+from django.urls import reverse
+from rest_framework import status
 
 
 
@@ -220,35 +222,84 @@ class CaseRepositoryTest(TestCase):
            self.assertIsNone(result)
 
 
-class CaseDetailViewTest(APITestCase):
-   def setUp(self):
-       self.case_id = uuid.uuid4()
-       self.url = f"/cases/{self.case_id}/"
-      
-       service_patcher = patch('pt_backend.views.CaseDetailService')
-       self.mock_service_class = service_patcher.start()
-       self.mock_service = Mock()
-       self.mock_service_class.return_value = self.mock_service
-       self.addCleanup(service_patcher.stop)
+class CaseDetailViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        # Set up API key authentication
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        
+        # Create test data
+        self.disease = Disease.objects.create(
+            name="Test Disease",
+            level_of_alertness=1
+        )
+        
+        self.location = Location.objects.create(
+            latitude=0.0,
+            longitude=0.0,
+            city="Test City",
+            province="Test Province"
+        )
+        
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            gender="Pria",
+            age=25,
+            city="Test City",
+            status="terjangkit",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.location
+        )
+        
+        self.news = News.objects.create(
+            id=uuid.uuid4(),
+            portal="Test Portal",
+            title="Test News",
+            type="Test Type",
+            content="Test Content",
+            url="https://test.com",
+            author="Test Author",
+            case=self.case
+        )
 
-       self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-       self.client.credentials(HTTP_X_API_KEY=self.api_key)
+    def tearDown(self):
+        # Clean up environment variable
+        os.environ.pop('SECRET_API_KEY', None)
 
+    def test_get_case_detail_not_found(self):
+        """Test getting a non-existent case detail"""
+        non_existent_id = uuid.uuid4()
+        url = reverse('case-detail', args=[non_existent_id])
+        
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
 
-   def test_get_case_detail_not_found(self):
-       self.mock_service.get_case_detail.return_value = None
-       response = self.client.get(self.url)
-       self.assertEqual(response.status_code, 404)
+    def test_get_case_detail_success(self):
+        """Test getting an existing case detail"""
+        url = reverse('case-detail', args=[self.case.id])
+        
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('data', response.data)
+        self.assertEqual(response.data['data']['id'], str(self.case.id))
+        self.assertEqual(response.data['data']['gender'], self.case.gender)
+        self.assertEqual(response.data['data']['age'], self.case.age)
+        self.assertEqual(response.data['data']['disease']['name'], self.disease.name)
+        self.assertEqual(response.data['data']['location']['province'], self.location.province)
+        self.assertEqual(len(response.data['data']['news']), 1)
+        self.assertEqual(response.data['data']['news'][0]['title'], self.news.title)
 
-
-   def test_get_case_detail_success(self):
-       mock_data = {
-           "id": str(self.case_id),  
-           "location": "Jakarta",
-           "gender": "Pria",
-           "age": 25
-       }
-       self.mock_service.get_case_detail.return_value = mock_data
-       response = self.client.get(self.url)
-       self.assertEqual(response.status_code, 200)
-       self.assertEqual(response.json(), mock_data)
+    def test_get_case_detail_unauthorized(self):
+        """Test getting case detail without authentication"""
+        # Remove API key credentials
+        self.client.credentials()
+        
+        url = reverse('case-detail', args=[self.case.id])
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
