@@ -93,13 +93,9 @@ class ProvinceClimateSerializer(serializers.Serializer):
     value = serializers.DecimalField(max_digits=8, decimal_places=2)
     
     def to_representation(self, instance):
-        province_name = instance.get('province', None)
-        if province_name is None:
-            province_name = instance.get('id', '')
-        
         return {
-            'id': PROVINCE_TO_CODE.get(province_name, province_name),
-            'value': float(instance.get('value', 0))
+            'id': PROVINCE_TO_CODE.get(instance['province'], instance['province']),
+            'value': float(instance['value'])
         }
 
 ProvinceHumiditySerializer = ProvinceClimateSerializer
