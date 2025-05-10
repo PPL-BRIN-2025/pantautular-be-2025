@@ -63,7 +63,7 @@ class BaseCaseDetailTest(TestCase):
             case=self.case
         )
 
-    def _assert_case_detail_response(self, response):
+    def _assert_case_detail_response_http(self, response):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(str(response.data['id']), str(self.case.id))
         self.assertEqual(response.data['gender'], self.case.gender)
@@ -71,6 +71,22 @@ class BaseCaseDetailTest(TestCase):
         self.assertEqual(response.data['location'], self.location.province)
         self.assertEqual(len(response.data['news']), 1)
         self.assertEqual(response.data['news'][0]['title'], self.news.title)
+
+    def _assert_case_detail_response_dict(self, result):
+        self.assertEqual(result["id"], self.case_id)
+        self.assertEqual(result["location"], "Jakarta")
+        self.assertEqual(result["gender"], "Pria")
+        self.assertEqual(result["age"], 25)
+        self.assertEqual(result["level_of_alertness"], 3)
+        self.assertEqual(
+            result["related_search"],
+            "https://www.google.com/search?q=Apa+itu+COVID-19"
+        )
+        self.assertEqual(len(result["news"]), 1)
+        self.assertEqual(len(result["health_protocols"]), 1)
+        self.assertEqual(result["news"][0]["title"], "Test News")
+        self.assertEqual(result["health_protocols"][0]["title"], "Test Protocol")
+
 
 class CaseDetailFormatterTest(BaseCaseDetailTest):
     def setUp(self):
@@ -147,21 +163,6 @@ class CaseDetailServiceTest(BaseCaseDetailTest):
         case.disease = disease
         
         return case
-
-    def _assert_case_detail_response(self, result):
-        self.assertEqual(result["id"], self.case_id)
-        self.assertEqual(result["location"], "Jakarta")
-        self.assertEqual(result["gender"], "Pria")
-        self.assertEqual(result["age"], 25)
-        self.assertEqual(result["level_of_alertness"], 3)
-        self.assertEqual(
-            result["related_search"],
-            "https://www.google.com/search?q=Apa+itu+COVID-19"
-        )
-        self.assertEqual(len(result["news"]), 1)
-        self.assertEqual(len(result["health_protocols"]), 1)
-        self.assertEqual(result["news"][0]["title"], "Test News")
-        self.assertEqual(result["health_protocols"][0]["title"], "Test Protocol")
 
     def test_get_case_detail_from_cache(self):
         cached_data = {"id": self.case_id, "cached": True}
