@@ -26,7 +26,7 @@ class BaseClimateRepositoryTest(TestCase):
             province=self.province1,
             temperature=25.5,
             precipitation=100.0,
-            humidity=417.0,
+            humidity=80.0,  # Valid humidity value (0-100)
             year=2024,
             month=3
         )
@@ -36,7 +36,7 @@ class BaseClimateRepositoryTest(TestCase):
             province=self.province1,
             temperature=26.0,
             precipitation=90.0,
-            humidity=400.0,
+            humidity=75.0,  # Valid humidity value (0-100)
             year=2023,
             month=12
         )
@@ -46,7 +46,7 @@ class BaseClimateRepositoryTest(TestCase):
             province=self.province2,
             temperature=27.0,
             precipitation=80.0,
-            humidity=156.0,
+            humidity=85.0,  # Valid humidity value (0-100)
             year=2024,
             month=3
         )
@@ -84,14 +84,19 @@ class BaseClimateServiceTest(TestCase):
 
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_data_success(self, mock_get_data):
-        """Test service method to get province data"""
         if not self.service_method or not self.field_name:  # Skip if not properly configured
             return
             
-        mock_get_data.return_value = [
-            MagicMock(province="Aceh", **{self.field_name: self.expected_aceh_value}),
-            MagicMock(province="Bali", **{self.field_name: self.expected_bali_value})
-        ]
+        # Create mock objects with the correct attributes
+        mock_aceh = MagicMock()
+        mock_aceh.province = "Aceh"
+        setattr(mock_aceh, self.field_name, self.expected_aceh_value)
+        
+        mock_bali = MagicMock()
+        mock_bali.province = "Bali"
+        setattr(mock_bali, self.field_name, self.expected_bali_value)
+        
+        mock_get_data.return_value = [mock_aceh, mock_bali]
         
         result = getattr(self.service, self.service_method)()
         
@@ -101,7 +106,6 @@ class BaseClimateServiceTest(TestCase):
 
     @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     def test_get_province_data_error(self, mock_get_data):
-        """Test service method when repository raises error"""
         if not self.service_method:  # Skip if not properly configured
             return
             
@@ -114,17 +118,31 @@ class BaseClimateServiceTest(TestCase):
             self.assertIn("error", result)
             self.assertEqual(result["error"], "Database error")
 
+    @patch('pt_backend.repositories.ClimateRepository.get_latest_climate_data')
     @patch('pt_backend.services.CacheService.get')
     @patch('pt_backend.services.CacheService.set')
-    def test_cache_functionality(self, mock_set, mock_get):
+    def test_cache_functionality(self, mock_set, mock_get, mock_get_data):
         """Test cache functionality in service"""
         if not self.service_method or self.expected_aceh_value is None:  # Skip if not properly configured
             return
             
+        # Create mock objects with the correct attributes
+        mock_aceh = MagicMock()
+        mock_aceh.province = "Aceh"
+        setattr(mock_aceh, self.field_name, self.expected_aceh_value)
+        
+        mock_bali = MagicMock()
+        mock_bali.province = "Bali"
+        setattr(mock_bali, self.field_name, self.expected_bali_value)
+        
         mock_get.return_value = None
-        getattr(self.service, self.service_method)()
+        mock_get_data.return_value = [mock_aceh, mock_bali]
+        
+        # First call should get from repository and set cache
+        result = getattr(self.service, self.service_method)()
         mock_set.assert_called_once()
         
+        # Second call should get from cache
         mock_get.return_value = [{"province": "Test", "value": self.expected_aceh_value}]
         result = getattr(self.service, self.service_method)()
         self.assertEqual(result, [{"province": "Test", "value": self.expected_aceh_value}])
@@ -146,13 +164,11 @@ class BaseClimateViewTest(TestCase):
         os.environ.pop('SECRET_API_KEY', None)
 
     def get_patch_path(self):
-        """Returns the correct patch path for the service method being tested"""
         if not self.service_method:
             return None
         return f'pt_backend.services.ClimateService.{self.service_method}'
 
     def test_get_success(self):
-        """Test successful GET request"""
         if not self.url or not self.get_patch_path():  # Skip if not properly configured
             return
             
@@ -169,6 +185,8 @@ class BaseClimateViewTest(TestCase):
             self.assertEqual(len(response.data), 2)
             self.assertEqual(response.data[0]['id'], 'ID-AC')
             self.assertEqual(response.data[1]['id'], 'ID-BA')
+            self.assertEqual(response.data[0]['value'], self.expected_aceh_value)
+            self.assertEqual(response.data[1]['value'], self.expected_bali_value)
 
     def test_service_returns_error_dict(self):
         """Test when service returns error dict"""
@@ -184,19 +202,15 @@ class BaseClimateViewTest(TestCase):
             self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
             self.assertEqual(response.data, {"error": "Some error occurred"})
 
-    def test_serialization_error(self):
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_serialization_error(self, mock_get_humidity):
         """Test when serialization fails"""
-        if not self.url or not self.get_patch_path():  # Skip if not properly configured
-            return
-            
-        patch_path = self.get_patch_path()
-        with patch(patch_path) as mock_get_data:
-            mock_get_data.return_value = [{"invalid_field": "value", "invalid_field2": "value2"}]
-            
-            response = self.client.get(self.url)
-            
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertIsInstance(response.data, list)
+        mock_get_humidity.return_value = [{"invalid_field": "value"}]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"error": "Invalid data format"})
 
     def test_authentication_required(self):
         """Test that authentication is required"""
@@ -210,8 +224,8 @@ class BaseClimateViewTest(TestCase):
 class BaseHumidityRepositoryTest(BaseClimateRepositoryTest):
     def setUp(self):
         self.field_name = 'humidity'
-        self.expected_aceh_value = 417.0
-        self.expected_bali_value = 156.0
+        self.expected_aceh_value = 80.0
+        self.expected_bali_value = 85.0
         super().setUp()
 
 class BasePrecipitationRepositoryTest(BaseClimateRepositoryTest):
@@ -233,8 +247,8 @@ class BaseHumidityServiceTest(BaseClimateServiceTest):
         super().setUp()
         self.service_method = 'get_province_humidity'
         self.field_name = 'humidity'
-        self.expected_aceh_value = 417.0
-        self.expected_bali_value = 156.0
+        self.expected_aceh_value = 80.0
+        self.expected_bali_value = 85.0
 
 class BasePrecipitationServiceTest(BaseClimateServiceTest):
     def setUp(self):
@@ -257,24 +271,54 @@ class BaseHumidityViewTest(BaseClimateViewTest):
         super().setUp()
         self.url_name = 'province-humidity'
         self.url = reverse(self.url_name)
+        self.expected_aceh_value = 80.0
+        self.expected_bali_value = 85.0
         self.service_method = 'get_province_humidity'
-        self.expected_aceh_value = 417.0
-        self.expected_bali_value = 156.0
+
+    @patch('pt_backend.services.ClimateService.get_province_humidity')
+    def test_serialization_error(self, mock_get_humidity):
+        """Test when serialization fails"""
+        mock_get_humidity.return_value = [{"invalid_field": "value"}]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"error": "Invalid data format"})
 
 class BasePrecipitationViewTest(BaseClimateViewTest):
     def setUp(self):
         super().setUp()
         self.url_name = 'province-precipitation'
         self.url = reverse(self.url_name)
-        self.service_method = 'get_province_precipitation'
         self.expected_aceh_value = 100.0
         self.expected_bali_value = 80.0
+        self.service_method = 'get_province_precipitation'
+
+    @patch('pt_backend.services.ClimateService.get_province_precipitation')
+    def test_serialization_error(self, mock_get_precipitation):
+        """Test when serialization fails"""
+        mock_get_precipitation.return_value = [{"invalid_field": "value"}]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"error": "Invalid data format"})
 
 class BaseTemperatureViewTest(BaseClimateViewTest):
     def setUp(self):
         super().setUp()
         self.url_name = 'province-temperature'
         self.url = reverse(self.url_name)
-        self.service_method = 'get_province_temperature'
         self.expected_aceh_value = 25.5
         self.expected_bali_value = 27.0
+        self.service_method = 'get_province_temperature'
+
+    @patch('pt_backend.services.ClimateService.get_province_temperature')
+    def test_serialization_error(self, mock_get_temperature):
+        """Test when serialization fails"""
+        mock_get_temperature.return_value = [{"invalid_field": "value"}]
+        
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"error": "Invalid data format"})

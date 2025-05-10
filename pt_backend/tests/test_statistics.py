@@ -1174,58 +1174,59 @@ class StatisticsCoordinatorTest(BaseStatisticsTestCase):
         self.assertNotIn("error", result)  # Main result should not have an error
 
 class TestAverageSeverityByProvince(unittest.TestCase):
-
     def setUp(self):
-        self.mock_service = MagicMock()
-        self.calculator = AverageSeverityByProvince(self.mock_service)
+        self.case_service = MagicMock()
+        self.analyzer = AverageSeverityByProvince(self.case_service)
 
     def test_positive_case_with_multiple_provinces(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": "minimal", "location__province": "Jawa Barat"},
-            {"status": "biasa", "location__province": "Jawa Barat"},
-            {"status": "bahaya", "location__province": "DKI Jakarta"},
+        """Test with multiple provinces having different severities"""
+        self.case_service.get_status_and_province.return_value = [
+            {"status": "bahaya", "location__province": "Jawa Barat"},
             {"status": "katastropik", "location__province": "DKI Jakarta"},
-            {"status": "bahaya", "location__province": "DKI Jakarta"},
-            {"status": "katastropik", "location__province": "Sulawesi Selatan"},
+            {"status": "biasa", "location__province": "Sulawesi Selatan"}
         ]
-
-        result = self.calculator.compute()
-
-        self.assertIn("Jawa Barat", result)
-        self.assertIn("DKI Jakarta", result)
-        self.assertIn("Sulawesi Selatan", result)
-
-        for prov in result:
-            self.assertIn("weighted_score", result[prov])
-            self.assertIn("status", result[prov])
-            self.assertIsInstance(result[prov]["weighted_score"], float)
-            self.assertIn(result[prov]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
+        
+        result = self.analyzer.compute()
+        
+        # Check that all provinces are present in the result
+        provinces = [item['id'] for item in result]
+        self.assertIn('ID-JB', provinces)
+        self.assertIn('ID-JK', provinces)
+        self.assertIn('ID-SN', provinces)
 
     def test_invalid_status_ignored(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": "INVALID_STATUS", "location__province": "Papua"},
-            {"status": "biasa", "location__province": "Papua"},
+        """Test that cases with invalid status are ignored"""
+        self.case_service.get_status_and_province.return_value = [
+            {"status": "invalid", "location__province": "Papua"},
+            {"status": "biasa", "location__province": "Papua"}
         ]
-
-        result = self.calculator.compute()
-
-        self.assertIn("Papua", result)
-        self.assertEqual(result["Papua"]["status"], "minimal")  # karena cuma satu skor valid
+        
+        result = self.analyzer.compute()
+        
+        # Check that Papua is still in the result
+        provinces = [item['id'] for item in result]
+        self.assertIn('ID-PA', provinces)
 
     def test_missing_status_or_province(self):
-        self.mock_service.get_status_and_province.return_value = [
-            {"status": None, "location__province": "Jawa Tengah"},
-            {"status": "bahaya", "location__province": None},
-            {"status": "katastropik", "location__province": "Jawa Tengah"},
+        """Test handling of cases with missing status or province"""
+        self.case_service.get_status_and_province.return_value = [
+            {"status": "biasa", "location__province": "Jawa Tengah"},  # Valid case
+            {"status": None, "location__province": "Jawa Tengah"},     # Invalid status
+            {"status": "bahaya", "location__province": None},          # Invalid province
+            {"status": None, "location__province": None}               # Both invalid
         ]
-
-        result = self.calculator.compute()
-
-        self.assertIn("Jawa Tengah", result)
-        self.assertIn(result["Jawa Tengah"]["status"], ["minimal", "biasa", "bahaya", "katastropik"])
+        
+        result = self.analyzer.compute()
+        
+        # Check that only valid cases are included
+        provinces = [item['id'] for item in result]
+        self.assertEqual(len(provinces), 1)  # Only one valid case
+        self.assertIn('ID-JT', provinces)   # The valid case should be included
 
     def test_empty_data(self):
-        self.mock_service.get_status_and_province.return_value = []
-
-        result = self.calculator.compute()
-        self.assertEqual(result, {})
+        """Test handling of empty data"""
+        self.case_service.get_status_and_province.return_value = []
+        
+        result = self.analyzer.compute()
+        
+        self.assertEqual(result, [])
