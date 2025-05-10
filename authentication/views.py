@@ -9,7 +9,6 @@ from authentication.throttling import PasswordResetRateThrottle
 from .serializers import SignupSerializer, ChangePasswordSerializer
 from .services import ChangePasswordService
 from rest_framework.throttling import UserRateThrottle
-# from .repositories import UserRepository
 from .repository import UserRepository
 from .services import (
     AuthService, 
@@ -82,7 +81,7 @@ class PasswordResetLinkRequestView(APIView):
                 return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
             
             # Use the new method name from the updated service
-            success = self.password_reset_service.initiate_password_reset(email)
+            self.password_reset_service.initiate_password_reset(email)
             
             # Always return a generic message for security (regardless of success)
             return Response(
