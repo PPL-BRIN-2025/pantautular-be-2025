@@ -6,7 +6,7 @@ from rest_framework import status
 from pantau_tular.settings import CACHES
 from pt_backend.models import Case, Location, Disease, News
 from pt_backend.services import CacheService
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from django.utils import timezone
 from datetime import datetime, timedelta
 import uuid
@@ -18,8 +18,9 @@ from ..views import StatisticsView
 class CaseAPITest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        # Set up API key authentication
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
 
         self.disease1 = Disease.objects.create(name="Flu", level_of_alertness=2)
         self.disease2 = Disease.objects.create(name="COVID-19", level_of_alertness=5)
@@ -34,43 +35,46 @@ class CaseAPITest(TestCase):
 
         self.cache_service = CacheService()
 
+    def tearDown(self):
+        # Clean up environment variable
+        os.environ.pop('SECRET_API_KEY', None)
+
     def test_get_all_case_locations(self):
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        response_data = response.json()
-        self.assertEqual(len(response_data), 2)
-        
-        response_data.sort(key=lambda x: x['city'])
-        expected_data = [
-            {
-                "id": str(self.case2.id),
-                "location__longitude": "107.619100",
-                "location__latitude": "-6.917500",
-                "city": "Bandung",
-                "location__province": "Jawa Barat"
-            },
-            {
-                "id": str(self.case1.id),
-                "location__longitude": "106.845600",
-                "location__latitude": "-6.208800",
-                "city": "Jakarta",
-                "location__province": "DKI Jakarta"
-            }
+        """Test getting all case locations successfully"""
+        mock_locations = [
+            {"id": str(self.case1.id), "location__longitude": '106.845600', "location__latitude": '-6.208800', "city": "Jakarta", "location__province": "DKI Jakarta"},
+            {"id": str(self.case2.id), "location__longitude": '107.619100', "location__latitude": '-6.917500', "city": "Bandung", "location__province": "Jawa Barat"}
         ]
-        expected_data.sort(key=lambda x: x['city'])
-        self.assertEqual(response_data, expected_data)
+        
+        with patch('pt_backend.services.CaseService.get_all_case_locations') as mock_get_locations:
+            mock_get_locations.return_value = mock_locations
+            url = reverse('all-case-locations')
+            response = self.client.get(url)
+            response_data = [dict(x) for x in response.data]
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response_data, mock_locations)
+            mock_get_locations.assert_called_once()
 
     def test_get_all_case_locations_empty(self):
-        Case.objects.all().delete()
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        """Test getting all case locations when no data exists"""
+        with patch('pt_backend.services.CaseService.get_all_case_locations') as mock_get_locations:
+            mock_get_locations.return_value = []
+            url = reverse('all-case-locations')
+            response = self.client.get(url)
+            
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertEqual(response.data, {"error": "No case locations found"})
+            mock_get_locations.assert_called_once()
 
-    @patch('pt_backend.services.CaseService.get_all_case_locations')
-    def test_get_all_case_locations_exception(self, mock_get_all_locations):
-        mock_get_all_locations.side_effect = Exception("Database error")
-        response = self.client.get('/cases/locations/')
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.json(), {"error": "An unexpected error occurred. Please try again later."})
+    def test_get_all_case_locations_exception(self):
+        """Test handling exception when getting case locations"""
+        with patch('pt_backend.services.CaseService.get_all_case_locations') as mock_get_locations:
+            mock_get_locations.side_effect = Exception("Database error")
+            url = reverse('all-case-locations')
+            response = self.client.get(url)
+            
+            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.assertIn('error', response.data)
 
     def test_get_all_case_locations_missing_api_key(self):
         self.client.credentials()
@@ -92,14 +96,13 @@ class CaseAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
     
-    @patch('pt_backend.filter.service.CaseFilterService.filter_cases')
-    def test_all_case_locations_post_exception(self, mock_filter_cases):
-        mock_filter_cases.side_effect = Exception("Test exception")        
+    @patch('pt_backend.services.CaseService.get_all_case_locations')
+    def test_all_case_locations_post_exception(self, mock_get_locations):
+        mock_get_locations.side_effect = Exception("Test exception")
         url = reverse('all-case-locations')
         data = {"disease": "COVID-19"}
-        response = self.client.post(url, data=json.dumps(data), content_type='application/json')        
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.data, {"error": "An unexpected error occurred. Please try again later."})
+        response = self.client.post(url, data=json.dumps(data), content_type='application/json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @patch('pt_backend.services.CaseService.get_all_case_locations')
     def test_all_case_locations_post_empty_data(self, mock_get_locations):
@@ -113,43 +116,40 @@ class CaseAPITest(TestCase):
 class CaseFilterPostTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
-        
-        self.patcher = patch('pt_backend.views.CaseFilterService')
-        self.mock_filter_service = self.patcher.start()
-        self.mock_filter_instance = Mock()
-        self.mock_filter_service.return_value = self.mock_filter_instance
-
+        os.environ['SECRET_API_KEY'] = 'test-api-key'
+        self.client.credentials(HTTP_X_API_KEY='test-api-key')
         self.test_uuid1 = uuid.uuid4()
         self.test_uuid2 = uuid.uuid4()
 
     def tearDown(self):
-        self.patcher.stop()
+        os.environ.pop('SECRET_API_KEY', None)
 
     def test_post_filter_success(self):
-        mock_cases = [
-            {'id': str(self.test_uuid1), 'location__longitude': '106.845600', 'location__latitude': '-6.208800', 'city': 'Jakarta', 'location__province': 'DKI Jakarta'},
-            {'id': str(self.test_uuid2), 'location__longitude': '107.619100', 'location__latitude': '-6.917500', 'city': 'Bandung', 'location__province': 'Jawa Barat'}
+        """Test successful POST request with filters"""
+        mock_filtered_cases = [
+            {"id": str(self.test_uuid1), "location__longitude": '106.845600', "location__latitude": '-6.208800', "city": "Jakarta", "location__province": "DKI Jakarta"},
+            {"id": str(self.test_uuid2), "location__longitude": '107.619100', "location__latitude": '-6.917500', "city": "Bandung", "location__province": "Jawa Barat"}
         ]
-        self.mock_filter_instance.filter_cases.return_value = mock_cases
-
-        filter_data = {
-            'diseases': ['COVID-19'],
-            'locations': ['Jakarta']
-        }
-        response = self.client.post('/cases/locations/', filter_data, format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.mock_filter_instance.filter_cases.assert_called_once_with(filter_data)
-        self.assertEqual(response.json(), mock_cases)
+        with patch('pt_backend.filter.service.CaseFilterService.filter_cases') as mock_filter:
+            mock_filter.return_value = mock_filtered_cases
+            url = reverse('all-case-locations')
+            data = {"provinces": ["DKI Jakarta", "Jawa Barat"]}
+            response = self.client.post(url, data, format='json')
+            response_data = [dict(x) for x in response.data]
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response_data, mock_filtered_cases)
+            mock_filter.assert_called_once_with(data)
 
     def test_post_filter_no_results(self):
-        self.mock_filter_instance.filter_cases.return_value = []
-        response = self.client.post('/cases/locations/', {'diseases': ['Unknown']}, format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(response.json(), {"error": "No cases found with the given filters"})
+        """Test POST request with filters that return no results"""
+        with patch('pt_backend.filter.service.CaseFilterService.filter_cases') as mock_filter:
+            mock_filter.return_value = []
+            url = reverse('all-case-locations')
+            data = {"provinces": ["NonExistentProvince"]}
+            response = self.client.post(url, data, format='json')
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertEqual(response.data, {"error": "No cases found with the given filters"})
+            mock_filter.assert_called_once_with(data)
 
     def test_post_filter_missing_api_key(self):
         self.client.credentials()

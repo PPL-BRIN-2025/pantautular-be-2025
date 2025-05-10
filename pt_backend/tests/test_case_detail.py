@@ -14,6 +14,7 @@ import uuid
 from rest_framework.test import APITestCase, APIClient
 from django.urls import reverse
 from rest_framework import status
+from django.utils import timezone
 
 
 
@@ -116,7 +117,7 @@ class CaseDetailServiceTest(TestCase):
        news = Mock(
            img_url="https://example.com/image.jpg",
            url="https://example.com/news/1",
-           date_published=datetime.now(),
+           date_published=timezone.now(),
            title="Test News",
            content = "News content"
        )
@@ -254,13 +255,13 @@ class CaseDetailViewTest(TestCase):
         )
         
         self.news = News.objects.create(
-            id=uuid.uuid4(),
-            portal="Test Portal",
             title="Test News",
-            type="Test Type",
             content="Test Content",
-            url="https://test.com",
+            url="http://test.com",
+            portal="Test Portal",
+            type="article",
             author="Test Author",
+            date_published=timezone.now(),
             case=self.case
         )
 
@@ -272,27 +273,22 @@ class CaseDetailViewTest(TestCase):
         """Test getting a non-existent case detail"""
         non_existent_id = uuid.uuid4()
         url = reverse('case-detail', args=[non_existent_id])
-        
         response = self.client.get(url)
-        
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        self.assertIn('error', response.data)
+        self.assertIn('detail', response.data)
+        self.assertEqual(response.data['detail'], 'Not found.')
 
     def test_get_case_detail_success(self):
         """Test getting an existing case detail"""
         url = reverse('case-detail', args=[self.case.id])
-        
         response = self.client.get(url)
-        
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('data', response.data)
-        self.assertEqual(response.data['data']['id'], str(self.case.id))
-        self.assertEqual(response.data['data']['gender'], self.case.gender)
-        self.assertEqual(response.data['data']['age'], self.case.age)
-        self.assertEqual(response.data['data']['disease']['name'], self.disease.name)
-        self.assertEqual(response.data['data']['location']['province'], self.location.province)
-        self.assertEqual(len(response.data['data']['news']), 1)
-        self.assertEqual(response.data['data']['news'][0]['title'], self.news.title)
+        self.assertEqual(str(response.data['id']), str(self.case.id))
+        self.assertEqual(response.data['gender'], self.case.gender)
+        self.assertEqual(response.data['age'], self.case.age)
+        self.assertEqual(response.data['location'], self.location.province)
+        self.assertEqual(len(response.data['news']), 1)
+        self.assertEqual(response.data['news'][0]['title'], self.news.title)
 
     def test_get_case_detail_unauthorized(self):
         """Test getting case detail without authentication"""
