@@ -320,7 +320,7 @@ class BaseClimateViewTest(TestCase):
         response = self.client.get(self.url)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {"error": "Invalid data format"})
+        self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT})
 
     def test_authentication_required(self):
         """Test that authentication is required"""
@@ -385,14 +385,17 @@ class BaseHumidityViewTest(BaseClimateViewTest):
         self.expected_bali_value = 85.0
         self.service_method = 'get_province_humidity'
 
-    @patch('pt_backend.services.ClimateService.get_province_humidity')
-    def test_serialization_error(self, mock_get_humidity):
-        mock_get_humidity.return_value = [{"invalid_field": "value"}]
-        
-        response = self.client.get(self.url)
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {"error": "Invalid data format"})
+    def test_serialization_error(self):
+        if not self.service_method:
+            return
+            
+        with patch(f'pt_backend.services.ClimateService.{self.service_method}') as mock_get_data:
+            mock_get_data.return_value = [{"invalid_field": "value"}]
+            
+            response = self.client.get(self.url)
+            
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT})
 
 class BasePrecipitationViewTest(BaseClimateViewTest):
     def setUp(self):
@@ -403,14 +406,17 @@ class BasePrecipitationViewTest(BaseClimateViewTest):
         self.expected_bali_value = 80.0
         self.service_method = 'get_province_precipitation'
 
-    @patch('pt_backend.services.ClimateService.get_province_precipitation')
-    def test_serialization_error(self, mock_get_precipitation):
-        mock_get_precipitation.return_value = [{"invalid_field": "value"}]
-        
-        response = self.client.get(self.url)
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {"error": "Invalid data format"})
+    def test_serialization_error(self):
+        if not self.service_method:
+            return
+            
+        with patch(f'pt_backend.services.ClimateService.{self.service_method}') as mock_get_data:
+            mock_get_data.return_value = [{"invalid_field": "value"}]
+            
+            response = self.client.get(self.url)
+            
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT})
 
 class BaseTemperatureViewTest(BaseClimateViewTest):
     def setUp(self):
@@ -421,12 +427,14 @@ class BaseTemperatureViewTest(BaseClimateViewTest):
         self.expected_bali_value = 27.0
         self.service_method = 'get_province_temperature'
 
-    @patch('pt_backend.services.ClimateService.get_province_temperature')
-    def test_serialization_error(self, mock_get_temperature):
-        """Test when serialization fails"""
-        mock_get_temperature.return_value = [{"invalid_field": "value"}]
-        
-        response = self.client.get(self.url)
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {"error": "Invalid data format"})
+    def test_serialization_error(self):
+        if not self.service_method:
+            return
+            
+        with patch(f'pt_backend.services.ClimateService.{self.service_method}') as mock_get_data:
+            mock_get_data.return_value = [{"invalid_field": "value"}]
+            
+            response = self.client.get(self.url)
+            
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT})
