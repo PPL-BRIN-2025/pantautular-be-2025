@@ -234,7 +234,7 @@ class BaseClimateServiceTest(TestCase):
         mock_get_data.return_value = [mock_aceh, mock_bali]
         
         # First call should get from repository and set cache
-        result = getattr(self.service, self.service_method)()
+        getattr(self.service, self.service_method)()
         mock_set.assert_called_once()
         
         # Second call should get from cache
