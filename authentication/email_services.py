@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import os
+import logging
 
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
@@ -9,111 +10,67 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
 
-class ChainHandler(ABC):
-    """Interface for classes that can be part of a responsibility chain."""
-    def __init__(self):
-        self._next_handler = None
+logger = logging.getLogger(__name__)
 
-    def set_next(self, handler):
-        self._next_handler = handler
-        return handler
-
-    def handle(self, recipient_email, reset_link):
-        """Template method that defines the handling algorithm"""
-        try:
-            # Let subclasses decide if they can handle it
-            if self.can_handle(recipient_email, reset_link):
-                return True
-            else:
-                # Forward to next handler if available
-                if self._next_handler:
-                    return self._next_handler.handle(recipient_email, reset_link)
-                # No handler could process the request
-                raise RuntimeError("No handler was able to process the request")
-        except Exception as e:
-            print(f"{self.__class__.__name__} failed: {e}")
-            if self._next_handler:
-                return self._next_handler.handle(recipient_email, reset_link)
-            raise
-
-    @abstractmethod
-    def can_handle(self, recipient_email, reset_link):
-        """Subclasses should implement this to check if they can handle the request."""
-        pass
-
-class EmailChainHandler(ChainHandler):
-    """Base class for email-sending handlers"""
-    
-    def can_handle(self, recipient_email, reset_link):
-        """Attempt to send email and return success/failure"""
-        try:
-            self.send_password_reset_email(recipient_email, reset_link)
-            return True
-        except Exception as e:
-            print(f"Handler {self.__class__.__name__} could not process request: {e}")
-            return False
-
-class EmailSender(ABC):
-    """Interface for classes that send can send password reset emails."""
-    @abstractmethod
-    def send_password_reset_email(self, recipient_email, reset_link):
-        pass
-
-class EmailServiceFactory(ABC):
-    """Abstract Factory for creating email service handlers."""
+# Strategy Pattern for email content
+class EmailContentStrategy(ABC):
+    """Strategy interface for different types of email content"""
     
     @abstractmethod
-    def create_email_service(self):
+    def get_subject(self):
+        """Get the email subject line"""
+        pass
+    
+    @abstractmethod
+    def get_template_name(self):
+        """Get the template name for this email type"""
+        pass
+    
+    @abstractmethod
+    def get_context_data(self, **kwargs):
+        """Get the template context data"""
         pass
 
-class BrevoEmailServiceFactory(EmailServiceFactory):
-    def create_email_service(self):
-        return BrevoEmailService()
+class PasswordResetEmailStrategy(EmailContentStrategy):
+    """Strategy for password reset emails"""
+    
+    def get_subject(self):
+        return "Password Reset Request"
+    
+    def get_template_name(self):
+        return "email_reset_password.html"
+    
+    def get_context_data(self, **kwargs):
+        reset_link = kwargs.get('reset_link')
+        if not reset_link:
+            raise ValueError("Reset link is required for password reset emails")
+        
+        return {"reset_link": reset_link}
 
-class DjangoEmailServiceFactory(EmailServiceFactory):
-    def create_email_service(self):
-        return DjangoEmailService()
+# Email Provider Interface
+class EmailProvider(ABC):
+    """Interface for classes that can send emails."""
+    
+    @abstractmethod
+    def send_email(self, recipient_email, subject, template_name, context):
+        """Send an email with the given subject, template and context"""
+        pass
 
-class EmailChainFactory:
-    """Factory class for creating a chain of email services"""
-    
-    def __init__(self):
-        self.factories = {
-            "brevo": BrevoEmailServiceFactory(),
-            "django": DjangoEmailServiceFactory()
-        }
-    
-    def create_email_chain(self, services):
-        if not services:
-            raise ValueError("At least one service must be specified")
-        
-        # Create the first handler
-        first_service = self.factories[services[0]].create_email_service()
-        current_handler = first_service
-        
-        # Create the rest of the chain
-        for service_name in services[1:]:
-            next_service = self.factories[service_name].create_email_service()
-            current_handler.set_next(next_service)
-            current_handler = next_service
-        
-        return first_service
-    
-class BrevoEmailService(EmailSender, EmailChainHandler):
+# Concrete email providers
+class BrevoEmailProvider(EmailProvider):
     """Brevo-specific email service implementation"""
 
     def __init__(self, api_key=None, sender_name="PPL BRIN", sender_email="pplbrin02@gmail.com"):
-        super().__init__()
         self.api_key = api_key or os.getenv("BREVO_API_KEY")
         self.sender = {"name": sender_name, "email": sender_email}
         
-    def send_password_reset_email(self, recipient_email, reset_link):
+    def send_email(self, recipient_email, subject, template_name, context):
         configuration = sib_api_v3_sdk.Configuration()
         configuration.api_key['api-key'] = self.api_key
         api_instance = TransactionalEmailsApi(ApiClient(configuration))
 
         recipients = [{"email": recipient_email}]
-        params = {"reset_link": reset_link}
+        params = context  # Pass the context as params
 
         send_smtp_email = SendSmtpEmail(
             to=recipients,
@@ -125,34 +82,86 @@ class BrevoEmailService(EmailSender, EmailChainHandler):
         try:
             return api_instance.send_transac_email(send_smtp_email)
         except ApiException as e:
-            print(f"Exception when calling TransactionalEmailsApi: {e}")
+            logger.error(f"Exception when calling TransactionalEmailsApi: {e}")
             raise
 
-class DjangoEmailService(EmailSender, EmailChainHandler):
-    def __init__(self, from_email=None, subject="Password Reset Request", template_name="email_reset_password.html"):
-        super().__init__()
-        self.from_email = from_email or f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
-        self.subject = subject
-        self.template_name = template_name
-
+class DjangoEmailProvider(EmailProvider):
     """Django's built-in email service implementation"""
-    def send_password_reset_email(self, recipient_email, reset_link):
-        subject = self.subject
+    
+    def __init__(self, from_email=None):
+        self.from_email = from_email or f"PantauTular <{os.getenv('EMAIL_HOST_USER')}>"
+
+    def send_email(self, recipient_email, subject, template_name, context):
         from_email = self.from_email
         to = [recipient_email]
 
         try:
-            html_content = render_to_string(self.template_name, {
-                "reset_link": reset_link,
-            })
+            html_content = render_to_string(template_name, context)
         except TemplateDoesNotExist:
-            raise FileNotFoundError("The template 'email_reset_password.html' does not exist. Please ensure it is available.")
+            raise FileNotFoundError(f"The template '{template_name}' does not exist.")
         
-        text_content = f"Reset your password by visiting this link: {reset_link}"
+        # Create a simple text version of the email
+        text_content = "Please view this email in an HTML-capable client to see the content."
+        if "reset_link" in context:
+            text_content = f"Reset your password by visiting this link: {context['reset_link']}"
+            
         msg = EmailMultiAlternatives(subject, text_content, from_email, to)
         msg.attach_alternative(html_content, "text/html")
+        
         try:
             msg.send()
+            return True
         except Exception as e:
-            print(f"Failed to send email: {e}")
+            logger.error(f"Failed to send email: {e}")
             raise
+
+# Email Service with fallback mechanism
+class EmailService:
+    """Service that manages multiple email providers with fallback capability"""
+    
+    def __init__(self, providers=None):
+        """
+        Initialize with a list of email providers
+        
+        Args:
+            providers: List of EmailProvider implementations to try in order
+        """
+        self.providers = providers or self._get_default_providers()
+    
+    def send_email(self, recipient_email, strategy, **kwargs):
+        """
+        Send an email using the given strategy, trying each provider until one succeeds
+        
+        Args:
+            recipient_email: Recipient's email address
+            strategy: EmailContentStrategy to use for content preparation
+            **kwargs: Additional data needed by the strategy
+        """
+        subject = strategy.get_subject()
+        template_name = strategy.get_template_name()
+        context = strategy.get_context_data(**kwargs)
+        
+        last_error = None
+        
+        for provider in self.providers:
+            try:
+                provider.send_email(recipient_email, subject, template_name, context)
+                logger.info(f"Email sent successfully using {provider.__class__.__name__}")
+                print(f"Email sent successfully using {provider.__class__.__name__}")
+                return True
+            except Exception as e:
+                logger.warning(f"{provider.__class__.__name__} failed to send email: {e}")
+                last_error = e
+                continue
+        
+        # If we get here, all providers failed
+        logger.error("All email providers failed to send email")
+        raise RuntimeError(f"Failed to send email: {str(last_error)}")
+    
+    @staticmethod
+    def _get_default_providers():
+        """Get the default list of email providers"""
+        return [
+            BrevoEmailProvider(),
+            DjangoEmailProvider()
+        ]
