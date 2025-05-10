@@ -9,9 +9,12 @@ from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
-from authentication.email_services import EmailChainFactory
+from authentication.email_services import EmailService, PasswordResetEmailStrategy
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UserFinderService:
     def __init__(self, user_repository):
@@ -58,57 +61,58 @@ class ResetLinkService:
             'PROD_PASSWORD_RESET_URL') or os.getenv(
             'DEV_PASSWORD_RESET_URL')
         if not self.reset_url_base:
-            print("Warning: Password reset base URL is not configured.")
+            logger.warning("Password reset base URL is not configured.")
     
     def create_password_reset_link(self, uid, token):
         """Create a password reset link"""
         if not self.reset_url_base:
-            print("Error: Reset URL base is not set.")
+            logger.error("Reset URL base is not set.")
             return None
         return f"{self.reset_url_base}/{uid}/{token}"
 
 class PasswordResetService:
-    def __init__(self, user_finder, password_token_service, reset_link_service, email_chain_factory=None):
+    def __init__(self, user_finder, password_token_service, reset_link_service, email_service=None):
         self.user_finder = user_finder
         self.password_token_service = password_token_service
         self.reset_link_service = reset_link_service
-
-        factory = email_chain_factory or EmailChainFactory()
-        self.email_chain = factory.create_email_chain(["brevo", "django"])
+        self.email_service = email_service or EmailService()
+        self.reset_strategy = PasswordResetEmailStrategy()
     
     def initiate_password_reset(self, email):
         """
         Orchestrates the process of sending a password reset email.
-        Returns True if the email was successfully dispatched by a handler, False otherwise.
+        Returns True if the email was successfully dispatched, False otherwise.
         """
         user = self.user_finder.find_user_by_email(email)
         if not user:
-            print(f"Password reset requested for non-existent email: {email}")
+            logger.info(f"Password reset requested for non-existent email: {email}")
             return True
         
         try:
             uid, token = self.password_token_service.generate_password_reset_token(user)
             reset_link = self.reset_link_service.create_password_reset_link(uid, token)
             if not reset_link:
-                print(f"Failed to create password reset link for user: {user.email}. Check base URL config.")
+                logger.error(f"Failed to create password reset link for user: {user.email}. Check base URL config.")
                 return False
             
-            # Delegate email sending to the chain
-            # The chain's handle method returns True if handled, raises error if not.
-            # Wrap in try-except to control the return value.
+            # Use the email service with strategy pattern
             try:
-                self.email_chain.handle(email, reset_link)
-                print(f"Password reset email sent to {email}.")
+                self.email_service.send_email(
+                    recipient_email=email,
+                    strategy=self.reset_strategy,
+                    reset_link=reset_link
+                )
+                logger.info(f"Password reset email sent to {email}.")
                 return True
             except RuntimeError as e:
-                print(f"Email chain failed for {email}: {e}")
+                logger.error(f"Email service failed for {email}: {e}")
                 return False
             except Exception as e:
-                print(f"Unexpected error in email chain for {email}: {e}")
+                logger.error(f"Unexpected error in email service for {email}: {e}")
                 return False
             
         except Exception as e:
-            print(f"Error generating password reset token for {email}: {e}")
+            logger.error(f"Error generating password reset token for {email}: {e}")
             return False
 
     def verify_reset_attempt(self, uidb64, token):
@@ -118,16 +122,16 @@ class PasswordResetService:
         """
         user = self.password_token_service.get_user_from_uidb64(uidb64)
         if not user:
-            print(f"Invalid UID: {uidb64}")
+            logger.warning(f"Invalid UID: {uidb64}")
             return None
         
         if self.password_token_service.validate_token(user, token):
             print(f"Token is valid for user: {user.email}")
             return user
         else:
-            print(f"Invalid token for user: {user.email} or token expired.")
+            logger.warning(f"Invalid token for user: {user.email if user else 'unknown'} or token expired.")
             return None
-
+        
 class ChangePasswordService:
     def __init__(self, repository: UserRepository = UserRepository()):
         self.repository = repository
