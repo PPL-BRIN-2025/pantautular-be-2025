@@ -88,14 +88,23 @@ PROVINCE_TO_CODE = {
     'Sumatera Utara': 'ID-SU'
 }
 
-class ProvinceClimateSerializer(serializers.Serializer):
-    province = serializers.CharField()
-    value = serializers.DecimalField(max_digits=8, decimal_places=2)
+def create_province_climate_serializer():
+    """Factory function to create a province climate serializer"""
+    class ProvinceClimateSerializer(serializers.Serializer):
+        province = serializers.CharField()
+        value = serializers.DecimalField(max_digits=8, decimal_places=2)
+        
+        def to_representation(self, instance):
+            return {
+                'id': PROVINCE_TO_CODE.get(instance['province'], instance['province']),
+                'value': float(instance['value'])
+            }
     
-    def to_representation(self, instance):
-        return {
-            'id': PROVINCE_TO_CODE.get(instance['province'], instance['province']),
-            'value': float(instance['value'])
-        }
+    return ProvinceClimateSerializer
+
+# Create specific serializers using the factory
+ProvinceHumiditySerializer = create_province_climate_serializer()
+ProvinceTemperatureSerializer = create_province_climate_serializer()
+ProvincePrecipitationSerializer = create_province_climate_serializer()
 
 
