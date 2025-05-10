@@ -121,7 +121,7 @@ class PasswordResetService:
             print(f"Invalid UID: {uidb64}")
             return None
         
-        if user and self.password_token_service.validate_token(user, token):
+        if self.password_token_service.validate_token(user, token):
             print(f"Token is valid for user: {user.email}")
             return user
         else:
