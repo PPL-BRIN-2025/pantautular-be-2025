@@ -9,8 +9,15 @@ from authentication.throttling import PasswordResetRateThrottle
 from .serializers import SignupSerializer, ChangePasswordSerializer
 from .services import ChangePasswordService
 from rest_framework.throttling import UserRateThrottle
-from .repositories import UserRepository
-from .services import AuthService
+# from .repositories import UserRepository
+from .repository import UserRepository
+from .services import (
+    AuthService, 
+    UserFinderService, 
+    PasswordTokenService, 
+    ResetLinkService, 
+    PasswordResetService
+)
 from .serializers import SignupSerializer, LoginSerializer
 from .security import APIKeyAuthentication
 from authentication.registration.service import (
@@ -18,7 +25,7 @@ from authentication.registration.service import (
     RegistrationError,
 )
 
-from .services import ChangePasswordService, PasswordResetService, PasswordValidationService
+from .services import (ChangePasswordService, PasswordValidationService)
 from rest_framework_simplejwt.tokens import AccessToken
 import jwt
 
@@ -49,7 +56,6 @@ class SignupAPIView(APIView):
 
         return Response({"id": dto.user.id}, status=status.HTTP_201_CREATED)
 
-
 class PasswordResetLinkRequestView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
@@ -57,7 +63,17 @@ class PasswordResetLinkRequestView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.password_reset_service = PasswordResetService()
+        # Initialize all required services with proper dependency injection
+        repository = UserRepository()
+        user_finder = UserFinderService(repository)
+        password_token_service = PasswordTokenService(repository)
+        reset_link_service = ResetLinkService()
+        
+        self.password_reset_service = PasswordResetService(
+            user_finder=user_finder,
+            password_token_service=password_token_service,
+            reset_link_service=reset_link_service
+        )
 
     def post(self, request):
         try:
@@ -65,44 +81,62 @@ class PasswordResetLinkRequestView(APIView):
             if not email:
                 return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
             
-            self.password_reset_service.process_reset_request(email)
-            return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
-                             status=status.HTTP_200_OK)
+            # Use the new method name from the updated service
+            success = self.password_reset_service.initiate_password_reset(email)
+            
+            # Always return a generic message for security (regardless of success)
+            return Response(
+                {"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
+                status=status.HTTP_200_OK
+            )
         
         except ParseError:
             return Response({"error": "Invalid JSON in request body"}, status=status.HTTP_400_BAD_REQUEST)
 
         except User.DoesNotExist:
-            return Response({"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
-                             status=status.HTTP_200_OK)
+            # Still return generic message even when user doesn't exist
+            return Response(
+                {"message": "Jika akunmu terdaftar, kami sudah mengirim link untuk mereset password akun Anda"},
+                status=status.HTTP_200_OK
+            )
         
         except Exception as e:
             logger.error(f"Error sending password reset link: {str(e)}")
             return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
 class PasswordResetLinkValidateView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.password_reset_service = PasswordResetService()
+        # Initialize all required services with proper dependency injection
+        repository = UserRepository()
+        user_finder = UserFinderService(repository)
+        password_token_service = PasswordTokenService(repository)
+        reset_link_service = ResetLinkService()
+        
+        self.password_reset_service = PasswordResetService(
+            user_finder=user_finder,
+            password_token_service=password_token_service,
+            reset_link_service=reset_link_service
+        )
 
     def get(self, request, uidb64, token):
-        user = self.password_reset_service.get_user_from_uidb64(uidb64)
-        if not user:
+        # Use the new verify_reset_attempt method that handles both getting the user and validating the token
+        user = self.password_reset_service.verify_reset_attempt(uidb64, token)
+        
+        if user:
+            return Response({"valid": True}, status=status.HTTP_200_OK)
+        else:
             return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
 
-        if self.password_reset_service.validate_token(user, token):
-            return Response({"valid": True}, status=status.HTTP_200_OK)
-        return Response({"valid": False}, status=status.HTTP_400_BAD_REQUEST)
-    
 class PasswordResetConfirmView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
 
     def __init__(self, **kwargs):
-        self.password_reset_service = PasswordResetService()
+        self.password_token_service = PasswordTokenService(UserRepository())
         self.password_validation_service = PasswordValidationService()
         self.change_password_service = ChangePasswordService()
 
@@ -122,18 +156,18 @@ class PasswordResetConfirmView(APIView):
         if not is_valid:
             return Response({"detail": error_message}, status=status.HTTP_400_BAD_REQUEST)
         
-        user = self.password_reset_service.get_user_from_uidb64(uidb64)
+        user = self.password_token_service.get_user_from_uidb64(uidb64)
         if not user:
             return Response({"detail": "Link tidak valid"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.password_reset_service.validate_token(user, token):
+        if not self.password_token_service.validate_token(user, token):
             return Response({"detail": "Token tidak valid atau sudah kedaluwarsa"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not self.change_password_service.change_password(user.email, new_password):
             return Response({"detail": "Gagal mengganti password"}, status=status.HTTP_400_BAD_REQUEST)
             
         return Response({"detail": "Password berhasil diganti"}, status=status.HTTP_200_OK)
-
+    
 class ChangePasswordView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
