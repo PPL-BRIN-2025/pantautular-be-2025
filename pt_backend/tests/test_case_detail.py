@@ -257,7 +257,7 @@ class CaseDetailViewTest(TestCase):
         self.news = News.objects.create(
             title="Test News",
             content="Test Content",
-            url="http://test.com",
+            url="https://test.com",
             portal="Test Portal",
             type="article",
             author="Test Author",
