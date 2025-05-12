@@ -1,7 +1,9 @@
 from django.urls import path
 from .views import (AllCaseLocationsView, CitySeverityStatsView, 
                     DiseaseSeverityStatsView, CaseDetailView, FiltersView, 
-                    StatisticsView, LocationSeverityStatsView, SeverityFilteringStatsView)
+                    StatisticsView, LocationSeverityStatsView, SeverityFilteringStatsView,
+                    ProvinceHumidityView, ProvincePrecipitationView, ProvinceTemperatureView,
+                    WeightedSeverityAnalysisView)
 
 urlpatterns = [
     path('cases/locations/', AllCaseLocationsView.as_view(), name='all-case-locations'),
@@ -12,5 +14,8 @@ urlpatterns = [
     path('api/locations/city/severity-stats/', CitySeverityStatsView.as_view(), name='city-severity-stats'),
     path('api/severity-stats/filter/', SeverityFilteringStatsView.as_view(), name='severity-filtering-stats'),
     path('api/statistics/', StatisticsView.as_view(), name='statistics'),
+    path('api/province-humidity/', ProvinceHumidityView.as_view(), name='province-humidity'),
+    path('api/province-precipitation/', ProvincePrecipitationView.as_view(), name='province-precipitation'),
+    path('api/province-temperature/', ProvinceTemperatureView.as_view(), name='province-temperature'),
+    path('api/province-weighted-severity/', WeightedSeverityAnalysisView.as_view(), name='province-weighted-severity'),
 ]
-

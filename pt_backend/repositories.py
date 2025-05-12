@@ -1,4 +1,4 @@
-from .models import Case, Disease, Location, News
+from .models import Case, Disease, Location, News, Climate
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Count, When, IntegerField, Sum, F, Q
 from django.db.models import Case as DjangoCase  # Rename Django's Case to DjangoCase
@@ -6,6 +6,8 @@ from django.db.models.functions import Coalesce
 from .interfaces import CaseRepositoryInterface
 from django.db.models.functions import TruncDate
 from collections import defaultdict
+from django.db.models import Max, Subquery, OuterRef, Window
+from django.db.models.functions import RowNumber
 
 def get_entity_severity_stats(
         model_class, 
@@ -224,3 +226,21 @@ class CaseRepository(CaseRepositoryInterface):
         return Case.objects.filter(
             news__date_published__year=year
         ).distinct()
+    
+    def get_status_and_province(self):
+        return Case.objects.select_related('location').values('status', 'location__province')
+
+    
+
+class ClimateRepository:
+    def get_latest_climate_data(self):
+        # Gunakan window function untuk mendapatkan data terbaru per provinsi
+        latest_climate = Climate.objects.annotate(
+            row_number=Window(
+                expression=RowNumber(),
+                partition_by=['province'],
+                order_by=['-year', '-month']
+            )
+        ).filter(row_number=1)
+
+        return list(latest_climate)

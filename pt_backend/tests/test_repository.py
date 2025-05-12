@@ -86,6 +86,11 @@ class DiseaseRepositoryTestCase(BaseTestCase):
         result = self.repository.get_all_diseases_name()
         self.assertEqual(result, {"error": "Error retrieving diseases"})
 
+    def test_get_disease_severity_stats_error(self):
+        with patch('pt_backend.repositories.get_entity_severity_stats', return_value={"error": "Error retrieving disease severity statistics"}):
+            result = self.repository.get_disease_severity_stats()
+            self.assertEqual(result, {"error": "Error retrieving disease severity statistics"})
+
 class LocationRepositoryTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
@@ -108,6 +113,16 @@ class LocationRepositoryTestCase(BaseTestCase):
     def test_get_all_locations_name_exception(self, mock_get_all_locations):
         result = self.repository.get_all_locations_name()
         self.assertEqual(result, {"error": "Error retrieving locations"})
+
+    def test_get_province_severity_stats_error(self):
+        with patch('pt_backend.repositories.get_entity_severity_stats', return_value={"error": "Error retrieving province severity statistics"}):
+            result = self.repository.get_province_severity_stats()
+            self.assertEqual(result, {"error": "Error retrieving province severity statistics"})
+
+    def test_get_city_severity_stats_error(self):
+        with patch('pt_backend.repositories.get_entity_severity_stats', return_value={"error": "Error retrieving city severity statistics"}):
+            result = self.repository.get_city_severity_stats()
+            self.assertEqual(result, {"error": "Error retrieving city severity statistics"})
 
 class NewsRepositoryTestCase(BaseTestCase):
     def setUp(self):
@@ -155,6 +170,11 @@ class NewsRepositoryTestCase(BaseTestCase):
         self.assertNotIn("hospitalisasi", result)
         self.assertEqual(result, {})
 
+    def test_get_all_severities_dates_error(self):
+        with patch('pt_backend.models.News.objects.annotate', side_effect=Exception("Test error")):
+            result = self.repository.get_all_severities_dates()
+            self.assertEqual(result, {"error": "Test error"})
+
 class CaseRepositoryTestCase(BaseTestCase):
     def setUp(self):
         super().setUp()
@@ -176,7 +196,6 @@ class CaseRepositoryTestCase(BaseTestCase):
         self.assertTrue(locations.exists())
         self.assertEqual(locations.count(), 2)
         
-
     def test_get_all_case_locations_empty(self):
         Case.objects.all().delete()
         locations = self.repository.get_all_locations()
@@ -220,3 +239,26 @@ class CaseRepositoryTestCase(BaseTestCase):
         # Test getting cases for a year with no data
         cases_2020 = self.repository.get_cases_by_year(2020)
         self.assertEqual(cases_2020.count(), 0)
+
+    def test_get_case_detail_by_id_not_found(self):
+        non_existent_id = uuid.uuid4()
+        result = self.repository.get_case_detail_by_id(non_existent_id)
+        self.assertIsNone(result)
+
+    def test_get_case_detail_by_id_error(self):
+        with patch('pt_backend.models.Case.objects.select_related', side_effect=Exception("Test error")):
+            result = self.repository.get_case_detail_by_id(self.case1.id)
+            self.assertIsNone(result)
+    
+    def test_get_status_and_province(self):
+        results = self.repository.get_status_and_province()
+        result_list = list(results)
+        
+        self.assertEqual(len(result_list), 2)
+        
+        # Periksa struktur data dan kolom
+        for item in result_list:
+            self.assertIn('status', item)
+            self.assertIn('location__province', item)
+            self.assertIsInstance(item['status'], str)
+            self.assertIsInstance(item['location__province'], str)

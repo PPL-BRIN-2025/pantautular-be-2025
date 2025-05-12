@@ -1,18 +1,23 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
 
 from pt_backend.models import Location
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer
-from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
+from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
-from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository
+from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-import logging
-from .statistics import StatisticsCoordinator
-logger = logging.getLogger(__name__)
+from .statistics.coordinator import StatisticsCoordinator
+from .filter.grafana_config import (
+    measure_time, count_calls,
+    CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
+)
+from .constants import CLIMATE_ERROR_INVALID_FORMAT
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
@@ -40,25 +45,29 @@ class AllCaseLocationsView(APIView):
             print(e)
             return Response({"error": INTERNAL_SERVER_ERR_MSG}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @measure_time(API_RESPONSE_TIME)
+    @count_calls(CASE_SEARCHED)
     def post(self, request):
         try:
             if not request.data or all(not v for v in request.data.values()):
                 cases = self.service.get_all_case_locations()
-
             else: 
                 cases = self.filter_service.filter_cases(request.data)
 
             if not cases:
                 return Response(
-                    {"error": INTERNAL_SERVER_ERR_MSG},
+                    {"error": "No cases found with the given filters"},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            serialized_data = self.serializer_class(cases, many=True).data
             return Response(
-                self.serializer_class(cases, many=True).data,
+                serialized_data,
                 status=status.HTTP_200_OK
             )
         except Exception as e:
+            print(f"Error in case filter: {str(e)}")
+            API_ERRORS.labels(error_type='case_filter_error').inc()
             return Response(
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -354,3 +363,123 @@ class SeverityFilteringStatsView(APIView):
         cities = cities if cities else None
         
         return provinces, cities
+
+class ProvinceHumidityView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cache_service = CacheService()
+        self.climate_service = ClimateService(repository=ClimateRepository(), cache_service=self.cache_service)
+    
+    def get(self, request):
+        try:
+            data = self.climate_service.get_province_humidity()
+            
+            if isinstance(data, dict) and "error" in data:
+                error_msg = data["error"]
+                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                    return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            if not data:
+                return Response({"error": "No humidity data available."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            serializer = ProvinceHumiditySerializer(data=data, many=True)
+            if not serializer.is_valid():
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ProvincePrecipitationView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cache_service = CacheService()
+        self.climate_service = ClimateService(repository=ClimateRepository(), cache_service=self.cache_service)
+    
+    def get(self, request):
+        try:
+            data = self.climate_service.get_province_precipitation()
+            
+            if isinstance(data, dict) and "error" in data:
+                error_msg = data["error"]
+                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                    return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            if not data:
+                return Response({"error": "No precipitation data available."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            serializer = ProvincePrecipitationSerializer(data=data, many=True)
+            if not serializer.is_valid():
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ProvinceTemperatureView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cache_service = CacheService()
+        self.climate_service = ClimateService(repository=ClimateRepository(), cache_service=self.cache_service)
+    
+    def get(self, request):
+        try:
+            data = self.climate_service.get_province_temperature()
+            
+            if isinstance(data, dict) and "error" in data:
+                error_msg = data["error"]
+                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                    return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            if not data:
+                return Response({"error": "No temperature data available."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            serializer = ProvinceTemperatureSerializer(data=data, many=True)
+            if not serializer.is_valid():
+                return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class WeightedSeverityAnalysisView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.case_service = CaseService(
+            repository=CaseRepository(),
+            cache_service=CacheService()
+        )
+        self.severity_analyzer = AverageSeverityByProvince(self.case_service)
+    
+    def get(self, request):
+        try:
+            result = self.severity_analyzer.compute()
+            
+            if not result:
+                return Response(
+                    {"error": "No case data available"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            return Response(result, status=status.HTTP_200_OK)
+            
+        except Exception:
+            return Response(
+                {"error": INTERNAL_SERVER_ERR_MSG},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

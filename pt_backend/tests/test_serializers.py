@@ -16,7 +16,6 @@ class MonthlyCountSerializerTestCase(TestCase):
         self.assertEqual(serializer.data['count'], 42)
     
     def test_invalid_types(self):
-        """Test serializer with invalid data types (unhappy case)"""
         # Invalid year (string)
         data = {
             'year': 'two thousand',

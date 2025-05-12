@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .constants import PROVINCE_TO_CODE
 
 class CaseLocationSerializer(serializers.Serializer):
     id = serializers.UUIDField()
@@ -6,6 +7,8 @@ class CaseLocationSerializer(serializers.Serializer):
     location__latitude = serializers.DecimalField(max_digits=8, decimal_places=6)
     
     city = serializers.CharField(max_length=255)
+    location__province = serializers.CharField(max_length=255)
+
 class PrevalenceSerializer(serializers.Serializer):
     year = serializers.IntegerField()
     total_cases = serializers.IntegerField()
@@ -47,3 +50,19 @@ class LocationSeverityStatsSerializer(serializers.Serializer):
     name = serializers.CharField()
     severity_counts = SeverityCountsSerializer()
     total_cases = serializers.IntegerField()
+
+class ProvinceClimateSerializer(serializers.Serializer):
+    province = serializers.CharField()
+    value = serializers.DecimalField(max_digits=8, decimal_places=2)
+    
+    def to_representation(self, instance):
+        return {
+            'id': PROVINCE_TO_CODE.get(instance['province'], instance['province']),
+            'value': float(instance['value'])
+        }
+
+ProvinceHumiditySerializer = ProvinceClimateSerializer
+ProvinceTemperatureSerializer = ProvinceClimateSerializer
+ProvincePrecipitationSerializer = ProvinceClimateSerializer
+
+
