@@ -9,6 +9,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
+from django.db.models import Q
 
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
@@ -164,8 +165,7 @@ class CasesFilterService:
     def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, disease_alertness=None, date_range=None, ids_only = False):
         cases = self.case_service.get_all_cases()
         cases = self._filter_by_disease(cases, disease)
-        cases = self._filter_by_provinces(cases, provinces)
-        cases = self._filter_by_cities(cases, cities)
+        cases = self._filter_by_locations(cases, provinces, cities)
         cases = self._filter_by_news_portals(cases, portals)
         cases = self._filter_by_disease_alertness(cases, disease_alertness)
         cases = self._filter_by_news_date_range(cases, date_range)
@@ -179,16 +179,19 @@ class CasesFilterService:
             return cases.filter(disease__name__in=disease)
         return cases
 
-    def _filter_by_provinces(self, cases, provinces):
-        if provinces:
+    def _filter_by_locations(self, cases, provinces, cities):
+        """Filter cases by provinces or cities."""
+        if provinces and cities:
+            # Menggunakan Q untuk OR antara provinces dan cities
+            return cases.filter(
+                Q(location__province__in=provinces) | Q(location__city__in=cities)
+            )
+        elif provinces:
             return cases.filter(location__province__in=provinces)
-        return cases
-
-    def _filter_by_cities(self, cases, cities):
-        if cities:
+        elif cities:
             return cases.filter(location__city__in=cities)
         return cases
-
+    
     def _filter_by_news_portals(self, cases, news_portals):
         if news_portals:
             return cases.filter(news__portal__in=news_portals)
