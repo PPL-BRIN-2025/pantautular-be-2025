@@ -77,3 +77,33 @@ class GenderGroupingReportTestCase(TestCase):
         cases = [{"id": i, "gender": "male" if i % 2 == 0 else "female"} for i in range(1, 10001)]
         result = self.report.generate_report(cases)
         self.assertEqual(result, {"male": 5000, "female": 5000})
+
+    def test_handle_duplicate_case_ids(self):
+        """
+        Test that the report correctly handles duplicate case IDs by only counting each unique ID once.
+        This simulates what happens when filtered_cases has duplicates due to multiple news items.
+        """
+        cases = [
+            {"id": 1, "gender": "male"},
+            {"id": 2, "gender": "female"},
+            {"id": 1, "gender": "male"},  # Duplicate ID
+            {"id": 3, "gender": "female"},
+            {"id": 2, "gender": "female"},  # Duplicate ID
+            {"id": 1, "gender": "male"},  # Duplicate ID
+        ]
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 1, "female": 2})
+        
+    def test_duplicate_ids_with_different_genders(self):
+        """
+        Test handling of an edge case where the same case ID appears multiple times 
+        with different gender values. Only the first occurrence should be counted.
+        """
+        cases = [
+            {"id": 1, "gender": "male"},
+            {"id": 2, "gender": "female"},
+            {"id": 1, "gender": "female"},  # Duplicate ID with different gender
+            {"id": 3, "gender": "male"}
+        ]
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 2, "female": 1})
