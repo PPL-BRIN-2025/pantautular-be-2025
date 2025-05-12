@@ -243,42 +243,8 @@ class StatisticsView(APIView):
     
     def post(self, request):
         try:
-            # Process the request data to match expected filter format
-            filter_params = {}
-            
-            # Handle diseases
-            if 'diseases' in request.data and request.data['diseases']:
-                filter_params['disease'] = request.data['diseases']
-            
-            # Handle locations
-            if 'locations' in request.data and request.data['locations']:
-                if 'provinces' in request.data['locations'] and request.data['locations']['provinces']:
-                     filter_params['provinces'] = request.data['locations']['provinces']
-                if 'cities' in request.data['locations'] and request.data['locations']['cities']:
-                     filter_params['cities'] = request.data['locations']['cities']
-            
-            # Handle portals
-            if 'portals' in request.data and request.data['portals']:
-                filter_params['portals'] = request.data['portals']
-            
-            # Handle alertness level
-            if 'level_of_alertness' in request.data and request.data['level_of_alertness'] is not None:
-                alertness = int(request.data['level_of_alertness'])
-                if alertness > 0:
-                    # Option 1: Use the level to filter diseases directly
-                    filter_params['disease_alertness'] = alertness
-            
-            # Handle date range
-            start_date = request.data.get('start_date')
-            end_date = request.data.get('end_date')
-            
-            if start_date or end_date:
-                # Create a date range even if one value is None
-                filter_params['date_range'] = {
-                    'start': start_date,
-                    'end': end_date
-                }
-            
+            filter_params = self._get_filter_params(request)
+
             # Generate comprehensive report with processed filters
             statistics = self.statistics_coordinator.generate_comprehensive_report(**filter_params)
             
@@ -290,6 +256,58 @@ class StatisticsView(APIView):
                 {"error": "An error occurred while fetching statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _get_filter_params(self, request):
+        filter_params = {}
+        
+        # Handle diseases
+        self._add_diseases(request, filter_params)
+        
+        # Handle locations
+        self._add_locations(request, filter_params)
+        
+        # Handle portals
+        self._add_portals(request, filter_params)
+        
+        # Handle alertness level
+        self._add_alertness(request, filter_params)
+        
+        # Handle date range
+        self._add_date_range(request, filter_params)
+        
+        return filter_params
+
+    def _add_diseases(self, request, filter_params):
+        if 'diseases' in request.data and request.data['diseases']:
+            filter_params['disease'] = request.data['diseases']
+
+    def _add_locations(self, request, filter_params):
+        if 'locations' in request.data and request.data['locations']:
+            if 'provinces' in request.data['locations'] and request.data['locations']['provinces']:
+                filter_params['provinces'] = request.data['locations']['provinces']
+            if 'cities' in request.data['locations'] and request.data['locations']['cities']:
+                filter_params['cities'] = request.data['locations']['cities']
+
+    def _add_portals(self, request, filter_params):
+        if 'portals' in request.data and request.data['portals']:
+            filter_params['portals'] = request.data['portals']
+
+    def _add_alertness(self, request, filter_params):
+        if 'level_of_alertness' in request.data and request.data['level_of_alertness'] is not None:
+            alertness = int(request.data['level_of_alertness'])
+            if alertness > 0:
+                filter_params['disease_alertness'] = alertness
+
+    def _add_date_range(self, request, filter_params):
+        start_date = request.data.get('start_date')
+        end_date = request.data.get('end_date')
+
+        if start_date or end_date:
+            filter_params['date_range'] = {
+                'start': start_date,
+                'end': end_date
+            }
+
     
 class SeverityFilteringStatsView(APIView):
     authentication_classes = [APIKeyAuthentication]
