@@ -18,3 +18,8 @@ class AESGCMDecryptorTest(TestCase):
         corrupted_input = "INVALID_STRING=="
         decrypted = self.decryptor.decrypt(corrupted_input)
         self.assertIsNone(decrypted)
+    
+    def test_invalid_key_length(self):
+        with self.assertRaises(ValueError) as context:
+            AESGCMDecryptor("short-key-16chars!!")  # hanya 20 karakter
+        self.assertIn("Key harus 32 karakter", str(context.exception))
