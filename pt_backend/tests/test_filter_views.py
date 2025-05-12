@@ -85,10 +85,16 @@ class FiltersViewTest(BaseTestCase):
                     {"value": "COVID-19", "label": "COVID-19"},
                     {"value": "Ebola", "label": "Ebola"}
                 ],
-                "locations": [
-                    {"value": "Jakarta", "label": "Jakarta"},
-                    {"value": "Bandung", "label": "Bandung"}
-                ],
+                "locations": {
+                    "provinces": [
+                        {"value": "DKI Jakarta", "label": "DKI Jakarta"},
+                        {"value": "Jawa Barat", "label": "Jawa Barat"}
+                    ],
+                    "cities": [
+                        {"value": "Jakarta", "label": "Jakarta"},
+                        {"value": "Bandung", "label": "Bandung"}
+                    ]
+                },
                 "news": [
                     {"value": "kompas.com", "label": "kompas.com"},
                     {"value": "detik.com", "label": "detik.com"}
@@ -97,6 +103,7 @@ class FiltersViewTest(BaseTestCase):
         }
         
         self.assertEqual(response.json(), expected_data)
+
 
     def test_get_filters_empty(self):
         # Clear all data
@@ -107,12 +114,18 @@ class FiltersViewTest(BaseTestCase):
         
         response = self.client.get('/api/filters/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
         expected_empty_data = {
             "data": {
                 "diseases": [],
-                "locations": [],
+                "locations": {
+                    "provinces": [],
+                    "cities": []
+                },
                 "news": []
             }
         }
+        
         self.assertEqual(response.json(), expected_empty_data)
+
 

@@ -97,21 +97,21 @@ class LocationRepositoryTestCase(BaseTestCase):
         self.repository = LocationRepository()
 
     def test_get_all_locations_name(self):
-        locations = self.repository.get_all_locations_name()
+        locations = self.repository.get_all_locations_city()
         expected = ["Jakarta", "Bandung"]
         for location in locations:
             self.assertIn(location, expected)
         self.assertEqual(len(locations), len(expected))
 
-    def test_get_all_locations_name_empty(self):
+    def test_get_all_locations_city_empty(self):
         Location.objects.all().delete()  
 
-        locations = self.repository.get_all_locations_name()
+        locations = self.repository.get_all_locations_city()
         self.assertEqual(locations, [])
 
     @patch('pt_backend.models.Location.objects.values_list', side_effect=ObjectDoesNotExist)
     def test_get_all_locations_name_exception(self, mock_get_all_locations):
-        result = self.repository.get_all_locations_name()
+        result = self.repository.get_all_locations_city()
         self.assertEqual(result, {"error": "Error retrieving locations"})
 
     def test_get_province_severity_stats_error(self):
