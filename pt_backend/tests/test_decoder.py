@@ -3,9 +3,9 @@ from ..decoder import AESGCMDecryptor  # Sesuaikan path jika perlu
 
 class AESGCMDecryptorTest(TestCase):
     def setUp(self):
-        self.key = "12345678901234567890123456789012"
+        self.key = "12345678901234567890123456789012" #NOSONAR
         self.encrypted_base64 = (
-            "JavvSUy8sp/weWgshf8adiB3AWx/6+Od2hLrxlrjPI8soktzwt6yzukH6t8mZIakFcI+UOMQ1hg9UkqzEiS4he6vgWk="
+            "JavvSUy8sp/weWgshf8adiB3AWx/6+Od2hLrxlrjPI8soktzwt6yzukH6t8mZIakFcI+UOMQ1hg9UkqzEiS4he6vgWk=" #NOSONAR
         )
         self.expected_plaintext = "Pesan penting untuk didekripsi di Python"
         self.decryptor = AESGCMDecryptor(self.key)
