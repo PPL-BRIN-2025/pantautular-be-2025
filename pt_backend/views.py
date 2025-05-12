@@ -6,13 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
-from .services import CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
+from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from .statistics import StatisticsCoordinator, AverageSeverityByProvince
+from .statistics.coordinator import StatisticsCoordinator
 from .filter.grafana_config import (
     measure_time, count_calls,
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
