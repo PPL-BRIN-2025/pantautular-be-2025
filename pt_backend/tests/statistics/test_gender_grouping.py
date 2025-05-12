@@ -107,3 +107,20 @@ class GenderGroupingReportTestCase(TestCase):
         ]
         result = self.report.generate_report(cases)
         self.assertEqual(result, {"male": 2, "female": 1})
+
+    def test_invalid_case_formats(self):
+        """
+        Edge case: when some cases are not dictionaries or are None,
+        these should be skipped without errors.
+        """
+        cases = [
+            {"id": 1, "gender": "male"},     # Valid case
+            None,                           # None value - should be skipped
+            "not a dictionary",             # String - should be skipped
+            42,                             # Integer - should be skipped
+            ["list", "not dict"],           # List - should be skipped
+            {"id": 2, "gender": "female"},  # Valid case
+        ]
+        
+        result = self.report.generate_report(cases)
+        self.assertEqual(result, {"male": 1, "female": 1})
