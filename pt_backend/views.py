@@ -80,14 +80,18 @@ class FiltersView(APIView):
         news_repository = NewsRepository()
         try:
             diseases = [{"value": d, "label": d} for d in disease_repository.get_all_diseases_name()]
-            locations = [{"value": l, "label": l} for l in location_repository.get_all_locations_name()]
+            provinces = [{"value": l, "label": l} for l in location_repository.get_all_locations_province()]
+            cities = [{"value": l, "label": l} for l in location_repository.get_all_locations_city()]
             news = [{"value": n, "label": n} for n in news_repository.get_all_news_name()]
 
 
             response_data = {
                 "data": {
                     "diseases": diseases,
-                    "locations": locations,
+                    "locations": {
+                        "provinces": provinces,
+                        "cities": cities
+                    },
                     "news": news
                 }
             }
@@ -248,7 +252,10 @@ class StatisticsView(APIView):
             
             # Handle locations
             if 'locations' in request.data and request.data['locations']:
-                filter_params['cities'] = request.data['locations']
+                if 'provinces' in request.data['locations'] and request.data['locations']['provinces']:
+                     filter_params['provinces'] = request.data['locations']['provinces']
+                if 'cities' in request.data['locations'] and request.data['locations']['cities']:
+                     filter_params['cities'] = request.data['locations']['cities']
             
             # Handle portals
             if 'portals' in request.data and request.data['portals']:
@@ -310,7 +317,7 @@ class SeverityFilteringStatsView(APIView):
         """Extract and process filter parameters from request data"""
         # Extract basic filters
         diseases = data.get('diseases', []) or None
-        locations = data.get('locations', [])
+        locations = data.get('locations', {})
         portals = data.get('portals', []) or None
         
         # Process location data
@@ -338,31 +345,31 @@ class SeverityFilteringStatsView(APIView):
         """Process location data to extract provinces and cities"""
         if not locations:
             return None, None
-            
+
         provinces = []
         cities = []
-        
-        for location in locations:
-            # Check if location is a province
-            if Location.objects.filter(province=location).exists():
-                provinces.append(location)
-                continue
-            
-            # Check if location is a city
-            if Location.objects.filter(city=location).exists():
-                cities.append(location)
-                
-                # Add the associated province(s) for each city
-                city_provinces = Location.objects.filter(
-                    city=location
-                ).values_list('province', flat=True).distinct()
-                provinces.extend(city_provinces)
-        
+
+        # Process provinces
+        if locations.get('provinces', []):
+            for province in locations.get('provinces', []):
+                if Location.objects.filter(province=province).exists():
+                    provinces.append(province)
+
+        # Process cities
+        if locations.get('cities', []):
+            for city in locations.get('cities', []):
+                if Location.objects.filter(city=city).exists():
+                    cities.append(city)
+
+        # Ensure that cities are unique
+        cities = list(set(cities)) if cities else None
+
         # Clean up results
         provinces = list(set(provinces)) if provinces else None
-        cities = cities if cities else None
-        
+
         return provinces, cities
+
+
 
 class ProvinceHumidityView(APIView):
     authentication_classes = [APIKeyAuthentication]
