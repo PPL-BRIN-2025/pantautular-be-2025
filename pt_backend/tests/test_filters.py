@@ -38,7 +38,7 @@ class FilterTestCase(TestCase):
 
     def test_location_filter_with_valid_data(self):
         data = {'locations': ['Jakarta', 'Bandung']}
-        expected_q = Q(location__name__in=['Jakarta', 'Bandung'])
+        expected_q = Q(location__city__in=['Jakarta', 'Bandung']) | Q(location__province__in=['Jakarta', 'Bandung'])
         result = self.location_filter.apply(data)
         self.assertEqual(str(result), str(expected_q))
 
@@ -87,6 +87,12 @@ class FilterTestCase(TestCase):
         data = {'start_date': '2024-01-01T00:00:00Z'}  # Only start_date
         result = self.date_range_filter.apply(data)
         expected_q = Q(news__date_published__gte=datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC)) & Q(news__isnull=False)
+        self.assertEqual(str(result), str(expected_q))
+        
+    def test_date_range_filter_with_only_end_date(self):
+        data = {'end_date': '2024-12-31T23:59:59Z'}  # Only end_date
+        result = self.date_range_filter.apply(data)
+        expected_q = Q(news__date_published__lte=datetime(2024, 12, 31, 23, 59, 59, tzinfo=pytz.UTC)) & Q(news__isnull=False)
         self.assertEqual(str(result), str(expected_q))
 
     def test_date_range_filter_with_invalid_format(self):
@@ -150,11 +156,15 @@ class CaseFilterServiceTest(TestCase):
     def setUp(self):
         self.filter_service = CaseFilterService()
         
+        # Mock the Case model and its methods
         self.patcher = patch('pt_backend.filter.service.Case')
         self.mock_case = self.patcher.start()
         
+        # Create a mock queryset chain
         self.mock_queryset = Mock()
-        self.mock_case.objects.filter.return_value = self.mock_queryset
+        self.mock_case.objects.select_related.return_value = self.mock_queryset
+        self.mock_queryset.prefetch_related.return_value = self.mock_queryset
+        self.mock_queryset.filter.return_value = self.mock_queryset
         self.mock_queryset.values.return_value = self.mock_queryset
         self.mock_queryset.distinct.return_value = ['mocked_result']
 
@@ -173,19 +183,19 @@ class CaseFilterServiceTest(TestCase):
         data = {
             'diseases': ['COVID-19'],
             'locations': ['Jakarta'],
-            'level_of_alertness': 3,
+            'level_of_alertness': 'HIGH',
             'portals': ['BBC'],
-            'date_range': {
-                'start_date': '2024-01-01',
-                'end_date': '2024-12-31'
-            }
+            'start_date': '2024-01-01T00:00:00Z',
+            'end_date': '2024-12-31T23:59:59Z'
         }
 
         result = self.filter_service.filter_cases(data)
 
-        self.mock_case.objects.filter.assert_called_once()
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -194,9 +204,11 @@ class CaseFilterServiceTest(TestCase):
         data = {}
         result = self.filter_service.filter_cases(data)
 
-        self.mock_case.objects.filter.assert_called_once()
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -209,9 +221,11 @@ class CaseFilterServiceTest(TestCase):
 
         result = self.filter_service.filter_cases(data)
 
-        self.mock_case.objects.filter.assert_called_once()
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -220,14 +234,18 @@ class CaseFilterServiceTest(TestCase):
         data = {
             'diseases': [], 
             'locations': None,  
-            'level_of_alertness': 'invalid' 
+            'level_of_alertness': 'invalid',
+            'portals': [],
+            'start_date': 'invalid-date'
         }
 
         result = self.filter_service.filter_cases(data)
 
-        self.mock_case.objects.filter.assert_called_once()
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
@@ -235,20 +253,25 @@ class CaseFilterServiceTest(TestCase):
     def test_filter_cases_with_none_returning_filter(self):
         mock_filter = Mock()
         mock_filter.apply.return_value = None
+        mock_filter.field_name = "test_field"
         
         original_filters = self.filter_service.filters
         self.filter_service.filters = [mock_filter] + original_filters[1:]
         
-        data = {'some_key': 'some_value'}
+        data = {'test_field': 'some_value'}
+        
         result = self.filter_service.filter_cases(data)
         
         mock_filter.apply.assert_called_once_with(data)
         
-        self.mock_case.objects.filter.assert_called_once()
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once()
         self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city'
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province'
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
         
         self.filter_service.filters = original_filters
+

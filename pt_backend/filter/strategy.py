@@ -15,4 +15,5 @@ class FilterStrategy(Protocol):
     def apply(self, data: Dict) -> Optional[Q]:
         if self.should_apply(data):
             return self.build_query(data[self.field_name])
+ 
         return None 

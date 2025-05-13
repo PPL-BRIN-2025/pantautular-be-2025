@@ -2,12 +2,14 @@ from django.test import TestCase
 from django.contrib.auth.hashers import check_password, make_password
 from pt_backend.models import (
     User, Role, Permission, Disease, Location, Case, News,
-    HealthProtocol
+    HealthProtocol, Climate
 )
 from decimal import Decimal
 import uuid
 import secrets
 import string
+from datetime import datetime
+from django.utils import timezone
 
 # Define test constants at module level
 TEST_PASSWORD = "test_password_123"  # Only used for testing
@@ -191,8 +193,59 @@ class NewsModelTest(TestCase):
             content="Test Content",
             url="https://example.com",
             author="Test Author",
+            date_published=timezone.now(),
             case=self.case
         )
 
     def test_str_representation(self):
-        self.assertEqual(str(self.news), "Test News") 
+        self.assertEqual(str(self.news), "Test News")
+
+class ClimateModelTest(TestCase):
+    def setUp(self):
+        self.climate = Climate.objects.create(
+            province="Test Province",
+            temperature=Decimal("25.5"),
+            precipitation=Decimal("100.0"),
+            humidity=Decimal("80.0"),
+            year=2024,
+            month=1
+        )
+
+    def test_str_representation(self):
+        self.assertEqual(str(self.climate), "Test Province")
+
+    def test_get_climate_for_location(self):
+        # Create a test location
+        location = Location.objects.create(
+            latitude=Decimal("1.234567"),
+            longitude=Decimal("123.456789"),
+            city="Test City",
+            province="Test Province"
+        )
+        
+        # Test with year only
+        climates = Climate.get_climate_for_location(location, 2024)
+        self.assertEqual(len(climates), 1)
+        self.assertEqual(climates[0], self.climate)
+        
+        # Test with year and month
+        climates = Climate.get_climate_for_location(location, 2024, 1)
+        self.assertEqual(len(climates), 1)
+        self.assertEqual(climates[0], self.climate)
+
+    def test_get_climate_for_location_different_province(self):
+        # Create a test location with different province
+        location = Location.objects.create(
+            latitude=Decimal("1.234567"),
+            longitude=Decimal("123.456789"),
+            city="Test City",
+            province="Different Province"
+        )
+        
+        # Test with year only
+        climates = Climate.get_climate_for_location(location, 2024)
+        self.assertEqual(len(climates), 0)
+        
+        # Test with year and month
+        climates = Climate.get_climate_for_location(location, 2024, 1)
+        self.assertEqual(len(climates), 0)

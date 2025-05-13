@@ -8,6 +8,7 @@ class User(models.Model):
     password = models.CharField(max_length=255)
     role = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
+    last_login = models.DateTimeField(null=True, blank=True)
 
     def has_role(self, role_name):
         return self.role == role_name
@@ -15,6 +16,12 @@ class User(models.Model):
     def update_password(self, new_password):
         self.password = make_password(new_password)
         self.save()
+
+    def get_email_field_name(self):
+        return "email"
+
+    def get_username(self):
+        return self.email    
 
     def __str__(self):
         return self.name
@@ -40,6 +47,37 @@ class UserRole(models.Model):
 
     class Meta:
         unique_together = ("user", "role")
+    
+class UserRoleRegistered(models.Model):
+
+    role = models.OneToOneField(          
+        Role,
+        on_delete=models.CASCADE,
+        related_name="registration_meta",
+    )
+
+    label = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Friendly name shown in the UI (defaults to role.name)",
+    )
+    sort_order = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Lower values appear earlier in dropdowns.",
+    )
+
+    class Meta:
+        ordering = ("sort_order", "role__name")
+        verbose_name = "registered role option"
+        verbose_name_plural = "registered role options"
+
+    def save(self, *args, **kwargs):
+        if not self.label:
+            self.label = self.role.name
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:           
+        return self.label
 
 class RolePermission(models.Model):
     role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="permissions")
@@ -71,6 +109,25 @@ class Disease(models.Model):
     
     def __str__(self):
         return self.name
+
+class Climate(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    province = models.CharField(max_length=255)
+    temperature = models.DecimalField(max_digits=8, decimal_places=2)
+    precipitation = models.DecimalField(max_digits=8, decimal_places=2)
+    humidity = models.DecimalField(max_digits=8, decimal_places=2)
+    year = models.IntegerField()
+    month = models.IntegerField()
+
+    def __str__(self):
+        return self.province
+    
+    @staticmethod
+    def get_climate_for_location(location, year, month=None):
+        query = Climate.objects.filter(province=location.province, year=year)
+        if month:
+            query = query.filter(month=month)
+        return query
 
 class HealthProtocolDisease(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -124,7 +181,7 @@ class Case(models.Model):
 
     @staticmethod
     def get_all_locations():
-        return Case.objects.values("id", "location__longitude", "location__latitude", "city")
+        return Case.objects.values("id", "location__longitude", "location__latitude", "city", "location__province")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
@@ -137,7 +194,7 @@ class News(models.Model):
     content = models.TextField()
     url = models.URLField()
     author = models.CharField(max_length=255)
-    date_published = models.DateTimeField(auto_now_add=True)
+    date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
 
