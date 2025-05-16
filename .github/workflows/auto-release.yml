@@ -1,0 +1,198 @@
+name: Automated Release with Conventional Commits
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  analyze-commits:
+    runs-on: ubuntu-latest
+    outputs:
+      version_type: ${{ steps.conventional-commits.outputs.version_type }}
+      should_release: ${{ steps.conventional-commits.outputs.should_release }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Analyze conventional commits
+        id: conventional-commits
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+          if [ "$LAST_TAG" = "none" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"%s" $LAST_TAG..HEAD --no-merges)
+          fi
+          
+          # Initialize flags
+          BREAKING=false
+          FEAT=false
+          FIX=false
+          
+          # Analyze commits
+          echo "Analyzing commits since $LAST_TAG"
+          echo "$COMMITS" | while read -r commit; do
+            echo "Analyzing commit: $commit"
+            # Check for breaking changes
+            if [[ "$commit" == *"BREAKING CHANGE"* ]] || [[ "$commit" == "feat!"* ]] || [[ "$commit" == "fix!"* ]]; then
+              BREAKING=true
+              echo "Found breaking change"
+            # Check for features
+            elif [[ "$commit" == "feat"* ]] || [[ "$commit" == "green:"* ]]; then
+              FEAT=true
+              echo "Found feature (feat or green)"
+            # Check for fixes
+            elif [[ "$commit" == "fix"* ]] || [[ "$commit" == "refactor:"* ]]; then
+              FIX=true
+              echo "Found fix (fix or refactor)"
+            # Red commits don't trigger version changes as they're just failing tests
+            elif [[ "$commit" == "red:"* ]]; then
+              echo "Found red commit (no version change)"
+            fi
+          done
+          
+          # Determine version type
+          VERSION_TYPE="none"
+          if [ "$BREAKING" = "true" ]; then
+            VERSION_TYPE="major"
+          elif [ "$FEAT" = "true" ]; then
+            VERSION_TYPE="minor"
+          elif [ "$FIX" = "true" ]; then
+            VERSION_TYPE="patch"
+          fi
+          
+          # Set outputs
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          
+          if [ "$VERSION_TYPE" != "none" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Version type determined: $VERSION_TYPE"
+          echo "Should release: ${{ steps.conventional-commits.outputs.should_release }}"
+
+  create-release:
+    needs: analyze-commits
+    if: needs.analyze-commits.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+      
+      - name: Get current version
+        id: current_version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+      
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT_VERSION=${{ steps.current_version.outputs.version }}
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          
+          if [ "${{ needs.analyze-commits.outputs.version_type }}" == "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "${{ needs.analyze-commits.outputs.version_type }}" == "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Update VERSION file
+        run: echo "${{ steps.new_version.outputs.version }}" > VERSION
+      
+      - name: Update CHANGELOG
+        run: |
+          # Get today's date
+          TODAY=$(date +"%Y-%m-%d")
+          
+          # Get commits since last tag for changelog
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+          if [ "$LAST_TAG" = "none" ]; then
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"* %s (%h)" $LAST_TAG..HEAD --no-merges)
+          fi
+          
+          # Create new changelog content
+          NEW_VERSION_SECTION="## [${{ steps.new_version.outputs.version }}] - $TODAY\n\n"
+          
+          # Group commits by type
+          BREAKING_CHANGES=$(echo "$COMMITS" | grep -E "BREAKING CHANGE|feat!|fix!" || echo "")
+          FEATURES=$(echo "$COMMITS" | grep -E "^* feat|^* green" | grep -v "!" || echo "")
+          FIXES=$(echo "$COMMITS" | grep -E "^* fix|^* refactor" | grep -v "!" || echo "")
+          RED_COMMITS=$(echo "$COMMITS" | grep -E "^* red" || echo "")
+          OTHER=$(echo "$COMMITS" | grep -v -E "^* feat|^* fix|^* green|^* red|^* refactor|BREAKING CHANGE" || echo "")
+          
+          # Add sections if they have content
+          if [ ! -z "$BREAKING_CHANGES" ]; then
+            NEW_VERSION_SECTION="${NEW_VERSION_SECTION}### Breaking Changes\n\n${BREAKING_CHANGES}\n\n"
+          fi
+          
+          if [ ! -z "$FEATURES" ]; then
+            NEW_VERSION_SECTION="${NEW_VERSION_SECTION}### Added\n\n${FEATURES}\n\n"
+          fi
+          
+          if [ ! -z "$FIXES" ]; then
+            NEW_VERSION_SECTION="${NEW_VERSION_SECTION}### Fixed\n\n${FIXES}\n\n"
+          fi
+          
+          if [ ! -z "$RED_COMMITS" ]; then
+            NEW_VERSION_SECTION="${NEW_VERSION_SECTION}### Tests\n\n${RED_COMMITS}\n\n"
+          fi
+          
+          if [ ! -z "$OTHER" ]; then
+            NEW_VERSION_SECTION="${NEW_VERSION_SECTION}### Other\n\n${OTHER}\n\n"
+          fi
+          
+          # Insert new version section after Unreleased section
+          sed -i "/## \[Unreleased\]/a\\
+          $NEW_VERSION_SECTION" CHANGELOG.md
+      
+      - name: Commit and push changes
+        run: |
+          git add VERSION CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.version }}"
+          git push
+      
+      - name: Create tag
+        run: |
+          git tag -a v${{ steps.new_version.outputs.version }} -m "Release v${{ steps.new_version.outputs.version }}"
+          git push origin v${{ steps.new_version.outputs.version }}
+      
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.new_version.outputs.version }}
+          name: Release v${{ steps.new_version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
