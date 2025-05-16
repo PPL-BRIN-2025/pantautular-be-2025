@@ -4,11 +4,22 @@ on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     
     steps:
       - name: Checkout repository
@@ -36,6 +47,22 @@ jobs:
         run: |
           curl -fsSL https://railway.app/install.sh | sh
 
+      - name: Set Railway environment
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "RAILWAY_PROJECT_ID=${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}" >> $GITHUB_ENV
+            echo "Deploying to production environment"
+          else
+            echo "RAILWAY_PROJECT_ID=${{ secrets.RAILWAY_STAGING_PROJECT_ID }}" >> $GITHUB_ENV
+            echo "Deploying to staging environment"
+          fi
+
+      - name: Link to Railway project
+        run: |
+          railway link --project ${{ env.RAILWAY_PROJECT_ID }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
       - name: Deploy to Railway
         run: |
           railway up --detach
@@ -56,7 +83,11 @@ jobs:
           
       - name: Verify deployment
         run: |
-          echo "Deployed to Railway successfully!"
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.event.inputs.environment }}" == "production" ]]; then
+            echo "Deployed to Railway production environment successfully!"
+          else
+            echo "Deployed to Railway staging environment successfully!"
+          fi
           echo "Application URL: https://$(railway show | grep 'Production URL' | awk '{print $3}')"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

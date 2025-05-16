@@ -80,3 +80,24 @@ This will:
 - Generate a GitHub release
 - Trigger the Docker image build with the new version tag
 
+## Branching Strategy
+
+The project uses the following branches:
+
+### Main Branch
+- Production-ready code
+- Deployed automatically to the production environment
+- Tagged releases are created from this branch
+- Docker images are tagged as `latest`
+
+### Staging Branch
+- Pre-production testing environment
+- Deployed automatically to the staging environment
+- Releases are tagged with `-staging` suffix
+- Docker images are tagged as `staging`
+
+### Feature Branches
+- Created for new features or bug fixes
+- Should branch off from `staging`
+- Pull requests should target the `staging` branch
+
