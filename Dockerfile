@@ -8,11 +8,14 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
-    netcat-traditional \
-    curl \
+RUN apt-get update && apt-get --no-install-recommends install -y \
     bash \
+    curl \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user to run the application
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy version file and set label
 COPY VERSION .
@@ -23,22 +26,35 @@ LABEL org.opencontainers.image.description="Django-based backend for the Pantau 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy entrypoint script
+# Copy entrypoint and startup scripts
 COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+COPY start.sh .
+RUN chmod +x entrypoint.sh start.sh
 
-# Copy project
-COPY . .
+# Copy project files selectively
+COPY manage.py .
+COPY VERSION .
+COPY requirements.txt .
+COPY pantau_tular/ pantau_tular/
+COPY pt_backend/ pt_backend/
+# COPY templates/ templates/
+# COPY staticfiles/ staticfiles/
 
-# Create staticfiles directory
+# Create staticfiles directory if it doesn't exist
 RUN mkdir -p staticfiles
+
+# Set proper ownership for application files
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-8000}/health/ || exit 1
+  CMD ["curl", "-f", "http://localhost:${PORT:-8000}/health/", "||", "exit", "1"]
 
 # Set entrypoint
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
 
-# Run gunicorn
-CMD gunicorn pantau_tular.wsgi:application --bind 0.0.0.0:${PORT:-8000} 
+# Run application using start script
+CMD ["/bin/bash", "/app/start.sh"] 
