@@ -15,7 +15,12 @@ from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatt
 from .statistics import StatisticsCoordinator, AverageSeverityByProvince
 from .prome_metrics import (
     measure_time, count_calls,
-    CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
+    CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS,
+    DISEASE_SEVERITY_RESPONSE_TIME, DISEASE_SEVERITY_REQUESTS, DISEASE_SEVERITY_DATA_COUNT, DISEASE_SEVERITY_ERRORS,
+    LOCATION_SEVERITY_RESPONSE_TIME, LOCATION_SEVERITY_REQUESTS, LOCATION_SEVERITY_DATA_COUNT, LOCATION_SEVERITY_ERRORS,
+    CITY_SEVERITY_RESPONSE_TIME, CITY_SEVERITY_REQUESTS, CITY_SEVERITY_DATA_COUNT, CITY_SEVERITY_ERRORS,
+    DB_QUERY_TIME, API_REQUEST_SIZE, API_RESPONSE_SIZE,
+    CACHE_HIT_RATE, API_SUCCESS, DB_ERRORS, REQUEST_COUNT, REQUEST_LATENCY, track_active_requests, track_data_count
 )
 from .constants import CLIMATE_ERROR_INVALID_FORMAT
 
@@ -110,24 +115,33 @@ class DiseaseSeverityStatsView(APIView):
         super().__init__(**kwargs)
         self.service = DiseaseService()
     
+    @measure_time(DISEASE_SEVERITY_RESPONSE_TIME)
+    @count_calls(DISEASE_SEVERITY_REQUESTS)
+    @track_data_count(DISEASE_SEVERITY_DATA_COUNT)
+    @track_active_requests
     def get(self, request):
         try:
             stats = self.service.get_disease_severity_stats()
             
             if isinstance(stats, dict) and "error" in stats:
+                DISEASE_SEVERITY_ERRORS.inc()
+                API_ERRORS.labels(error_type="service_error", endpoint="disease_severity").inc()
                 return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(stats, many=True).data
+            API_SUCCESS.labels(endpoint="disease_severity").inc()
             return Response({
                 "data": serialized_data
             }, status=status.HTTP_200_OK)
             
         except Exception:
+            DISEASE_SEVERITY_ERRORS.inc()
+            API_ERRORS.labels(error_type="exception", endpoint="disease_severity").inc()
             return Response(
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
+
 class LocationSeverityStatsView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
@@ -139,24 +153,33 @@ class LocationSeverityStatsView(APIView):
         repository = LocationRepository()
         self.service = LocationService(repository=repository)
     
+    @measure_time(LOCATION_SEVERITY_RESPONSE_TIME)
+    @count_calls(LOCATION_SEVERITY_REQUESTS)
+    @track_data_count(LOCATION_SEVERITY_DATA_COUNT)
+    @track_active_requests
     def get(self, request):
         try:
             stats = self.service.get_province_severity_stats()
             
             if isinstance(stats, dict) and "error" in stats:
+                LOCATION_SEVERITY_ERRORS.inc()
+                API_ERRORS.labels(error_type="service_error", endpoint="location_severity").inc()
                 return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(stats, many=True).data
+            API_SUCCESS.labels(endpoint="location_severity").inc()
             return Response({
                 "data": serialized_data
             }, status=status.HTTP_200_OK)
             
         except Exception:
+            LOCATION_SEVERITY_ERRORS.inc()
+            API_ERRORS.labels(error_type="exception", endpoint="location_severity").inc()
             return Response(
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
 class CitySeverityStatsView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
@@ -168,19 +191,28 @@ class CitySeverityStatsView(APIView):
         repository = LocationRepository()
         self.service = LocationService(repository=repository)
     
+    @measure_time(CITY_SEVERITY_RESPONSE_TIME)
+    @count_calls(CITY_SEVERITY_REQUESTS)
+    @track_data_count(CITY_SEVERITY_DATA_COUNT)
+    @track_active_requests
     def get(self, request):
         try:
             stats = self.service.get_city_severity_stats()
             
             if isinstance(stats, dict) and "error" in stats:
+                CITY_SEVERITY_ERRORS.inc()
+                API_ERRORS.labels(error_type="service_error", endpoint="city_severity").inc()
                 return Response(stats, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             serialized_data = self.serializer_class(stats, many=True).data
+            API_SUCCESS.labels(endpoint="city_severity").inc()
             return Response({
                 "data": serialized_data
             }, status=status.HTTP_200_OK)
             
         except Exception:
+            CITY_SEVERITY_ERRORS.inc()
+            API_ERRORS.labels(error_type="exception", endpoint="city_severity").inc()
             return Response(
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
