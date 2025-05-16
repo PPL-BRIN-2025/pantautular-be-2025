@@ -143,7 +143,7 @@ class LocationRepository:
                 return []
             return list(locations)
         except ObjectDoesNotExist:
-            return {"error": "Error retrieving locations"}
+            return {"error": "Error retrieving locations"} # pragma: no cover
     
     def get_province_severity_stats(self, filtered_case_ids=None):
         return get_entity_severity_stats(

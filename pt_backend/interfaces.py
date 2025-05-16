@@ -30,7 +30,7 @@ class CaseRepositoryInterface(ABC):
 
     @abstractmethod
     def get_status_and_province(self):
-        pass
+        pass # pragma: no cover
 
 class CacheInterface(ABC):
     @abstractmethod

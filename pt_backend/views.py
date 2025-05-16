@@ -10,7 +10,7 @@ from .services import CacheService, CaseService, CaseDetailService, DiseaseServi
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 from .statistics import StatisticsCoordinator, AverageSeverityByProvince
 from .filter.grafana_config import (
@@ -18,6 +18,9 @@ from .filter.grafana_config import (
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
 )
 from .constants import CLIMATE_ERROR_INVALID_FORMAT
+from datetime import datetime
+from django.db import connections
+from django.db.utils import OperationalError
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
@@ -508,3 +511,24 @@ class WeightedSeverityAnalysisView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+def health_check(request):
+    """
+    Health check endpoint for Docker container
+    """
+    # Check database connection
+    db_healthy = True
+    try:
+        connections['default'].cursor()
+    except OperationalError:
+        db_healthy = False
+    
+    status = 200 if db_healthy else 500
+    
+    health_data = {
+        'status': 'healthy' if db_healthy else 'unhealthy',
+        'database': 'connected' if db_healthy else 'disconnected',
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    return JsonResponse(health_data, status=status)

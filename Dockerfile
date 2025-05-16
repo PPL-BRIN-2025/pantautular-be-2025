@@ -10,6 +10,8 @@ WORKDIR /app
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     netcat-traditional \
+    curl \
+    bash \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -25,8 +27,12 @@ COPY . .
 # Create staticfiles directory
 RUN mkdir -p staticfiles
 
+# Add health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:${PORT:-8000}/health/ || exit 1
+
 # Set entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
 
 # Run gunicorn
 CMD gunicorn pantau_tular.wsgi:application --bind 0.0.0.0:${PORT:-8000} 

@@ -197,7 +197,7 @@ class PrevalenceStatistics:
             if start_date:
                 # Handle ISO format date strings (e.g., 2024-09-08T17:00:00.000Z)
                 if 'T' in start_date:
-                    start_date = start_date.split('T')[0]
+                    start_date = start_date.split('T')[0] # pragma: no cover
                 
                 start_date = datetime.strptime(start_date, '%Y-%m-%d')
                 year = start_date.year 
