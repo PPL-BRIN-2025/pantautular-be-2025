@@ -52,3 +52,31 @@ Make sure to set these environment variables in your `.env` file:
 
 If you're using an external PostgreSQL database (like Railway), set the `DATABASE_URL` environment variable to your database connection string and remove the `db` service from your deployment.
 
+## Versioning and Releases
+
+This project follows [Semantic Versioning](https://semver.org/). Version numbers follow the pattern: MAJOR.MINOR.PATCH.
+
+- **MAJOR**: Incompatible API changes
+- **MINOR**: Add functionality in a backward-compatible manner
+- **PATCH**: Backward-compatible bug fixes
+
+### Current Version
+
+Check the [VERSION](./VERSION) file for the current version.
+
+### Release Process
+
+Releases are managed through GitHub Actions:
+
+1. Go to the "Actions" tab in the GitHub repository
+2. Select the "Create Release" workflow
+3. Click "Run workflow"
+4. Choose the version type (major, minor, patch)
+5. Click "Run workflow"
+
+This will:
+- Increment the version number
+- Create a Git tag
+- Generate a GitHub release
+- Trigger the Docker image build with the new version tag
+
