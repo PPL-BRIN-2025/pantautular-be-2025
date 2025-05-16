@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y \
     bash \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy version file and set label
+COPY VERSION .
+LABEL org.opencontainers.image.version="$(cat VERSION)"
+LABEL org.opencontainers.image.title="Pantau Tular Backend"
+LABEL org.opencontainers.image.description="Django-based backend for the Pantau Tular application"
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
