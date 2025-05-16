@@ -7,15 +7,13 @@ ENV PYTHONUNBUFFERED=1
 # Set work directory
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies and create non-root user
 RUN apt-get update && apt-get --no-install-recommends install -y \
     bash \
     curl \
     netcat-traditional \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create a non-root user to run the application
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy version file and set label
 COPY VERSION .
