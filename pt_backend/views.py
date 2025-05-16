@@ -13,7 +13,7 @@ from .authentication import APIKeyAuthentication
 from django.http import Http404
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 from .statistics import StatisticsCoordinator, AverageSeverityByProvince
-from .filter.grafana_config import (
+from .prome_metrics import (
     measure_time, count_calls,
     CASE_SEARCHED, API_RESPONSE_TIME, API_ERRORS
 )
