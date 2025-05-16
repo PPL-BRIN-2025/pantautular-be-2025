@@ -40,11 +40,8 @@ COPY pt_backend/ pt_backend/
 # COPY templates/ templates/
 # COPY staticfiles/ staticfiles/
 
-# Create staticfiles directory if it doesn't exist
-RUN mkdir -p staticfiles
-
-# Set proper ownership for application files
-RUN chown -R appuser:appuser /app
+# Create staticfiles directory and set proper ownership
+RUN mkdir -p staticfiles && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
