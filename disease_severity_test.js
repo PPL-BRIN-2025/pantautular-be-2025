@@ -27,7 +27,7 @@ function poisson(mean) {
 const errorRate = new Rate('errors');
 
 // Test configuration
-const API_KEY = __ENV.SECRET_API_KEY || '-I60gpBOcqRcylybyWYFCeo7dlXb8DQSOtnGtUauokg';
+const API_KEY = __ENV.SECRET_API_KEY;
 const BASE_URL = 'http://localhost:8000'
 const ENDPOINT = '/api/diseases/severity-stats/';
 
