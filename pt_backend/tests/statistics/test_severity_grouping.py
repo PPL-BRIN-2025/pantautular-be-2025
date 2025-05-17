@@ -26,9 +26,9 @@ class TestSeverityGroupingReport(unittest.TestCase):
         the report should correctly count the total and group by that severity.
         """
         cases = [
-            {"severity": "hospitalisasi"},
-            {"severity": "hospitalisasi"},
-            {"severity": "hospitalisasi"}
+            {"id": 1, "severity": "hospitalisasi"},
+            {"id": 2, "severity": "hospitalisasi"},
+            {"id": 3, "severity": "hospitalisasi"}
         ]
         self.dummy_filter_service.filter_cases.return_value = cases
         report = self.report_service.generate_report(cases)
@@ -42,13 +42,13 @@ class TestSeverityGroupingReport(unittest.TestCase):
         Note: Cases with None for severity are ignored.
         """
         cases = [
-            {"severity": "hospitalisasi"},
-            {"severity": "insiden"},
-            {"severity": "hospitalisasi"},
-            {"severity": "mortalitas"},
-            {"severity": "insiden"},
-            {"severity": "hospitalisasi"},
-            {"severity": None}  # This case should be ignored.
+            {"id": 1, "severity": "hospitalisasi"},
+            {"id": 2, "severity": "insiden"},
+            {"id": 3, "severity": "hospitalisasi"},
+            {"id": 4, "severity": "mortalitas"},
+            {"id": 5, "severity": "insiden"},
+            {"id": 6, "severity": "hospitalisasi"},
+            {"id": 7, "severity": None}  # This case should be ignored.
         ]
         self.dummy_filter_service.filter_cases.return_value = cases
         report = self.report_service.generate_report(cases)
@@ -57,4 +57,43 @@ class TestSeverityGroupingReport(unittest.TestCase):
             "hospitalisasi": 3,
             "insiden": 2,
             "mortalitas": 1
+        })
+
+    def test_handle_duplicate_case_ids(self):
+        """
+        Test that the report correctly handles duplicate case IDs by only counting each unique ID once.
+        This simulates what happens when filtered_cases has duplicates due to multiple news items.
+        """
+        cases = [
+            {"id": 1, "severity": "hospitalisasi"},
+            {"id": 2, "severity": "insiden"},
+            {"id": 1, "severity": "hospitalisasi"},  # Duplicate ID
+            {"id": 3, "severity": "mortalitas"},
+            {"id": 2, "severity": "insiden"},  # Duplicate ID
+            {"id": 1, "severity": "hospitalisasi"},  # Duplicate ID
+        ]
+        report = self.report_service.generate_report(cases)
+        self.assertEqual(report["total_cases"], 3)  # Only 3 unique cases
+        self.assertEqual(report["severity_counts"], {
+            "hospitalisasi": 1,
+            "insiden": 1,
+            "mortalitas": 1
+        })
+    
+    def test_duplicate_ids_with_different_severities(self):
+        """
+        Test handling of an edge case where the same case ID appears multiple times 
+        with different severity values. Only the first occurrence should be counted.
+        """
+        cases = [
+            {"id": 1, "severity": "hospitalisasi"},
+            {"id": 2, "severity": "insiden"},
+            {"id": 1, "severity": "mortalitas"},  # Duplicate ID with different severity
+            {"id": 3, "severity": "hospitalisasi"}
+        ]
+        report = self.report_service.generate_report(cases)
+        self.assertEqual(report["total_cases"], 3)
+        self.assertEqual(report["severity_counts"], {
+            "hospitalisasi": 2,
+            "insiden": 1
         })
