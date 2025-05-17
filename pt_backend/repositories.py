@@ -30,53 +30,21 @@ def get_entity_severity_stats(
         
     Returns:
         List of dictionaries with severity stats or error dict.
-    """
+    """ 
     try:
-        # Set up query - either direct model or using values()  
-        if group_by_field:
-            query = model_class.objects.values(group_by_field)
-            is_values_query = True
-            name_field = name_field or group_by_field
-        else:
-            query = model_class.objects
-            is_values_query = False
-        
-        if filtered_case_ids is not None:
-            query = query.filter(cases__id__in=filtered_case_ids)
-        
         with database_timer():
-            # Annotate the query with the severity counts
-            query = query.annotate(
-                hospitalisasi_count=Coalesce(
-                    Sum(
-                        DjangoCase(
-                            When(cases__severity__iexact='hospitalisasi', then=1),
-                            default=0,
-                            output_field=IntegerField()
-                        )
-                    ), 0
-                ),
-                insiden_count=Coalesce(
-                    Sum(
-                        DjangoCase(
-                            When(cases__severity__iexact='insiden', then=1),
-                            default=0,
-                            output_field=IntegerField()
-                        )
-                    ), 0
-                ),
-                mortalitas_count=Coalesce(
-                    Sum(
-                        DjangoCase(
-                            When(cases__severity__iexact='mortalitas', then=1),
-                            default=0,
-                            output_field=IntegerField()
-                        )
-                    ), 0
-                ),
-                total_cases=Coalesce(Count('cases', distinct=True), 0)
-            )
-
+            # Set up query - either direct model or using values()  
+            if group_by_field:
+                query = model_class.objects.values(group_by_field)
+                is_values_query = True
+                name_field = name_field or group_by_field
+            else:
+                query = model_class.objects
+                is_values_query = False
+            
+            if filtered_case_ids is not None:
+                query = query.filter(cases__id__in=filtered_case_ids)
+                
             # Add the annotations
             entities = query.annotate(
                 hospitalisasi_count=Coalesce(
@@ -138,7 +106,7 @@ def get_entity_severity_stats(
             
         return result
     except Exception as e:
-        DB_ERRORS.labels(error_type="query_error", operation="get_entity_severity_stats").inc()
+        DB_ERRORS.labels(error_type="exception", operation="get_entity_severity_stats").inc()
         print(f"Error in get_entity_severity_stats: {e}")
         return {"error": f"{error_prefix} severity statistics"}
 
