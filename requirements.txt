@@ -43,3 +43,4 @@ whitenoise==6.9.0
 sib-api-v3-sdk
 prometheus-client==0.20.0
 django-prometheus==2.3.1
+psutil
