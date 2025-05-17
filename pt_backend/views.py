@@ -80,14 +80,18 @@ class FiltersView(APIView):
         news_repository = NewsRepository()
         try:
             diseases = [{"value": d, "label": d} for d in disease_repository.get_all_diseases_name()]
-            locations = [{"value": l, "label": l} for l in location_repository.get_all_locations_name()]
+            provinces = [{"value": l, "label": l} for l in location_repository.get_all_locations_province()]
+            cities = [{"value": l, "label": l} for l in location_repository.get_all_locations_city()]
             news = [{"value": n, "label": n} for n in news_repository.get_all_news_name()]
 
 
             response_data = {
                 "data": {
                     "diseases": diseases,
-                    "locations": locations,
+                    "locations": {
+                        "provinces": provinces,
+                        "cities": cities
+                    },
                     "news": news
                 }
             }
@@ -239,39 +243,8 @@ class StatisticsView(APIView):
     
     def post(self, request):
         try:
-            # Process the request data to match expected filter format
-            filter_params = {}
-            
-            # Handle diseases
-            if 'diseases' in request.data and request.data['diseases']:
-                filter_params['disease'] = request.data['diseases']
-            
-            # Handle locations
-            if 'locations' in request.data and request.data['locations']:
-                filter_params['cities'] = request.data['locations']
-            
-            # Handle portals
-            if 'portals' in request.data and request.data['portals']:
-                filter_params['portals'] = request.data['portals']
-            
-            # Handle alertness level
-            if 'level_of_alertness' in request.data and request.data['level_of_alertness'] is not None:
-                alertness = int(request.data['level_of_alertness'])
-                if alertness > 0:
-                    # Option 1: Use the level to filter diseases directly
-                    filter_params['disease_alertness'] = alertness
-            
-            # Handle date range
-            start_date = request.data.get('start_date')
-            end_date = request.data.get('end_date')
-            
-            if start_date or end_date:
-                # Create a date range even if one value is None
-                filter_params['date_range'] = {
-                    'start': start_date,
-                    'end': end_date
-                }
-            
+            filter_params = self._get_filter_params(request)
+
             # Generate comprehensive report with processed filters
             statistics = self.statistics_coordinator.generate_comprehensive_report(**filter_params)
             
@@ -283,6 +256,58 @@ class StatisticsView(APIView):
                 {"error": "An error occurred while fetching statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _get_filter_params(self, request):
+        filter_params = {}
+        
+        # Handle diseases
+        self._add_diseases(request, filter_params)
+        
+        # Handle locations
+        self._add_locations(request, filter_params)
+        
+        # Handle portals
+        self._add_portals(request, filter_params)
+        
+        # Handle alertness level
+        self._add_alertness(request, filter_params)
+        
+        # Handle date range
+        self._add_date_range(request, filter_params)
+        
+        return filter_params
+
+    def _add_diseases(self, request, filter_params):
+        if 'diseases' in request.data and request.data['diseases']:
+            filter_params['disease'] = request.data['diseases']
+
+    def _add_locations(self, request, filter_params):
+        if 'locations' in request.data and request.data['locations']:
+            if 'provinces' in request.data['locations'] and request.data['locations']['provinces']:
+                filter_params['provinces'] = request.data['locations']['provinces']
+            if 'cities' in request.data['locations'] and request.data['locations']['cities']:
+                filter_params['cities'] = request.data['locations']['cities']
+
+    def _add_portals(self, request, filter_params):
+        if 'portals' in request.data and request.data['portals']:
+            filter_params['portals'] = request.data['portals']
+
+    def _add_alertness(self, request, filter_params):
+        if 'level_of_alertness' in request.data and request.data['level_of_alertness'] is not None:
+            alertness = int(request.data['level_of_alertness'])
+            if alertness > 0:
+                filter_params['disease_alertness'] = alertness
+
+    def _add_date_range(self, request, filter_params):
+        start_date = request.data.get('start_date')
+        end_date = request.data.get('end_date')
+
+        if start_date or end_date:
+            filter_params['date_range'] = {
+                'start': start_date,
+                'end': end_date
+            }
+
     
 class SeverityFilteringStatsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -310,7 +335,7 @@ class SeverityFilteringStatsView(APIView):
         """Extract and process filter parameters from request data"""
         # Extract basic filters
         diseases = data.get('diseases', []) or None
-        locations = data.get('locations', [])
+        locations = data.get('locations', {})
         portals = data.get('portals', []) or None
         
         # Process location data
@@ -338,31 +363,31 @@ class SeverityFilteringStatsView(APIView):
         """Process location data to extract provinces and cities"""
         if not locations:
             return None, None
-            
+
         provinces = []
         cities = []
-        
-        for location in locations:
-            # Check if location is a province
-            if Location.objects.filter(province=location).exists():
-                provinces.append(location)
-                continue
-            
-            # Check if location is a city
-            if Location.objects.filter(city=location).exists():
-                cities.append(location)
-                
-                # Add the associated province(s) for each city
-                city_provinces = Location.objects.filter(
-                    city=location
-                ).values_list('province', flat=True).distinct()
-                provinces.extend(city_provinces)
-        
+
+        # Process provinces
+        if locations.get('provinces', []):
+            for province in locations.get('provinces', []):
+                if Location.objects.filter(province=province).exists():
+                    provinces.append(province)
+
+        # Process cities
+        if locations.get('cities', []):
+            for city in locations.get('cities', []):
+                if Location.objects.filter(city=city).exists():
+                    cities.append(city)
+
+        # Ensure that cities are unique
+        cities = list(set(cities)) if cities else None
+
         # Clean up results
         provinces = list(set(provinces)) if provinces else None
-        cities = cities if cities else None
-        
+
         return provinces, cities
+
+
 
 class ProvinceHumidityView(APIView):
     authentication_classes = [APIKeyAuthentication]

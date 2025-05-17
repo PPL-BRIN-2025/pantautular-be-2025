@@ -127,9 +127,18 @@ class DiseaseRepository:
         )
 
 class LocationRepository:
-    def get_all_locations_name(self):
+    def get_all_locations_city(self):
         try:
             locations = Location.objects.values_list("city", flat=True).distinct()
+            if not locations.exists():
+                return []
+            return list(locations)
+        except ObjectDoesNotExist:
+            return {"error": "Error retrieving locations"}
+        
+    def get_all_locations_province(self):
+        try:
+            locations = Location.objects.values_list("province", flat=True).distinct()
             if not locations.exists():
                 return []
             return list(locations)

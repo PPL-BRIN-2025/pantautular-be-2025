@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call
 import unittest
 from django.core.cache import cache
 from datetime import datetime
+from django.db.models import Q
 
 class TestCaseService(unittest.TestCase):
     def setUp(self):
@@ -273,19 +274,20 @@ class TestCaseFilterService(unittest.TestCase):
         
         expected_calls = [
             call(disease__name__in=disease),
-            call(location__province__in=provinces),
-            call(location__city__in=cities),
+            call(Q(location__province__in=provinces) | Q(location__city__in=cities)), 
             call(news__portal__in=portals),
             call(disease__level_of_alertness=disease_alertness),
             # The following depends on the implementation of _filter_by_news_date_range
             call(news__date_published__range=[date_range['start'], date_range['end']])
         ]
         
-        self.assertEqual(self.dummy_qs.filter.call_count, 6)
+        self.assertEqual(self.dummy_qs.filter.call_count, 5)
         # We only check the first 5 calls as the date range filtering might be more complex
+
         for i in range(5):
             self.assertEqual(self.dummy_qs.filter.call_args_list[i], expected_calls[i])
         self.assertEqual(result, self.dummy_qs)
+        
     
     def test_partial_filters(self):
         """
@@ -397,6 +399,15 @@ class TestCaseFilterService(unittest.TestCase):
         # Check no filter was applied even though date_range is not empty
         # This should reach the final "return cases" line
         self.assertEqual(self.dummy_qs.filter.call_count, 0)
+        self.assertEqual(result, self.dummy_qs)
+    
+    def test_filter_by_cities_only(self):
+        cities = ["CityA", "CityB"]
+        
+        result = self.filter_service.filter_cases(cities=cities)
+        
+        # Verify the correct filter was applied
+        self.dummy_qs.filter.assert_called_once_with(location__city__in=cities)
         self.assertEqual(result, self.dummy_qs)
 
 class TestAverageSeverityByProvince(unittest.TestCase):

@@ -321,17 +321,19 @@ class StatisticsViewTest(TestCase):
         """Test filtering statistics by location"""
         response = self.client.post(
             self.url,
-            data=json.dumps({"locations": ["Jakarta", "Bandung"]}),
+            data=json.dumps({
+                "locations": {
+                    "cities": ["Jakarta", "Bandung"]
+                }
+            }),
             content_type='application/json'
         )
         
         self.assertEqual(response.status_code, 200)
-        
-        # Verify generate_comprehensive_report was called with cities filter
+
         call_args = self.mock_coordinator_instance.generate_comprehensive_report.call_args[1]
-        self.assertIn('cities', call_args)
-        self.assertEqual(call_args['cities'], ["Jakarta", "Bandung"])
-    
+        self.assertEqual(call_args['cities'], ["Jakarta", "Bandung"]) 
+
     def test_statistics_with_portal_filter(self):
         """Test filtering statistics by portal"""
         response = self.client.post(
@@ -382,7 +384,7 @@ class StatisticsViewTest(TestCase):
             self.url,
             data=json.dumps({
                 "diseases": ["COVID-19"],
-                "locations": ["Jakarta"],
+                "locations": {"cities": ["Jakarta"]},
                 "portals": ["kompas.com"],
                 "level_of_alertness": 2,
                 "start_date": "2023-01-01",
