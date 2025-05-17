@@ -6,6 +6,7 @@ import os
 import threading
 import psutil
 
+
 # HTTP Request metrics
 REQUEST_COUNT = Counter('django_http_requests_total', 'Total HTTP requests')
 REQUEST_LATENCY = Histogram('django_http_requests_latency_seconds', 'HTTP request latency')
@@ -139,26 +140,30 @@ def track_active_requests(view_func):
 
 # CPU monitoring
 CPU_USAGE = Gauge('django_cpu_usage_percent', 'CPU usage percentage')
+CPU_USAGE_PER_CORE = Gauge('django_cpu_usage_per_core_percent', 'CPU usage per core percentage', ['core'])
 
 def collect_system_metrics():
-    """Collect CPU and memory metrics in a background thread"""
     process = psutil.Process(os.getpid())
     
     while True:
         try:
-            # CPU usage (percent)
+            # Overall process CPU
             process_cpu = process.cpu_percent(interval=1)
             CPU_USAGE.set(process_cpu)
             
-            # Memory usage (bytes)
+            # Per-core CPU usage (system-wide)
+            per_core = psutil.cpu_percent(percpu=True)
+            for i, usage in enumerate(per_core):
+                CPU_USAGE_PER_CORE.labels(core=str(i)).set(usage)
+            
+            # Memory usage
             mem_info = process.memory_info()
             MEMORY_USAGE.set(mem_info.rss)
             
-            # Sleep between measurements
             time.sleep(5)
         except Exception as e:
             print(f"Error collecting system metrics: {e}")
-            time.sleep(15)  # Longer pause if there's an error
+            time.sleep(15)
 
 def start_metrics_collection():
     """Start collecting system metrics in background thread"""
