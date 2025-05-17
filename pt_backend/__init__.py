@@ -32,7 +32,6 @@ def initialize_metrics():
     except Exception as e:
         # Don't fail app startup if metrics initialization fails
         print(f"Error initializing metrics: {e}")
-        pass
 
 # Call initialization
 initialize_metrics()

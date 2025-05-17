@@ -62,7 +62,7 @@ export default function () {
   const response = http.get(`${BASE_URL}${ENDPOINT}`, { headers });
   
   // Check response
-  const success = check(response, {
+  check(response, {
     'status is 200': (r) => r.status === 200,
     'response time < 6s': (r) => r.timings.duration < 6000,
     'has valid response': (r) => {
