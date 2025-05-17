@@ -1,5 +1,6 @@
 from django.test import TestCase
-from pt_backend.services import CaseService, CacheService, CasesFilterService
+from pt_backend.constants import PROVINCE_TO_CODE
+from pt_backend.services import AverageSeverityByProvince, CaseService, CacheService, CasesFilterService
 from pt_backend.interfaces import CaseRepositoryInterface, CacheInterface
 from unittest.mock import MagicMock, call
 import unittest
@@ -399,8 +400,7 @@ class TestCaseFilterService(unittest.TestCase):
         # This should reach the final "return cases" line
         self.assertEqual(self.dummy_qs.filter.call_count, 0)
         self.assertEqual(result, self.dummy_qs)
-
-
+    
     def test_filter_by_cities_only(self):
         cities = ["CityA", "CityB"]
         
@@ -409,3 +409,82 @@ class TestCaseFilterService(unittest.TestCase):
         # Verify the correct filter was applied
         self.dummy_qs.filter.assert_called_once_with(location__city__in=cities)
         self.assertEqual(result, self.dummy_qs)
+
+class TestAverageSeverityByProvince(unittest.TestCase):
+    def setUp(self):
+        self.case_service = MagicMock()
+        self.analyzer = AverageSeverityByProvince(self.case_service)
+        self.analyzer.PROVINCE_TO_CODE = PROVINCE_TO_CODE  # Add the province code mapping
+
+    def test_positive_case_with_multiple_provinces(self):
+        """Test with multiple provinces having different severities"""
+        # Mock data with multiple provinces
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "biasa", "location__province": "Bali"},
+            {"status": "minimal", "location__province": "Aceh"}
+        ]
+        self.case_service.get_status_and_province.return_value = mock_data
+
+        result = self.analyzer.compute()
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: average of bahaya (3) and minimal (1) = 2, weight = log(2 + 1) ≈ 1.1
+        # 2 * 1.1 = 2.2
+        self.assertAlmostEqual(result[0]["value"], 2.2, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
+
+    def test_invalid_status_ignored(self):
+        """Test that cases with invalid status are ignored"""
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "invalid", "location__province": "Aceh"},  # Invalid status
+            {"status": "biasa", "location__province": "Bali"}
+        ]
+        self.case_service.get_status_and_province.return_value = mock_data
+
+        result = self.analyzer.compute()
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: bahaya (3), weight = log(1 + 1) ≈ 0.69
+        # 3 * 0.69 = 2.08
+        self.assertAlmostEqual(result[0]["value"], 2.08, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
+
+    def test_missing_status_or_province(self):
+        """Test handling of cases with missing status or province"""
+        mock_data = [
+            {"status": "bahaya", "location__province": "Aceh"},
+            {"status": "biasa", "location__province": None},  # Missing province
+            {"status": None, "location__province": "Bali"},   # Missing status
+            {"status": "biasa", "location__province": "Bali"}
+        ]
+        self.case_service.get_status_and_province.return_value = mock_data
+
+        result = self.analyzer.compute()
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["id"], "ID-AC")
+        # For Aceh: bahaya (3), weight = log(1 + 1) ≈ 0.69
+        # 3 * 0.69 = 2.08
+        self.assertAlmostEqual(result[0]["value"], 2.08, places=1)
+        self.assertEqual(result[1]["id"], "ID-BA")
+        # For Bali: biasa (2), weight = log(1 + 1) ≈ 0.69
+        # 2 * 0.69 = 1.38
+        self.assertAlmostEqual(result[1]["value"], 1.38, places=1)
+
+    def test_empty_data(self):
+        """Test handling of empty data"""
+        self.case_service.get_status_and_province.return_value = []
+        
+        result = self.analyzer.compute()
+        
+        self.assertEqual(result, [])
