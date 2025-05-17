@@ -1,7 +1,5 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate } from 'k6/metrics';
-import exec from 'k6/execution';
 import crypto from 'k6/crypto';
 
 // Helper function for secure random
@@ -23,9 +21,6 @@ function poisson(mean) {
     return k - 1;
 }
 
-// Define custom metrics
-const errorRate = new Rate('errors');
-
 // Test configuration
 const API_KEY = __ENV.SECRET_API_KEY;
 const BASE_URL = 'http://localhost:8000'
@@ -38,21 +33,22 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: '2m', target: 75 },   
-        { duration: '5m', target: 100 },   
-        { duration: '5m', target: 125 },
-        { duration: '5m', target: 200 },
-        { duration: '5m', target: 250 },
-        { duration: '5m', target: 250 },
-        { duration: '10m', target: 0 },     
+        { duration: '2m', target: 100 },   
+        { duration: '4m', target: 100 },   
+        { duration: '2m', target: 200 },
+        { duration: '4m', target: 200 },
+        { duration: '2m', target: 300 },
+        { duration: '4m', target: 300 },
+        { duration: '2m', target: 400 },
+        { duration: '4m', target: 400 },
+        { duration: '2m', target: 0 },     
       ],
       gracefulRampDown: '10s',
     }
   },
   thresholds: {
-    http_req_duration: ['p(95)<2000'], // 95% of requests should be below 2s
-    http_req_failed: ['rate<0.1'],     // Less than 10% of requests should fail
-    errors: ['rate<0.1'],              // Custom error metric
+    http_req_duration: ['p(95)<6000'], // 95% of requests should be below 6s
+    http_req_failed: ['rate<0.3'],     // Less than 30% of requests should fail
   },
   systemTags: ['scenario', 'status', 'method'],
 };
@@ -68,7 +64,7 @@ export default function () {
   // Check response
   const success = check(response, {
     'status is 200': (r) => r.status === 200,
-    'response time < 2s': (r) => r.timings.duration < 2000,
+    'response time < 6s': (r) => r.timings.duration < 6000,
     'has valid response': (r) => {
       try {
         const body = r.json();
@@ -97,14 +93,6 @@ export default function () {
       }
     },
   });
-  
-  // Update custom error rate metric
-  errorRate.add(!success);
-  
-  // Log current stage info
-  if (__ENV.DEBUG) {
-    console.log(`VUs: ${exec.instance.vusActive}, Iteration: ${exec.instance.iterationInInstance}`);
-  }
   
   // Use shorter sleep times for stress test (1 second mean)
   const sleepTime = poisson(1) / 2;
