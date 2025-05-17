@@ -172,6 +172,7 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^https:\/\/.*\.up\.railway\.app$",  # Allows all railway.app subdomains
+    r"^https:\/\/.*\.netlify\.app$",  # Allows all netlify.app subdomains
 ]
 
 CORS_ALLOW_CREDENTIALS = True
