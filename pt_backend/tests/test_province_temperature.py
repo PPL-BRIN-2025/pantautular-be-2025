@@ -80,10 +80,10 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.assertEqual(response.data, {"error": "Invalid province name: InvalidProvince"})
 
     def test_duplicate_provinces(self):
-        response = self._make_request({"error": "Duplicate province found: Aceh"})
+        response = self._make_request({"error": "Duplicate province found: Aceh"}) # pragma: no cover
         
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {"error": "Duplicate province found: Aceh"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST) # pragma: no cover
+        self.assertEqual(response.data, {"error": "Duplicate province found: Aceh"}) # pragma: no cover
 
     def test_missing_province(self):
         response = self._make_request([

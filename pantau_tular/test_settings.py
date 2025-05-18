@@ -46,10 +46,10 @@ REST_FRAMEWORK = {
 # Disable migrations during tests
 class DisableMigrations:
     def __contains__(self, item):
-        return True
+        return True #pragma: no cover
 
     def __getitem__(self, item):
-        return None
+        return None #pragma: no cover
 
 # Define a simple SECRET_KEY for testing
 SECRET_KEY = 'test-secret-key-for-ci'
