@@ -62,15 +62,22 @@ jobs:
         run: |
           TAGS="${{ steps.meta.outputs.tags }}"
           echo "All tags: $TAGS"
+          SCAN_TAG=""
           for tag in ${TAGS//,/ }
           do
             if [[ "$tag" == sha-* ]]; then
               echo "Selected tag: $tag"
-              echo "SCAN_TAG=$tag" >> $GITHUB_ENV
-              echo "::set-output name=scan_tag::$tag"
+              SCAN_TAG=$tag
               break
             fi
           done
+
+          if [ -z "$SCAN_TAG" ]; then
+            echo "No sha tag found, fallback to latest"
+            SCAN_TAG="latest"
+          fi
+
+          echo "scan_tag=$SCAN_TAG" >> $GITHUB_OUTPUT
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
