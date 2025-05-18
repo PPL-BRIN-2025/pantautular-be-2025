@@ -35,6 +35,8 @@ COPY VERSION .
 COPY requirements.txt .
 COPY pantau_tular/ pantau_tular/
 COPY pt_backend/ pt_backend/
+COPY hello/ hello/
+COPY authentication/ authentication/
 # COPY templates/ templates/
 # COPY staticfiles/ staticfiles/
 
