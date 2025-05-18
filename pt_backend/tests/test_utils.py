@@ -41,7 +41,7 @@ def generate_city_name(index):
         city_pattern = random.choice(CITY_PATTERNS)
         city_base = CITY_NAMES[index]
         return city_pattern.format(city_base)
-    return f"City {uuid.uuid4().hex[:6]}"
+    return f"City {uuid.uuid4().hex[:6]}" # pragma: no cover
 
 
 def create_location(city_name, province_name):
