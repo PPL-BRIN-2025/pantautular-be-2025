@@ -37,7 +37,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python manage.py test
+          python manage.py test --settings=pantau_tular.test_settings
         env:
           DATABASE_URL: ${{ secrets.TEST_DATABASE_URL || secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
