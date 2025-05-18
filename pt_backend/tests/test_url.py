@@ -34,4 +34,4 @@ class HealthCheckURLTest(BaseTestCase):
 
     def test_health_check_url_denies_post(self):
         response = self.client.post('/health/', {})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
