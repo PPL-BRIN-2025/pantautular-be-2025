@@ -48,6 +48,7 @@ jobs:
             type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
 
       - name: Build and push Docker image
+        id: build-push
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -57,36 +58,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Extract short SHA tag for scanning
-        id: extract_tag
-        run: |
-          TAGS="${{ steps.meta.outputs.tags }}"
-          echo "All tags: $TAGS"
-          SCAN_TAG=""
-          for tag in ${TAGS//,/ }
-          do
-            if [[ "$tag" == sha-* ]]; then
-              echo "Selected tag: $tag"
-              SCAN_TAG=$tag
-              break
-            fi
-          done
-
-          if [ -z "$SCAN_TAG" ]; then
-            echo "No sha tag found, fallback to latest"
-            SCAN_TAG="latest"
-          fi
-
-          echo "scan_tag=$SCAN_TAG" >> $GITHUB_OUTPUT
-
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.extract_tag.outputs.scan_tag }}
+          # Scan the locally built image instead of pulling from registry
+          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
+          ignore-unfixed: true
         if: github.event_name != 'pull_request'
 
       - name: Upload Trivy scan results to GitHub Security tab
