@@ -57,16 +57,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Shorten Git SHA
-        id: short_sha
+      - name: Extract short SHA tag for scanning
+        id: extract_tag
         run: |
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
-          echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          TAGS="${{ steps.meta.outputs.tags }}"
+          echo "All tags: $TAGS"
+          for tag in ${TAGS//,/ }
+          do
+            if [[ "$tag" == sha-* ]]; then
+              echo "Selected tag: $tag"
+              echo "SCAN_TAG=$tag" >> $GITHUB_ENV
+              echo "::set-output name=scan_tag::$tag"
+              break
+            fi
+          done
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.short_sha.outputs.SHORT_SHA }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.extract_tag.outputs.scan_tag }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -77,4 +86,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-results.sarif'
-        if: github.event_name != 'pull_request' 
+        if: github.event_name != 'pull_request'
