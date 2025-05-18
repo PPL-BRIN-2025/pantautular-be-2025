@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from django.views.decorators.http import require_http_methods
 
 
 from pt_backend.models import Location
@@ -10,7 +11,7 @@ from .services import AverageSeverityByProvince, CacheService, CaseService, Case
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
 from .statistics.coordinator import StatisticsCoordinator
 from .prome_metrics import (
@@ -23,6 +24,9 @@ from .prome_metrics import (
     CACHE_HIT_RATE, API_SUCCESS, DB_ERRORS, REQUEST_COUNT, REQUEST_LATENCY, track_active_requests, track_data_count
 )
 from .constants import CLIMATE_ERROR_INVALID_FORMAT
+from datetime import datetime
+from django.db import connections
+from django.db.utils import OperationalError
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 
@@ -540,3 +544,25 @@ class WeightedSeverityAnalysisView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+@require_http_methods(['GET'])
+def health_check(request):
+    """
+    Health check endpoint for Docker container
+    """
+    # Check database connection
+    db_healthy = True
+    try:
+        connections['default'].cursor()
+    except OperationalError:
+        db_healthy = False
+    
+    status = 200 if db_healthy else 500
+    
+    health_data = {
+        'status': 'healthy' if db_healthy else 'unhealthy',
+        'database': 'connected' if db_healthy else 'disconnected',
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    return JsonResponse(health_data, status=status)

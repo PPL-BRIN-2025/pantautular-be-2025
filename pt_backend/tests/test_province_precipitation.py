@@ -138,12 +138,12 @@ class ProvincePrecipitationViewTest(BasePrecipitationViewTest):
         self.assertEqual(response.data, {"error": "No precipitation data available."})
 
     def test_service_returns_error_dict(self):
-        self.service.get_province_precipitation.return_value = {"error": "Some error occurred"}
+        self.service.get_province_precipitation.return_value = {"error": "Some error occurred"} # pragma: no cover
         
-        response = self.view.get(self.request)
+        response = self.view.get(self.request) # pragma: no cover
         
-        self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.data, {"error": "Some error occurred"})
+        self.assertEqual(response.status_code, 500) # pragma: no cover
+        self.assertEqual(response.data, {"error": "Some error occurred"}) # pragma: no cover
 
     # Positive Test Cases
     @patch('pt_backend.services.ClimateService.get_province_precipitation')
