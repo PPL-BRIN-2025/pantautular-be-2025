@@ -17,6 +17,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Add these permissions for SARIF upload:
+      security-events: write
+      actions: read
 
     steps:
       - name: Checkout repository
@@ -61,7 +64,6 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          # Use the first tag from metadata output
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: 'sarif'
           output: 'trivy-results.sarif'
@@ -69,13 +71,12 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
         env:
-          # Pass registry credentials via environment variables
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         if: github.event_name != 'pull_request'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3  # Updated to v3
         with:
           sarif_file: 'trivy-results.sarif'
         if: github.event_name != 'pull_request'
