@@ -349,15 +349,41 @@ class SeverityFilteringStatsView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cache_service = CacheService()
+        self.cache_timeout = 600 # 10 min cache timeout
+    
     def post(self, request):
         """Handle POST requests with JSON payload for filtering"""
         try:
             # Extract and process filter parameters
             filter_params = self._extract_filter_parameters(request.data)
             
-            # Initialize service and get results
+            # Generate cache key based on filter parameters
+            hashable_items = []
+            for k, v in filter_params.items():
+                if isinstance(v, list):
+                    v = tuple(v)  # Convert lists to tuples (which are hashable)
+                elif isinstance(v, dict):
+                    # Convert nested dictionaries to tuples of tuples
+                    v = tuple((k2, tuple(v2) if isinstance(v2, list) else v2) 
+                                for k2, v2 in v.items())
+                hashable_items.append((k, v))
+
+            cache_key = f"stats_report_{hash(frozenset(hashable_items))}"
+
+            # Check if results are in cache
+            cached_results = self.cache_service.get(cache_key)
+            if cached_results:
+                return Response(cached_results, status=status.HTTP_200_OK)
+            
+            # Initialize service and get results if not in cache
             severity_filter = SeverityFilteringService()
             results = severity_filter.get_filter_stats(**filter_params)
+            
+            # Cache the results
+            self.cache_service.set(cache_key, results, timeout=self.cache_timeout)
             
             return Response(results, status=status.HTTP_200_OK)
         
