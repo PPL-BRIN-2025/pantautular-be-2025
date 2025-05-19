@@ -1,3 +1,4 @@
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -30,7 +31,11 @@ from datetime import datetime
 from django.db import connections
 from django.db.utils import OperationalError
 
+logger = logging.getLogger(__name__)
+
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
+CACHE_TIMEOUT = 600
+CACHE_KEY_PREFIX = "stats_report_"
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -354,7 +359,7 @@ class SeverityFilteringStatsView(APIView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cache_service = CacheService()
-        self.cache_timeout = 600 # 10 min cache timeout
+        self.cache_timeout = CACHE_TIMEOUT
     
     def post(self, request):
         """Handle POST requests with JSON payload for filtering"""
@@ -397,14 +402,14 @@ class SeverityFilteringStatsView(APIView):
                     v = tuple((k2, tuple(v2) if isinstance(v2, list) else v2) 
                                 for k2, v2 in v.items())
                 hashable_items.append((k, v))
-
-            cache_key = f"stats_report_{hash(frozenset(hashable_items))}"
+            cache_key = f"{CACHE_KEY_PREFIX}{hash(frozenset(hashable_items))}"
             cached_result = self.cache_service.get(cache_key)
             if cached_result:
                 return cached_result
         except Exception as e:
-            # If caching fails, log it but continue without caching
-            print(f"Caching error in statistics: {str(e)}")
+            logger.error(f"Cache key generation error: {str(e)}")
+            return None
+
     
     def _extract_filter_parameters(self, data):
         """Extract and process filter parameters from request data"""
