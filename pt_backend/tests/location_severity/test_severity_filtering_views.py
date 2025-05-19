@@ -336,3 +336,102 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             alert_levels=None,
             date_range=None
         )
+        
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.CacheService')
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_with_cache_miss_and_hit(self, mock_service, mock_cache, mock_auth):
+        """Test cache miss followed by cache hit behavior"""
+        # Setup mocks
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+        
+        mock_cache_instance = MagicMock()
+        # First call returns None (cache miss), second call returns results (cache hit)
+        mock_cache_instance.get.side_effect = [None, self.mock_results]
+        mock_cache.return_value = mock_cache_instance
+        
+        # First request - cache miss
+        response1 = self.client.post(
+            self.url,
+            data={"diseases": ["COVID-19"]},
+            format='json'
+        )
+        
+        # Second request - should be cache hit
+        response2 = self.client.post(
+            self.url, 
+            data={"diseases": ["COVID-19"]},
+            format='json'
+        )
+        
+        # Assertions
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        
+        # Service should be called only once (first request)
+        mock_service_instance.get_filter_stats.assert_called_once()
+        
+        # Cache should be queried twice and set once
+        self.assertEqual(mock_cache_instance.get.call_count, 2)
+        mock_cache_instance.set.assert_called_once()
+        
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_with_none_and_empty_data(self, mock_service, mock_auth):
+        """Test handling of None and empty values in the request data"""
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+        
+        # Test with None values in request
+        response = self.client.post(
+            self.url,
+            data={
+                "diseases": None, 
+                "locations": None,
+                "portals": None,
+                "level_of_alertness": None,
+                "start_date": None,
+                "end_date": None
+            },
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_service_instance.get_filter_stats.assert_called_once_with(
+            diseases=None,
+            provinces=None,
+            cities=None,
+            news_portals=None,
+            alert_levels=None,
+            date_range=None
+        )
+        
+        # Reset mock for next test
+        mock_service_instance.get_filter_stats.reset_mock()
+        
+        # Test with empty lists/strings
+        response = self.client.post(
+            self.url,
+            data={
+                "diseases": [], 
+                "locations": {},
+                "portals": [],
+                "level_of_alertness": "",
+                "start_date": "",
+                "end_date": ""
+            },
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_service_instance.get_filter_stats.assert_called_once_with(
+            diseases=None,  # Empty list should convert to None
+            provinces=None,
+            cities=None,
+            news_portals=None,
+            alert_levels=None,
+            date_range=None  # Empty strings should not be in date range
+        )
