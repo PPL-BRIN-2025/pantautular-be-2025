@@ -428,7 +428,7 @@ class SeverityFilteringStatsView(APIView):
 
 
 class ProvinceHumidityView(APIView):
-    authentication_classes = [CustomJWTAuthentication]
+    authentication_classes = [CustomJWTAuthentication, APIKeyAuthentication]
     permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
@@ -458,7 +458,7 @@ class ProvinceHumidityView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ProvincePrecipitationView(APIView):
-    authentication_classes = [CustomJWTAuthentication]
+    authentication_classes = [CustomJWTAuthentication, APIKeyAuthentication]
     permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
@@ -488,7 +488,7 @@ class ProvincePrecipitationView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ProvinceTemperatureView(APIView):
-    authentication_classes = [CustomJWTAuthentication]
+    authentication_classes = [CustomJWTAuthentication, APIKeyAuthentication]
     permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
@@ -518,7 +518,7 @@ class ProvinceTemperatureView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class WeightedSeverityAnalysisView(APIView):
-    authentication_classes = [CustomJWTAuthentication]
+    authentication_classes = [CustomJWTAuthentication, APIKeyAuthentication]
     permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
