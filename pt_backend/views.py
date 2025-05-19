@@ -5,6 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.http import require_http_methods
 
 
+from authentication.permissions import IsTokenAuthenticated
+from authentication.security import CustomJWTAuthentication
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
 from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
@@ -426,8 +428,8 @@ class SeverityFilteringStatsView(APIView):
 
 
 class ProvinceHumidityView(APIView):
-    authentication_classes = [APIKeyAuthentication]
-    permission_classes = []
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -456,8 +458,8 @@ class ProvinceHumidityView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ProvincePrecipitationView(APIView):
-    authentication_classes = [APIKeyAuthentication]
-    permission_classes = []
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -486,8 +488,8 @@ class ProvincePrecipitationView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ProvinceTemperatureView(APIView):
-    authentication_classes = [APIKeyAuthentication]
-    permission_classes = []
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -516,8 +518,8 @@ class ProvinceTemperatureView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class WeightedSeverityAnalysisView(APIView):
-    authentication_classes = [APIKeyAuthentication]
-    permission_classes = []
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated]
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
