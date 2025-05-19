@@ -361,18 +361,8 @@ class SeverityFilteringStatsView(APIView):
             filter_params = self._extract_filter_parameters(request.data)
             
             # Generate cache key based on filter parameters
-            hashable_items = []
-            for k, v in filter_params.items():
-                if isinstance(v, list):
-                    v = tuple(v)  # Convert lists to tuples (which are hashable)
-                elif isinstance(v, dict):
-                    # Convert nested dictionaries to tuples of tuples
-                    v = tuple((k2, tuple(v2) if isinstance(v2, list) else v2) 
-                                for k2, v2 in v.items())
-                hashable_items.append((k, v))
-
-            cache_key = f"stats_report_{hash(frozenset(hashable_items))}"
-
+            cache_key = self._generate_cache_key(filter_params)
+            
             # Check if results are in cache
             cached_results = self.cache_service.get(cache_key)
             if cached_results:
@@ -392,6 +382,27 @@ class SeverityFilteringStatsView(APIView):
                 {"error": f"Error processing filter request: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    def _generate_cache_key(self, filter_params):
+        try:
+            # Convert filter items to something hashable
+            hashable_items = []
+            for k, v in filter_params.items():
+                if isinstance(v, list):
+                    v = tuple(v)  # Convert lists to tuples (which are hashable)
+                elif isinstance(v, dict):
+                    # Convert nested dictionaries to tuples of tuples
+                    v = tuple((k2, tuple(v2) if isinstance(v2, list) else v2) 
+                                for k2, v2 in v.items())
+                hashable_items.append((k, v))
+
+            cache_key = f"stats_report_{hash(frozenset(hashable_items))}"
+            cached_result = self.cache_service.get(cache_key)
+            if cached_result:
+                return cached_result
+        except Exception as e:
+            # If caching fails, log it but continue without caching
+            print(f"Caching error in statistics: {str(e)}")
     
     def _extract_filter_parameters(self, data):
         """Extract and process filter parameters from request data"""
