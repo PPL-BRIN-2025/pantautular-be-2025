@@ -28,7 +28,9 @@ class CaseHealthProtocolDetailFormatter:
 class CaseGenderDetailFormatter:
     _gender_map = {
         "Male": "Pria",
-        "Female": "Perempuan"
+        "male": "Pria",
+        "Female": "Perempuan",
+        "female": "Perempuan"
     }
 
     @staticmethod
