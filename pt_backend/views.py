@@ -368,19 +368,19 @@ class SeverityFilteringStatsView(APIView):
             filter_params = self._extract_filter_parameters(request.data)
             
             # Generate cache key based on filter parameters
-            cache_key = self._generate_cache_key(filter_params)
+            # cache_key = self._generate_cache_key(filter_params)
             
             # Check if results are in cache
-            cached_results = self.cache_service.get(cache_key)
-            if cached_results:
-                return Response(cached_results, status=status.HTTP_200_OK)
+            # cached_results = self.cache_service.get(cache_key)
+            # if cached_results:
+                # return Response(cached_results, status=status.HTTP_200_OK)
             
             # Initialize service and get results if not in cache
             severity_filter = SeverityFilteringService()
             results = severity_filter.get_filter_stats(**filter_params)
             
             # Cache the results
-            self.cache_service.set(cache_key, results, timeout=self.cache_timeout)
+            # self.cache_service.set(cache_key, results, timeout=self.cache_timeout)
             
             return Response(results, status=status.HTTP_200_OK)
         
