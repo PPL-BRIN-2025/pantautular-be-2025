@@ -164,8 +164,7 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 CORS_ALLOWED_ORIGINS = [
-    "https://pantautular-fe.netlify.app",
-    "https://radiant-cobbler-73f044.netlify.app"
+    "https://pantautular.netlify.app",
 ]
 
 
