@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
+from csp.constants import SELF
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -59,7 +60,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'corsheaders.middleware.CorsMiddleware',
-    'pantau_tular.middleware.SecurityHeadersMiddleware',
+    'csp.middleware.CSPMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -68,7 +69,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
-    'csp.middleware.CSPMiddleware',
 ]
 
 REST_FRAMEWORK = {
@@ -213,20 +213,20 @@ SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 
-# CSP Settings (additional configuration) - Strict Security Policy
-CSP_DEFAULT_SRC = ("'self'",)
-CSP_SCRIPT_SRC = ("'self'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com")
-CSP_STYLE_SRC = ("'self'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net")
-CSP_FONT_SRC = ("'self'", "https://fonts.gstatic.com")
-CSP_IMG_SRC = ("'self'", "data:", "https:")
-CSP_CONNECT_SRC = ("'self'", "https://api.github.com")
-CSP_FRAME_ANCESTORS = ("'none'",)
-CSP_BASE_URI = ("'self'",)
-CSP_FORM_ACTION = ("'self'",)
-CSP_OBJECT_SRC = ("'none'",)
+CONTENT_SECURITY_POLICY = {
+    'default-src': SELF,
+    'script-src': [SELF, 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com'],
+    'style-src': [SELF, 'https://fonts.googleapis.com', 'https://cdn.jsdelivr.net'],
+    'font-src': [SELF, 'https://fonts.gstatic.com'],
+    'img-src': [SELF, 'data:', 'https:'],
+    'connect-src': [SELF, 'https://api.github.com'],
+    'frame-ancestors': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'object-src': ["'none'"],
+}
 
 # CSP Configuration Options
-CSP_REPORT_ONLY = DEBUG  # Use report-only mode in development
 # CSP_REPORT_URI = '/csp-violation-report/'  # Uncomment to enable violation reporting
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
