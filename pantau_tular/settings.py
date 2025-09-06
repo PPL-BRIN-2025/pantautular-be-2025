@@ -36,7 +36,7 @@ DEBUG = False
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1",".up.railway.app"]
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,.up.railway.app,.koyeb.app").split(",")
 
 # Application definition
 
