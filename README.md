@@ -1,6 +1,6 @@
 # Pantau Tular Backend
 
-A Django-based backend for the Pantau Tular application.
+A Django-based backend for the Pantau Tular application. 
 
 ## Containerization Guide
 
