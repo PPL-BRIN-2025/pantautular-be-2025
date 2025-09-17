@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from pt_backend.models import Role, User
 from django.contrib.auth.hashers import make_password
+from pt_backend.models import Disease, Location, Case
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -58,3 +59,42 @@ class RolesAndFailedLoginAPITests(TestCase):
         logs = resp2.json()
         self.assertGreaterEqual(logs['count'], 3)
         self.assertTrue(all('email' in ev and 'timestamp' in ev for ev in logs['events']))
+
+    def test_users_summary(self):
+        # Add two more users; mark one active via last_login
+        u1 = User.objects.create(
+            name='Alice',
+            email='alice@example.com',
+            password=make_password('P@ss1'),
+            role='ADMIN',
+            last_login=timezone.now(),
+        )
+        u2 = User.objects.create(
+            name='Bob',
+            email='bob@example.com',
+            password=make_password('P@ss2'),
+            role='VIEWER',
+        )
+        url = reverse('admin-users-summary')
+        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Total users: existing seeded 1 + 2 new = 3
+        self.assertEqual(data['total_users'], 3)
+        # Active users: only Alice (John, Bob have null last_login)
+        self.assertEqual(data['active_users'], 1)
+
+    def test_datasets_summary(self):
+        # Create minimal dependencies and 3 cases
+        disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
+        loc1 = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
+        loc2 = Location.objects.create(latitude=-6.9, longitude=107.6, city="Bandung", province="Jawa Barat")
+        Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc1)
+        Case.objects.create(gender="female", age=25, city="Bandung", status="biasa", severity="hospitalisasi", disease=disease, location=loc2)
+        Case.objects.create(gender="male", age=40, city="Jakarta", status="bahaya", severity="mortalitas", disease=disease, location=loc1)
+
+        url = reverse('admin-datasets-summary')
+        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['total_datasets'], 3)
