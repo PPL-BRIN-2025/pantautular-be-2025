@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
+    'admin_feature',
 ]
 
 MIDDLEWARE = [
@@ -112,12 +113,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'pantau_tular.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+import sys
 
-DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
-}
+if any(arg in sys.argv for arg in ("test", "testserver")) or os.environ.get("PYTEST_CURRENT_TEST"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "test_db.sqlite3",  # or ":memory:" for in-memory
+        }
+    }
+    # Fast tests + isolated mail
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -199,6 +206,7 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-api-key',
+    'X-API-KEY',
 ]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

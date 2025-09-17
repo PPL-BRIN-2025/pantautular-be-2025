@@ -218,6 +218,37 @@ class AuthService:
                 
         return False, None
     
+    def _record_failed_event(self, email):
+        """Record failed login event and global counters in cache"""
+        try:
+            # Increment total failures
+            total_key = 'auth:failed_login_total'
+            total_failed = cache.get(total_key, 0) + 1
+            cache.set(total_key, total_failed, None)
+
+            # Track unique emails
+            unique_key = 'auth:failed_login_unique_emails'
+            unique_emails = cache.get(unique_key)
+            if unique_emails is None:
+                unique_emails = set()
+            unique_emails.add(email.lower())
+            cache.set(unique_key, unique_emails, None)
+            cache.set('auth:failed_login_unique_emails_count', len(unique_emails), None)
+
+            # Append event
+            events_key = 'auth:failed_login_events'
+            events = cache.get(events_key, [])
+            events.append({
+                'email': email.lower(),
+                'timestamp': timezone.now().isoformat(),
+            })
+            # keep only last 1000
+            if len(events) > 1000:
+                events = events[-1000:]
+            cache.set(events_key, events, None)
+        except Exception as e:
+            logger.warning(f"Failed to record login event: {e}")
+    
     def increment_failed_attempts(self, email):
         """
         Increment the number of failed attempts for an email
@@ -240,6 +271,9 @@ class AuthService:
         else:
             # Cache for a longer time to track attempts across sessions
             cache.set(cache_key, lockout_data, 24 * 60 * 60)  # 24 hours
+
+        # Record global counters and log event
+        self._record_failed_event(email)
     
     def reset_failed_attempts(self, email):
         """Reset failed attempts counter after successful login"""
