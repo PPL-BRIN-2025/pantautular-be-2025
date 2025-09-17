@@ -7,6 +7,7 @@ from authentication.security import APIKeyAuthentication
 from pt_backend.models import Role
 from django.utils import timezone
 from datetime import datetime, timedelta
+from pt_backend.models import User, Case
 
 # Create your views here.
 
@@ -75,3 +76,32 @@ class FailedLoginEventsAPIView(APIView):
             'count': len(recent),
             'events': recent,
         }, status=status.HTTP_200_OK)
+    
+class UsersSummaryAPIView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def get(self, request):
+        total_users = User.objects.count()
+        active_users = User.objects.filter(last_login__isnull=False).count()
+        return Response(
+            {
+                "total_users": total_users,
+                "active_users": active_users,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
+class DatasetsSummaryAPIView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def get(self, request):
+        # Define "dataset" as the number of Case records
+        total_datasets = Case.objects.count()
+        return Response(
+            {
+                "total_datasets": total_datasets,
+            },
+            status=status.HTTP_200_OK,
+        )
