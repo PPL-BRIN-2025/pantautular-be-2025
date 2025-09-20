@@ -49,3 +49,12 @@ class AdminUserChangeRoleView(APIView):
         UserRole.objects.create(user=user, role=role_obj)
 
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+    
+class AdminUserListView(ListAPIView):
+    """
+    GET /admin/users
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+    serializer_class = UserSerializer
+    queryset = User.objects.all().order_by("id")
