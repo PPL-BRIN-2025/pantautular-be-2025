@@ -58,3 +58,12 @@ class AdminUserListView(ListAPIView):
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
     queryset = User.objects.all().order_by("id")
+
+class AdminUserDeleteView(DestroyAPIView):
+    """
+    DELETE /admin/users/<int:id>
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+    lookup_field = "id"
+    queryset = User.objects.all()
