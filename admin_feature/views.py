@@ -105,3 +105,38 @@ class DatasetsSummaryAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class StatsAPIView(APIView):
+    """Single endpoint consumed by FE /admin-dashboard for top cards.
+
+    Returns:
+    - totalUsers: int
+    - activeUsers: int
+    - datasets: int
+    - failedLogins: int (from cache counters)
+    - roles: list[str]
+    """
+
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def get(self, request):
+        total_users = User.objects.count()
+        active_users = User.objects.filter(last_login__isnull=False).count()
+        datasets = Case.objects.count()
+        roles = list(Role.objects.values_list('name', flat=True).order_by('name'))
+
+        # Failed login total from cache (default 0)
+        failed_logins = cache.get('auth:failed_login_total', 0)
+
+        return Response(
+            {
+                "totalUsers": total_users,
+                "activeUsers": active_users,
+                "datasets": datasets,
+                "failedLogins": failed_logins,
+                "roles": roles,
+            },
+            status=status.HTTP_200_OK,
+        )
