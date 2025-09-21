@@ -98,3 +98,35 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['total_datasets'], 3)
+
+    def test_stats_endpoint(self):
+        # Seed some additional data
+        self.user.last_login = timezone.now()
+        self.user.save(update_fields=["last_login"])  # active = 1
+
+        disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
+        loc = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
+        Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc)
+
+        url = reverse('admin-stats')
+        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Validate presence and basic correctness
+        self.assertIn('totalUsers', data)
+        self.assertIn('activeUsers', data)
+        self.assertIn('datasets', data)
+        self.assertIn('failedLogins', data)
+        self.assertIn('roles', data)
+
+        self.assertEqual(data['totalUsers'], User.objects.count())
+        self.assertEqual(data['activeUsers'], User.objects.filter(last_login__isnull=False).count())
+        self.assertEqual(data['datasets'], Case.objects.count())
+        self.assertListEqual(sorted(data['roles']), sorted(list(Role.objects.values_list('name', flat=True))))
+        # failedLogins comes from cache, default 0 in a fresh test run
+        self.assertIsInstance(data['failedLogins'], int)
+
+    def test_stats_requires_api_key(self):
+        url = reverse('admin-stats')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)
