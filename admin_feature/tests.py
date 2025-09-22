@@ -6,6 +6,8 @@ from rest_framework.test import APIClient
 from pt_backend.models import Role, User
 from django.contrib.auth.hashers import make_password
 from pt_backend.models import Disease, Location, Case
+from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -130,3 +132,109 @@ class RolesAndFailedLoginAPITests(TestCase):
         url = reverse('admin-stats')
         resp = self.client.get(url)  # no API key
         self.assertEqual(resp.status_code, 401)
+
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class UsersSummaryMockAndStubTests(TestCase):
+    """Unit-style tests using stub and mock to isolate from the database."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _url(self):
+        return reverse("admin-users-summary")
+
+    def test_users_summary_with_stubbed_counts(self):
+        """Stub: provide fixed values without asserting interactions."""
+
+        class _StubQS:
+            def count(self):
+                return 4  # active users
+
+        class _StubManager:
+            def count(self):
+                return 10  # total users
+
+            def filter(self, **kwargs):
+                # Expect last_login__isnull=False but we don't assert in a stub
+                return _StubQS()
+
+        stub_user = SimpleNamespace(objects=_StubManager())
+
+        with patch("admin_feature.views.User", new=stub_user):
+            resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["total_users"], 10)
+        self.assertEqual(body["active_users"], 4)
+
+    def test_users_summary_with_mocks_verifies_calls(self):
+        """Mock: verify filter/count calls and arguments."""
+
+        mock_user = SimpleNamespace()
+        mock_manager = MagicMock()
+        mock_qs = MagicMock()
+
+        mock_manager.count.return_value = 99
+        mock_manager.filter.return_value = mock_qs
+        mock_qs.count.return_value = 11
+        mock_user.objects = mock_manager
+
+        with patch("admin_feature.views.User", new=mock_user):
+            resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["total_users"], 99)
+        self.assertEqual(body["active_users"], 11)
+
+        mock_manager.count.assert_called_once_with()
+        mock_manager.filter.assert_called_once_with(last_login__isnull=False)
+        mock_qs.count.assert_called_once_with()
+
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class StatsUsersCountsWithMocksTests(TestCase):
+    """Unit-style test for stats endpoint isolating all collaborators."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse("admin-stats")
+
+    def test_stats_users_counts_with_mocks(self):
+        # Mock User manager and queryset
+        mock_user = SimpleNamespace()
+        mock_user_manager = MagicMock()
+        mock_user_qs = MagicMock()
+        mock_user_manager.count.return_value = 7
+        mock_user_manager.filter.return_value = mock_user_qs
+        mock_user_qs.count.return_value = 3
+        mock_user.objects = mock_user_manager
+
+        # Mock Role values_list(...).order_by(...)
+        mock_role = SimpleNamespace()
+        mock_role_qs = MagicMock()
+        mock_role_qs.order_by.return_value = ["ADMIN", "VIEWER"]
+        mock_role.values_list = MagicMock(return_value=mock_role_qs)
+        mock_role.objects = mock_role
+
+        # Mock datasets service
+        mock_datasets_service_class = MagicMock()
+        mock_datasets_service_class.return_value.get_total_datasets.return_value = 42
+
+        with patch("admin_feature.views.User", new=mock_user), \
+             patch("admin_feature.views.Role", new=mock_role), \
+             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
+             patch("admin_feature.views.cache") as mock_cache:
+            mock_cache.get.return_value = 5
+
+            resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["totalUsers"], 7)
+        self.assertEqual(data["activeUsers"], 3)
+        self.assertEqual(data["datasets"], 42)
+        self.assertEqual(data["failedLogins"], 5)
+        self.assertEqual(data["roles"], ["ADMIN", "VIEWER"])
