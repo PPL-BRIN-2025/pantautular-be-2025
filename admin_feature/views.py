@@ -8,6 +8,7 @@ from pt_backend.models import Role
 from django.utils import timezone
 from datetime import datetime, timedelta
 from pt_backend.models import User, Case
+from .services import DatasetsService
 
 # Create your views here.
 
@@ -96,9 +97,13 @@ class DatasetsSummaryAPIView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.datasets_service = DatasetsService()
+
     def get(self, request):
         # Define "dataset" as the number of Case records
-        total_datasets = Case.objects.count()
+        total_datasets = self.datasets_service.get_total_datasets()
         return Response(
             {
                 "total_datasets": total_datasets,
@@ -124,7 +129,8 @@ class StatsAPIView(APIView):
     def get(self, request):
         total_users = User.objects.count()
         active_users = User.objects.filter(last_login__isnull=False).count()
-        datasets = Case.objects.count()
+        datasets_service = DatasetsService()
+        datasets = datasets_service.get_total_datasets()
         roles = list(Role.objects.values_list('name', flat=True).order_by('name'))
 
         # Failed login total from cache (default 0)

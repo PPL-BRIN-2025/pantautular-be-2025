@@ -242,6 +242,9 @@ class CaseRepository(CaseRepositoryInterface):
     def get_status_and_province(self):
         return Case.objects.select_related('location').values('status', 'location__province')
 
+    # New: efficient aggregate count for cases (datasets)
+    def count_cases(self):
+        return Case.objects.count()
     
 
 class ClimateRepository:
