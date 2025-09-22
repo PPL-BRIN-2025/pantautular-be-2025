@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APIClient
+from admin_feature.models import UserLog
 
 
 class AdminUserLogsTableTests(TestCase):
@@ -21,15 +22,13 @@ class AdminUserLogsTableTests(TestCase):
             "username": "user1",
             "email": "user1@gmail.com",
             "detail": "Login success",
-
         }
         res = self.client.post(self.url, payload, format="json")
         self.assertEqual(res.status_code, 201)
         body = res.json()
         self.assertEqual(body["username"], "user1")
         self.assertEqual(body["email"], "user1@gmail.com")
-        self.assertIn("timestamp", body)  # auto-filled by view
-
+        self.assertIn("timestamp", body)
 
         res2 = self.client.get(self.url)
         self.assertEqual(res2.status_code, 200)
@@ -75,3 +74,42 @@ class AdminUserLogsTableTests(TestCase):
         self.assertEqual(res.status_code, 201)
         body = res.json()
         self.assertIn("timestamp", body)
+
+
+class UserLogDetailAPITest(TestCase):
+    def test_get_log_detail_returns_expected_fields(self):
+        log = UserLog.objects.create(
+            username="user",
+            email="user@example.com",
+            action="LOGIN_SUCCESS",
+            detail="User successfully logged in",
+        )
+
+        client = APIClient()
+        url = reverse("log-detail", args=[log.id])
+        response = client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertEqual(data["id"], log.id)
+        self.assertEqual(data["username"], "user")
+        self.assertEqual(data["email"], "user@example.com")
+        self.assertEqual(data["action"], "LOGIN_SUCCESS")
+        self.assertIn("detail", data)
+
+
+class UserLogModelTest(TestCase):
+    def test_str_method_returns_expected_format(self):
+        log = UserLog.objects.create(
+            username="tester",
+            email="tester@example.com",
+            action="LOGIN_SUCCESS",
+            detail="Login detail"
+        )
+
+        string_output = str(log)
+
+        self.assertIn("tester", string_output)
+        self.assertIn("LOGIN_SUCCESS", string_output)
+        self.assertIn(str(log.created_at.date()), string_output)
