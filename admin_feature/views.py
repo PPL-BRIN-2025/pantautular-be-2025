@@ -1,19 +1,17 @@
-from django.shortcuts import render
-
 from datetime import datetime
 from django.utils.dateparse import parse_datetime
 from django.db.models import Q
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
 
 from .models import AdminUserLog
-from .serializers import AdminUserLogSerializer
+from .serializers import AdminUserLogSerializer, AdminUserLogDetailSerializer
 
 class AdminUserLogsAPIView(APIView):
     """
-    GET /admin/user-logs/?page=1&pageSize=10&search=&start=&end=&sort=timestamp:desc
-    POST /admin/user-logs/
+    GET /api/admin/user-logs/?page=1&pageSize=10&search=&start=&end=&sort=timestamp:desc
+    POST /api/admin/user-logs/
     """
     def get(self, request):
         try:
@@ -87,3 +85,11 @@ class AdminUserLogsAPIView(APIView):
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response({"errors": ser.errors}, status=400)
 
+
+class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
+    """
+    GET /api/admin/user-logs/<id>/detail/
+    """
+    queryset = AdminUserLog.objects.all()
+    serializer_class = AdminUserLogDetailSerializer
+    lookup_field = "id"

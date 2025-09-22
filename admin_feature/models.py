@@ -3,11 +3,11 @@ from django.utils import timezone
 
 class AdminUserLog(models.Model):
     id = models.BigAutoField(primary_key=True)
-    username = models.CharField(max_length=120, db_index=True)
+    username = models.CharField(max_length=150, db_index=True)
     email = models.EmailField(db_index=True)
     timestamp = models.DateTimeField(db_index=True, default=timezone.now)
-    action = models.CharField(max_length=50, null=True, blank=True, db_index=True)
-    detail = models.CharField(max_length=120, db_index=True)
+    action = models.CharField(max_length=100, null=True, blank=True, db_index=True)
+    detail = models.TextField(null=True, blank=True, db_index=True)
     note = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -22,4 +22,4 @@ class AdminUserLog(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.username} - {self.action or self.detail}"
+        return f"{self.username} - {self.action or self.detail} @ {self.created_at}"
