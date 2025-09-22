@@ -8,6 +8,10 @@ from django.contrib.auth.hashers import make_password
 from pt_backend.models import Disease, Location, Case
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from django.conf import settings
+import jwt
+from datetime import datetime, timedelta
+import importlib
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -30,6 +34,13 @@ class RolesAndFailedLoginAPITests(TestCase):
             password=make_password('StrongP@ss1'),
             role='ADMIN',
         )
+
+    def _login_and_get_token(self, email="john@example.com", password="StrongP@ss1"):
+        # Use the authentication login endpoint to get a JWT token
+        login_url = reverse('login')
+        resp = self.client.post(login_url, {"email": email, "password": password}, format='json', **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()["access_token"]
 
     def test_roles_summary(self):
         url = reverse('admin-roles-summary')
@@ -61,6 +72,26 @@ class RolesAndFailedLoginAPITests(TestCase):
         logs = resp2.json()
         self.assertGreaterEqual(logs['count'], 3)
         self.assertTrue(all('email' in ev and 'timestamp' in ev for ev in logs['events']))
+
+    def test_failed_login_stats_unique_count_fallback_and_timestamp_edges(self):
+        # Seed events directly in cache to exercise fallback unique count and timestamp parsing
+        events = [
+            {"email": "john@example.com", "timestamp": timezone.now().isoformat()},
+            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},  # naive timestamp -> UTC
+            {"email": "", "timestamp": "not-a-date"},  # invalid timestamp triggers except
+            {"email": None, "timestamp": None},  # ignored
+        ]
+        cache.set('auth:failed_login_events', events, None)
+        cache.delete('auth:failed_login_unique_emails_count')  # force fallback path
+
+        url = reverse('admin-failed-login-stats')
+        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        # Unique emails should compute from events (case-insensitive, skip empty/None)
+        self.assertEqual(data['total_unique_emails'], 2)
+        # last_24h should count valid, parseable timestamps within window
+        self.assertGreaterEqual(data['last_24h'], 1)
 
     def test_users_summary(self):
         # Add two more users; mark one active via last_login
@@ -101,6 +132,27 @@ class RolesAndFailedLoginAPITests(TestCase):
         data = resp.json()
         self.assertEqual(data['total_datasets'], 3)
 
+    def test_user_info_success(self):
+        token = self._login_and_get_token()
+        url = reverse('admin-user-info')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["name"], self.user.name)
+        self.assertEqual(data["role"], self.user.role)
+
+    def test_user_info_missing_token(self):
+        url = reverse('admin-user-info')
+        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_user_info_invalid_token(self):
+        url = reverse('admin-user-info')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": "Bearer invalid.token.value"}
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 401)
+
     def test_stats_endpoint(self):
         # Seed some additional data
         self.user.last_login = timezone.now()
@@ -132,6 +184,47 @@ class RolesAndFailedLoginAPITests(TestCase):
         url = reverse('admin-stats')
         resp = self.client.get(url)  # no API key
         self.assertEqual(resp.status_code, 401)
+
+    def test_user_info_token_expired(self):
+        # Create an expired JWT with same signing key/alg
+        payload = {
+            "name": "Jane",
+            "role": "ADMIN",
+            "user_id": 999,
+            "exp": datetime.utcnow() - timedelta(seconds=5),
+        }
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+        url = reverse('admin-user-info')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_user_info_invalid_payload_no_user_id(self):
+        # Valid token but missing name/role and user_id
+        payload = {"exp": datetime.utcnow() + timedelta(minutes=5)}
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+        url = reverse('admin-user-info')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_user_info_user_not_found(self):
+        # Token with non-existent user_id and no embedded claims triggers DB fallback error path
+        payload = {"user_id": 999999, "exp": datetime.utcnow() + timedelta(minutes=5)}
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+        url = reverse('admin-user-info')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_import_admin_apps_models_for_coverage(self):
+        # Ensure simple modules execute for coverage
+        import admin_feature.admin as mod_admin
+        import admin_feature.apps as mod_apps
+        import admin_feature.models as mod_models
+        importlib.reload(mod_admin)
+        importlib.reload(mod_apps)
+        importlib.reload(mod_models)
 
 
 @override_settings(SECRET_API_KEYS=("test-key",))

@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import RolesSummaryAPIView, FailedLoginStatsAPIView, FailedLoginEventsAPIView
-from .views import UsersSummaryAPIView, DatasetsSummaryAPIView, StatsAPIView
+from .views import UsersSummaryAPIView, DatasetsSummaryAPIView, StatsAPIView, UserInfoAPIView
 
 urlpatterns = [
     path('roles/', RolesSummaryAPIView.as_view(), name='admin-roles-summary'),
@@ -10,4 +10,5 @@ urlpatterns = [
     path('datasets/summary', DatasetsSummaryAPIView.as_view(), name='admin-datasets-summary'),
     path('stats', StatsAPIView.as_view(), name='admin-stats'),
     path('stats/', StatsAPIView.as_view()),
+    path('user/info', UserInfoAPIView.as_view(), name='admin-user-info'),
 ]
