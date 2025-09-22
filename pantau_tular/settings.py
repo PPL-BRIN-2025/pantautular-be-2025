@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
+    "admin_feature", 
 ]
 
 MIDDLEWARE = [
