@@ -12,6 +12,7 @@ from django.conf import settings
 import jwt
 from datetime import datetime, timedelta
 import importlib
+from rest_framework import status
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -331,3 +332,155 @@ class StatsUsersCountsWithMocksTests(TestCase):
         self.assertEqual(data["datasets"], 42)
         self.assertEqual(data["failedLogins"], 5)
         self.assertEqual(data["roles"], ["ADMIN", "VIEWER"])
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class AdminDashboardSecurityTests(TestCase):
+    """
+    Security tests to restrict all dashboard APIs to authenticated Admin only.
+
+    Acceptance coverage:
+    (1) Non-admin/unauthenticated users get blocked (API returns 401/403; FE should redirect to login).
+    (2) No dashboard data is leaked to unauthorized users.
+    (3) Zero-data responses include friendly messages (for FE UX).
+    (4) No technical error messages in API payloads.
+    (5) Clear "Akses Ditolak" message for blocked access.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+        # Seed roles used across tests
+        Role.objects.get_or_create(name="ADMIN")
+        Role.objects.get_or_create(name="VIEWER")
+        Role.objects.get_or_create(name="TENAGA_AHLI")
+
+        # Prepare endpoints to validate consistently
+        self.dashboard_endpoints = [
+            "admin-roles-summary",
+            "admin-failed-login-stats",
+            "admin-failed-login-logs",
+            "admin-users-summary",
+            "admin-datasets-summary",
+            "admin-stats",
+            "admin-user-info",
+        ]
+
+    def _create_user(self, email, role, password="StrongP@ss1"):
+        return User.objects.create(
+            name=email.split("@")[0].title(),
+            email=email,
+            password=make_password(password), 
+            role=role,
+        )
+    
+    def _login_and_get_token(self, email, password="StrongP@ss1"):
+        login_url = reverse("login")
+        resp = self.client.post(login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, f"Login failed for {email}: {resp.content}")
+        return resp.json()["access_token"]
+
+    def _headers(self, token=None):
+        headers = dict(TEST_API_KEY_HEADER)
+        if token:
+            headers["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+        return headers
+    
+    def test_unauthenticated_access_is_blocked_and_no_data_leaks(self):
+
+        """
+        (1) and (2): Without JWT, all dashboard endpoints must block access, not leak any business data keys,
+        and include a clear access message (for FE to redirect).
+        """    
+        for name in self.dashboard_endpoints:
+            url = reverse(name)
+            resp = self.client.get(url, **self._headers(token=None))
+            self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN), f"{name} not blocked")
+
+            data = {}
+            try:
+                data = resp.json()
+            except Exception:
+                pass # Even if not JSON (should be), ensure it's considered blocked
+
+            # Clear, human message preferred
+            msg = str(data.get("detail", "")).lower()
+            self.assertTrue(("akses" in msg) or ("auth" in msg) or ("token" in msg), f"{name} lacks a clear access message")
+
+            # Must not leak typical dashboard keys
+            forbidden_keys = {"totalUsers", "activeUsers", "datasets", "roles", "logs", "events", "total_failed"}
+            self.assertTrue(forbidden_keys.isdisjoint(set(data.keys())), f"{name} leaked dashboard data to unauthorized user")
+
+    def test_non_admin_user_is_forbidden(self):
+        """
+        (1), (2), (5): Authenticated non-admin (e.g., VIEWER) must be blocked with "Akses Ditolak" and no data leakage.
+        """
+        viewer = self._create_user("viewer@example.com", "VIEWER")
+        token = self._login_and_get_token(viewer.email)
+
+        for name in self.dashboard_endpoints:
+            url = reverse(name)
+            resp = self.client.get(url, **self._headers(token))
+            self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN, f"{name} should be 403 for non-admin")
+
+            data = resp.json()
+            self.assertIn("detail", data)
+            self.assertIn("Akses", data["detail"])
+            # No data leakage
+            forbidden_keys = {"totalUsers", "activeUsers", "datasets", "roles", "logs", "events", "total_failed"}
+            self.assertTrue(forbidden_keys.isdisjoint(set(data.keys())), f"{name} leaked data for non-admin")
+
+    def test_admin_can_access_endpoints(self):
+        """
+        Sanit: Admin with valid JWT and API key can access.
+        """
+        admin = self._create_user("admin@example.com", "ADMIN")
+        token = self._login_and_get_token(admin.email)
+
+        for name in self.dashboard_endpoints:
+            url = reverse(name)
+            resp = self.client.get(url, **self._headers(token))
+            # admin-user-info requires a valid JWT (provided) and should be 200
+            self.assertEqual(resp.status_code, status.HTTP_200_OK, f"{name} should be accessible to admin")
+
+    def test_zero_data_messages_and_no_technical_errors_on_stats(self):
+        """
+        (3) and (4): When there is no data, the backend should provide UX-friendly hints
+        and never expose techical error details.
+        """    
+        # Admin auth
+        admin = self._create_user("admin2@example.com", "ADMIN")
+        token = self._login_and_get_token(admin.email)
+
+        # Ensure zero state: no Cases, no failed login events in cache
+        cache.delete("auth:failed_login_total")
+        cache.delete("auth:failed_login_events")
+
+        url = reverse("admin-stats")
+        resp = self.client.get(url, **self._headers(token))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        data = resp.json()
+        # Basic shape must be present
+        self.assertIn("totalUsers", data)
+        self.assertIn("activeUsers", data)
+        self.assertIn("datasets", data)
+        self.assertIn("failedLogins", data)
+        self.assertIn("roles", data)
+
+        # No technical error exposure
+        joined = str(data)
+        self.assertNotIn("Traceback", joined)
+        self.assertNotIn("Exception", joined)
+        self.assertNotIn("stack", joined.lower())
+
+        #Zero-data UX hints (TDD: require BE to include friendly messages for FE)
+        # Accept either a consolidated 'messages' duct or individual message keys.
+        messages = data.get("messages") or {}
+        any_message = "Data tidak ditemukan" in str(messages) or "Tidak ada aktivitas" in str(messages)
+        # If BE uses individual keys, check them too
+        for k in ("usersMessage", "activityMessage", "datasetsMessage"):
+            if k in data and isinstance(data[k], str):
+                if ("Data tidak ditemukan" in data[k]) or ("Tidak ada aktivitas" in data[k]):
+                    any_message = True
+        self.assertTrue(any_message, "Zero-data friendly messages missing in stats response")
