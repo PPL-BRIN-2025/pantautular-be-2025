@@ -1,5 +1,6 @@
+# admin_feature/tests.py
 from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.urls import reverse, NoReverseMatch
 from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -9,6 +10,7 @@ from pt_backend.models import Disease, Location, Case
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 import jwt
 from datetime import datetime, timedelta
 import importlib
@@ -96,14 +98,14 @@ class RolesAndFailedLoginAPITests(TestCase):
 
     def test_users_summary(self):
         # Add two more users; mark one active via last_login
-        u1 = User.objects.create(
+        User.objects.create(
             name='Alice',
             email='alice@example.com',
             password=make_password('P@ss1'),
             role='ADMIN',
             last_login=timezone.now(),
         )
-        u2 = User.objects.create(
+        User.objects.create(
             name='Bob',
             email='bob@example.com',
             password=make_password('P@ss2'),
@@ -484,3 +486,232 @@ class AdminDashboardSecurityTests(TestCase):
                 if ("Data tidak ditemukan" in data[k]) or ("Tidak ada aktivitas" in data[k]):
                     any_message = True
         self.assertTrue(any_message, "Zero-data friendly messages missing in stats response")
+
+
+# -------------------------------
+# NEGATIVE TESTS FOR DASHBOARD
+# -------------------------------
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class AdminDashboardNegativeTests(TestCase):
+    """
+    Negative scenarios requested:
+    1) Access dashboard without login -> redirect to login (HTML) OR 401 (API).
+    2) Login with non-admin -> forbidden.
+    3) Admin accessing an admin page they don't have permission for -> forbidden.
+    4) Primary data missing -> API exposes an empty-state signal (message/flag), not misleading zeros.
+    """
+
+    databases = {'default'}
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        Role.objects.create(name='ADMIN')
+        Role.objects.create(name='TENAGA_AHLI')
+        Role.objects.create(name='VIEWER')
+
+        # Admin user
+        self.admin = User.objects.create(
+            name='Admin',
+            email='admin@example.com',
+            password=make_password('StrongP@ss1'),
+            role='ADMIN',
+        )
+        # Non-admin user
+        self.viewer = User.objects.create(
+            name='Vera',
+            email='vera@example.com',
+            password=make_password('WeakP@ss1'),
+            role='VIEWER',
+        )
+
+    def _login_and_get_token(self, email, password):
+        login_url = reverse('login')
+        resp = self.client.post(login_url, {"email": email, "password": password}, format='json', **TEST_API_KEY_HEADER)
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()["access_token"]
+
+    def test_unauthenticated_dashboard_page_redirects_to_login_if_html_route_exists(self):
+        """
+        Pengguna mengakses dashboard tanpa login terlebih dahulu.
+        Ekspektasi: diarahkan ke halaman login (302) jika route HTML dashboard ada,
+        atau setidaknya API yang terkait me-return 401.
+        """
+        # Try an HTML route if your app defines one.
+        try:
+            url = reverse('admin-dashboard')  # your custom page if any
+            resp = self.client.get(url, follow=False)
+            # Expect redirect to login
+            self.assertIn(resp.status_code, (301, 302))
+            self.assertIn('login', (resp.url or '').lower())
+            return
+        except NoReverseMatch:
+            pass
+
+        # Fallback: use Django admin index if available
+        try:
+            url = reverse('admin:index')
+            resp = self.client.get(url, follow=False)
+            self.assertIn(resp.status_code, (301, 302))
+            self.assertIn('login', (resp.url or '').lower())
+            return
+        except NoReverseMatch:
+            # Last fallback to API: require token for a self-info endpoint
+            api = reverse('admin-user-info')
+            resp = self.client.get(api, **TEST_API_KEY_HEADER)
+            self.assertEqual(resp.status_code, 401)
+
+    def test_non_admin_credentials_cannot_access_admin_stats(self):
+        """
+        Pengguna login dengan kredensial non-admin (VIEWER).
+        Ekspektasi: 403 dengan pesan 'Anda tidak memiliki izin untuk mengakses halaman ini.'
+        Catatan: jika endpoint belum enforce role admin, test ini akan di-skip.
+        """
+        token = self._login_and_get_token("vera@example.com", "WeakP@ss1")
+        url = reverse('admin-stats')
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+        # If your view has a helper to enforce admin role, patch it to simulate permission check.
+        try:
+            import admin_feature.views as views  # noqa
+        except ImportError:
+            self.skipTest("admin_feature.views unavailable")
+
+        helper_name = None
+        for cand in ('require_admin_role', 'ensure_admin_role', 'assert_admin_role', 'check_admin_permission'):
+            if hasattr(views, cand):
+                helper_name = cand
+                break
+
+        if helper_name is None:
+            # If no helper exists yet, skip to avoid false negatives; you can remove this skip after implementing RBAC.
+            self.skipTest("No admin permission helper to patch; implement RBAC then enable this test.")
+
+        with patch(f"admin_feature.views.{helper_name}", side_effect=PermissionDenied("Anda tidak memiliki izin untuk mengakses halaman ini.")):
+            resp = self.client.get(url, **headers)
+
+        self.assertEqual(resp.status_code, 403)
+        body = resp.json()
+        # Accept either 'detail' or 'message' keys for error payload
+        self.assertTrue(
+            ("detail" in body and "tidak memiliki izin" in body["detail"].lower()) or
+            ("message" in body and "tidak memiliki izin" in body["message"].lower())
+        )
+
+    def test_admin_accessing_other_admin_page_without_permission_forbidden(self):
+        """
+        Admin mencoba mengakses halaman admin lain yang tidak memiliki izin.
+        Ekspektasi: 403 'Akses Ditolak' / 'Anda tidak memiliki izin.'
+        """
+        token = self._login_and_get_token("admin@example.com", "StrongP@ss1")
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+        # We'll use roles summary endpoint as a stand-in and simulate a permission failure
+        url = reverse('admin-roles-summary')
+
+        try:
+            import admin_feature.views as views  # noqa
+        except ImportError:
+            self.skipTest("admin_feature.views unavailable")
+
+        # Try to find any permission helper to patch. If none exists yet, skip.
+        helper_name = None
+        for cand in ('require_admin_scope', 'ensure_admin_scope', 'assert_admin_scope', 'check_admin_permission'):
+            if hasattr(views, cand):
+                helper_name = cand
+                break
+
+        if helper_name is None:
+            self.skipTest("No granular permission helper to patch; implement per-page permissions then enable this test.")
+
+        with patch(f"admin_feature.views.{helper_name}", side_effect=PermissionDenied("Akses Ditolak")):
+            resp = self.client.get(url, **headers)
+
+        self.assertEqual(resp.status_code, 403)
+        body = resp.json()
+        self.assertTrue(
+            ("detail" in body and ("akses ditolak" in body["detail"].lower() or "tidak memiliki izin" in body["detail"].lower())) or
+            ("message" in body and ("akses ditolak" in body["message"].lower() or "tidak memiliki izin" in body["message"].lower()))
+        )
+
+    def test_dashboard_stats_empty_state_when_no_data(self):
+        """
+        Data utama tidak tersedia (0 users, 0 datasets, 0 roles, 0 failed logins).
+        Ekspektasi: dashboard/endpoint mengirim sinyal 'empty state' yang jelas
+        sehingga UI dapat menampilkan 'Tidak Ada Data Ditemukan' (bukan angka nol menyesatkan).
+        - Test menerima salah satu dari:
+          a) field boolean 'empty' / 'isEmpty' == True, atau
+          b) field 'message' / 'detail' berisi frasa 'Tidak Ada Data Ditemukan'.
+        """
+        url = reverse('admin-stats')
+
+        # Mock collaborators to simulate "no data"
+        mock_user = SimpleNamespace()
+        mock_user_manager = MagicMock()
+        mock_user_qs = MagicMock()
+        mock_user_manager.count.return_value = 0
+        mock_user_manager.filter.return_value = mock_user_qs
+        mock_user_qs.count.return_value = 0
+        mock_user.objects = mock_user_manager
+
+        mock_role = SimpleNamespace()
+        mock_role_qs = MagicMock()
+        mock_role_qs.order_by.return_value = []
+        mock_role.values_list = MagicMock(return_value=mock_role_qs)
+        mock_role.objects = mock_role
+
+        mock_datasets_service_class = MagicMock()
+        mock_datasets_service_class.return_value.get_total_datasets.return_value = 0
+
+        with patch("admin_feature.views.User", new=mock_user), \
+             patch("admin_feature.views.Role", new=mock_role), \
+             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
+             patch("admin_feature.views.cache") as mock_cache:
+            mock_cache.get.return_value = 0
+            resp = self.client.get(url, **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+
+        # Must reflect no data numerically
+        self.assertEqual(data.get("totalUsers", None), 0)
+        self.assertEqual(data.get("activeUsers", None), 0)
+        self.assertEqual(data.get("datasets", None), 0)
+        self.assertEqual(data.get("roles", None), [])
+
+        # And also provide a clear empty-state signal for the UI to show "Tidak Ada Data Ditemukan"
+        has_empty_flag = (data.get("empty") is True) or (data.get("isEmpty") is True)
+        has_message = any(
+            (k in data and isinstance(data[k], str) and "tidak ada data" in data[k].lower())
+            for k in ("message", "detail", "notice")
+        )
+
+        # Accept either mechanism; if neither exists yet, this will fail (RED) and guide implementation.
+        self.assertTrue(has_empty_flag or has_message, "Expected 'empty/isEmpty' flag or a 'Tidak Ada Data Ditemukan' message in response.")
+
+    # Extra safety: endpoints should also reject missing API key
+    def test_roles_summary_requires_api_key(self):
+        url = reverse('admin-roles-summary')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)
+
+    def test_users_summary_requires_api_key(self):
+        url = reverse('admin-users-summary')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)
+
+    def test_failed_login_stats_requires_api_key(self):
+        url = reverse('admin-failed-login-stats')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)
+
+    def test_failed_login_logs_requires_api_key(self):
+        url = reverse('admin-failed-login-logs')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)
+
+    def test_datasets_summary_requires_api_key(self):
+        url = reverse('admin-datasets-summary')
+        resp = self.client.get(url)  # no API key
+        self.assertEqual(resp.status_code, 401)

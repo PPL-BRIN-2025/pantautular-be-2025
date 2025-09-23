@@ -1,0 +1,14 @@
+[run]
+source = admin_feature
+branch = True
+omit =
+    */migrations/*
+    */tests.py
+
+[report]
+show_missing = True
+skip_covered = False
+fail_under = 0
+
+[html]
+directory = htmlcov
