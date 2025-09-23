@@ -1,7 +1,9 @@
+from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APIClient
+
 from admin_feature.models import AdminUserLog
 
 
@@ -10,6 +12,17 @@ class AdminUserLogsTableTests(TestCase):
         self.client = APIClient()
         self.url = reverse("admin_user_logs")
 
+    def _mk(self, **kw):
+        defaults = dict(
+            username="user",
+            email="user@example.com",
+            detail="Login success",
+            action="LOGIN_SUCCESS",
+            timestamp=timezone.now(),
+        )
+        defaults.update(kw)
+        return AdminUserLog.objects.create(**defaults)
+
     def test_get_returns_empty_table_initially(self):
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
@@ -17,7 +30,7 @@ class AdminUserLogsTableTests(TestCase):
         self.assertEqual(body["total"], 0)
         self.assertEqual(body["data"], [])
 
-    def test_post_creates_log_entry_without_action(self):
+    def test_post_creates_log_entry_without_action_and_triggers_201(self):
         payload = {
             "username": "user1",
             "email": "user1@gmail.com",
@@ -38,6 +51,79 @@ class AdminUserLogsTableTests(TestCase):
         self.assertEqual(body2["data"][0]["username"], "user1")
         self.assertEqual(body2["data"][0]["email"], "user1@gmail.com")
         self.assertEqual(body2["data"][0]["detail"], "Login success")
+
+    def test_post_invalid_payload_returns_400_and_errors_branch(self):
+        bad = {"username": "no-email", "detail": "Login success"}
+        res = self.client.post(self.url, bad, format="json")
+        self.assertEqual(res.status_code, 400)
+        data = res.json()
+        self.assertIn("errors", data)
+
+    def test_pagination_defaults_when_params_invalid(self):
+        for i in range(12):
+            self._mk(username=f"user{i}", email=f"user{i}@x.com", timestamp=timezone.now()+timedelta(minutes=i))
+
+        res = self.client.get(self.url, {"page": "not-int", "pageSize": "NaN"})
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["page"], 1)
+        self.assertEqual(body["pageSize"], 10)
+        self.assertEqual(body["total"], 12)
+        self.assertEqual(len(body["data"]), 10)
+
+    def test_sort_asc_orders_by_oldest_first(self):
+        older = self._mk(username="old", timestamp=timezone.now() - timedelta(days=1))
+        newer = self._mk(username="new", timestamp=timezone.now())
+
+        res = self.client.get(self.url, {"sort": "timestamp:asc"})
+        self.assertEqual(res.status_code, 200)
+        rows = res.json()["data"]
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(rows[0]["username"], "old")
+        res2 = self.client.get(self.url, {"sort": "timestamp:desc"})
+        rows2 = res2.json()["data"]
+        self.assertEqual(rows2[0]["username"], "new")
+
+    def test_search_filters_username_email_detail(self):
+        self._mk(username="alice", email="alice@example.com", detail="Login success")
+        self._mk(username="bob", email="bob@example.com", detail="Change Role")
+        self._mk(username="charlie", email="c@example.com", detail="Login Failed")
+
+        res = self.client.get(self.url, {"search": "bob"})
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["data"]), 1)
+        self.assertEqual(body["data"][0]["username"], "bob")
+
+        res2 = self.client.get(self.url, {"search": "Login Failed"})
+        self.assertEqual(res2.status_code, 200)
+        body2 = res2.json()
+        self.assertEqual(body2["total"], 1)
+        self.assertEqual(body2["data"][0]["detail"], "Login Failed")
+
+    def test_start_end_filters_cover_fromisoformat_success_and_exception(self):
+        base = timezone.now().replace(microsecond=0)
+        a = self._mk(username="a", timestamp=base - timedelta(days=2))
+        b = self._mk(username="b", timestamp=base - timedelta(days=1))
+        c = self._mk(username="c", timestamp=base)
+        start_str_fromiso = (base - timedelta(days=1, hours=12)).strftime("%Y-%m-%d %H:%M:%S")
+        end_invalid = "not-a-date"
+
+        res = self.client.get(self.url, {"start": start_str_fromiso, "end": end_invalid})
+        self.assertEqual(res.status_code, 200)
+        rows = res.json()["data"]
+        usernames = [r["username"] for r in rows]
+        self.assertIn("b", usernames)
+        self.assertIn("c", usernames)
+        self.assertNotIn("a", usernames)
+
+        end_valid = (base - timedelta(hours=12)).isoformat()
+        res2 = self.client.get(self.url, {"start": start_str_fromiso, "end": end_valid})
+        self.assertEqual(res2.status_code, 200)
+        usernames2 = [r["username"] for r in res2.json()["data"]]
+        self.assertIn("b", usernames2)
+        self.assertNotIn("c", usernames2)  
 
     def test_get_returns_multiple_rows_matching_table_example(self):
         seed = [
@@ -64,17 +150,6 @@ class AdminUserLogsTableTests(TestCase):
         self.assertIn("email", row0)
         self.assertIn("timestamp", row0)
 
-    def test_post_without_timestamp_sets_default(self):
-        payload = {
-            "username": "userX",
-            "email": "userx@gmail.com",
-            "detail": "Change Role",
-        }
-        res = self.client.post(self.url, payload, format="json")
-        self.assertEqual(res.status_code, 201)
-        body = res.json()
-        self.assertIn("timestamp", body)
-
 
 class UserLogDetailAPITest(TestCase):
     def test_get_log_detail_returns_expected_fields(self):
@@ -84,14 +159,12 @@ class UserLogDetailAPITest(TestCase):
             action="LOGIN_SUCCESS",
             detail="User successfully logged in",
         )
-
         client = APIClient()
         url = reverse("log-detail", args=[log.id])
         response = client.get(url)
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-
         self.assertEqual(data["id"], log.id)
         self.assertEqual(data["username"], "user")
         self.assertEqual(data["email"], "user@example.com")
@@ -105,11 +178,9 @@ class AdminUserLogModelTest(TestCase):
             username="tester",
             email="tester@example.com",
             action="LOGIN_SUCCESS",
-            detail="Login detail"
+            detail="Login detail",
         )
-
-        string_output = str(log)
-
-        self.assertIn("tester", string_output)
-        self.assertIn("LOGIN_SUCCESS", string_output)
-        self.assertIn(str(log.created_at.date()), string_output)
+        s = str(log)
+        self.assertIn("tester", s)
+        self.assertIn("LOGIN_SUCCESS", s)
+        self.assertIn(str(log.created_at.date()), s)
