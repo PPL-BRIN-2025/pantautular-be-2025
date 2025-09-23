@@ -47,7 +47,9 @@ class RolesAndFailedLoginAPITests(TestCase):
 
     def test_roles_summary(self):
         url = reverse('admin-roles-summary')
-        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['count'], 3)
@@ -61,8 +63,10 @@ class RolesAndFailedLoginAPITests(TestCase):
         # Non-existent email also counts
         self.client.post(login_url, {"email": "noone@example.com", "password": "wrongpass"}, format='json', **TEST_API_KEY_HEADER)
 
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         stats_url = reverse('admin-failed-login-stats')
-        resp = self.client.get(stats_url, **TEST_API_KEY_HEADER)
+        resp = self.client.get(stats_url, **headers)
         self.assertEqual(resp.status_code, 200)
         stats = resp.json()
         self.assertGreaterEqual(stats['total_failed'], 3)
@@ -70,7 +74,7 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertIn('logs_url', stats)
 
         logs_url = reverse('admin-failed-login-logs')
-        resp2 = self.client.get(logs_url, **TEST_API_KEY_HEADER)
+        resp2 = self.client.get(logs_url, **headers)
         self.assertEqual(resp2.status_code, 200)
         logs = resp2.json()
         self.assertGreaterEqual(logs['count'], 3)
@@ -86,9 +90,10 @@ class RolesAndFailedLoginAPITests(TestCase):
         ]
         cache.set('auth:failed_login_events', events, None)
         cache.delete('auth:failed_login_unique_emails_count')  # force fallback path
-
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = reverse('admin-failed-login-stats')
-        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         # Unique emails should compute from events (case-insensitive, skip empty/None)
@@ -111,8 +116,10 @@ class RolesAndFailedLoginAPITests(TestCase):
             password=make_password('P@ss2'),
             role='VIEWER',
         )
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = reverse('admin-users-summary')
-        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         # Total users: existing seeded 1 + 2 new = 3
@@ -129,8 +136,10 @@ class RolesAndFailedLoginAPITests(TestCase):
         Case.objects.create(gender="female", age=25, city="Bandung", status="biasa", severity="hospitalisasi", disease=disease, location=loc2)
         Case.objects.create(gender="male", age=40, city="Jakarta", status="bahaya", severity="mortalitas", disease=disease, location=loc1)
 
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = reverse('admin-datasets-summary')
-        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data['total_datasets'], 3)
@@ -165,8 +174,10 @@ class RolesAndFailedLoginAPITests(TestCase):
         loc = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
         Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc)
 
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = reverse('admin-stats')
-        resp = self.client.get(url, **TEST_API_KEY_HEADER)
+        resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         # Validate presence and basic correctness
@@ -669,7 +680,23 @@ class AdminDashboardNegativeTests(TestCase):
              patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
              patch("admin_feature.views.cache") as mock_cache:
             mock_cache.get.return_value = 0
-            resp = self.client.get(url, **TEST_API_KEY_HEADER)
+            # Add admin auth header because endpoint is ADMIN-protected
+            admin = self._create_user("admin-empty@example.com", "ADMIN") if hasattr(self, "_create_user") else None
+            # If helper not available in this class, create a user via repository
+            if admin is None:
+                admin = User.objects.create(
+                    name='AdminZero',
+                    email='adminzero@example.com',
+                    password=make_password('AdminZ3r0!'),
+                    role='ADMIN',
+                )
+            # Login to get token
+            login_url = reverse('login')
+            login_resp = self.client.post(login_url, {"email": admin.email, "password": 'AdminZ3r0!'}, format='json', **TEST_API_KEY_HEADER)
+            self.assertEqual(login_resp.status_code, 200, login_resp.content)
+            token = login_resp.json()["access_token"]
+            headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+            resp = self.client.get(url, **headers)
 
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
