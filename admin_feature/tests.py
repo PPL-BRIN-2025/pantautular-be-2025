@@ -2,13 +2,13 @@ from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework.test import APIClient
-from admin_feature.models import UserLog
+from admin_feature.models import AdminUserLog
 
 
 class AdminUserLogsTableTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse("admin_user_logs") 
+        self.url = reverse("admin_user_logs")
 
     def test_get_returns_empty_table_initially(self):
         res = self.client.get(self.url)
@@ -78,7 +78,7 @@ class AdminUserLogsTableTests(TestCase):
 
 class UserLogDetailAPITest(TestCase):
     def test_get_log_detail_returns_expected_fields(self):
-        log = UserLog.objects.create(
+        log = AdminUserLog.objects.create(
             username="user",
             email="user@example.com",
             action="LOGIN_SUCCESS",
@@ -99,9 +99,9 @@ class UserLogDetailAPITest(TestCase):
         self.assertIn("detail", data)
 
 
-class UserLogModelTest(TestCase):
+class AdminUserLogModelTest(TestCase):
     def test_str_method_returns_expected_format(self):
-        log = UserLog.objects.create(
+        log = AdminUserLog.objects.create(
             username="tester",
             email="tester@example.com",
             action="LOGIN_SUCCESS",
