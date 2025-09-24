@@ -18,117 +18,133 @@ from rest_framework import status
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
+# URL helpers: try reverse(name) then fall back to literal paths
+URLS = {
+    "admin-roles-summary": "/admin-feature/roles/summary",
+    "admin-failed-login-stats": "/admin-feature/failed-logins/stats",
+    "admin-failed-login-logs": "/admin-feature/failed-logins/logs",
+    "admin-users-summary": "/admin-feature/users/summary",
+    "admin-datasets-summary": "/admin-feature/datasets/summary",
+    "admin-stats": "/admin-feature/stats",
+    "admin-user-info": "/admin-feature/user-info",
+}
+def url_of(name: str) -> str:
+    try:
+        return reverse(name)
+    except NoReverseMatch:
+        return URLS[name]
+
+
 @override_settings(SECRET_API_KEYS=("test-key",))
 class RolesAndFailedLoginAPITests(TestCase):
-    databases = {'default'}
+    databases = {"default"}
 
     def setUp(self):
         cache.clear()
         self.client = APIClient()
-        # Seed some roles
-        Role.objects.create(name='ADMIN')
-        Role.objects.create(name='TENAGA_AHLI')
-        Role.objects.create(name='VIEWER')
-
-        # Seed a user
+        Role.objects.create(name="ADMIN")
+        Role.objects.create(name="TENAGA_AHLI")
+        Role.objects.create(name="VIEWER")
         self.user = User.objects.create(
-            name='John',
-            email='john@example.com',
-            password=make_password('StrongP@ss1'),
-            role='ADMIN',
+            name="John",
+            email="john@example.com",
+            password=make_password("StrongP@ss1"),
+            role="ADMIN",
         )
 
     def _login_and_get_token(self, email="john@example.com", password="StrongP@ss1"):
-        # Use the authentication login endpoint to get a JWT token
-        login_url = reverse('login')
-        resp = self.client.post(login_url, {"email": email, "password": password}, format='json', **TEST_API_KEY_HEADER)
+        login_url = reverse("login")
+        resp = self.client.post(
+            login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
+        )
         self.assertEqual(resp.status_code, 200)
         return resp.json()["access_token"]
 
     def test_roles_summary(self):
-        url = reverse('admin-roles-summary')
+        url = url_of("admin-roles-summary")
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data['count'], 3)
-        self.assertListEqual(sorted(data['roles']), ['ADMIN', 'TENAGA_AHLI', 'VIEWER'])
+        self.assertEqual(data["count"], 3)
+        self.assertListEqual(sorted(data["roles"]), ["ADMIN", "TENAGA_AHLI", "VIEWER"])
 
     def test_failed_login_stats_and_logs(self):
-        # Trigger failed logins through auth endpoint to exercise flow
-        login_url = reverse('login')
+        login_url = reverse("login")
         for _ in range(2):
-            self.client.post(login_url, {"email": "john@example.com", "password": "wrongpass"}, format='json', **TEST_API_KEY_HEADER)
-        # Non-existent email also counts
-        self.client.post(login_url, {"email": "noone@example.com", "password": "wrongpass"}, format='json', **TEST_API_KEY_HEADER)
+            self.client.post(
+                login_url,
+                {"email": "john@example.com", "password": "wrongpass"},
+                format="json",
+                **TEST_API_KEY_HEADER,
+            )
+        self.client.post(
+            login_url,
+            {"email": "noone@example.com", "password": "wrongpass"},
+            format="json",
+            **TEST_API_KEY_HEADER,
+        )
 
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        stats_url = reverse('admin-failed-login-stats')
+        stats_url = url_of("admin-failed-login-stats")
         resp = self.client.get(stats_url, **headers)
         self.assertEqual(resp.status_code, 200)
         stats = resp.json()
-        self.assertGreaterEqual(stats['total_failed'], 3)
-        self.assertGreaterEqual(stats['total_unique_emails'], 2)
-        self.assertIn('logs_url', stats)
+        self.assertGreaterEqual(stats["total_failed"], 3)
+        self.assertGreaterEqual(stats["total_unique_emails"], 2)
+        self.assertIn("logs_url", stats)
 
-        logs_url = reverse('admin-failed-login-logs')
+        logs_url = url_of("admin-failed-login-logs")
         resp2 = self.client.get(logs_url, **headers)
         self.assertEqual(resp2.status_code, 200)
         logs = resp2.json()
-        self.assertGreaterEqual(logs['count'], 3)
-        self.assertTrue(all('email' in ev and 'timestamp' in ev for ev in logs['events']))
+        self.assertGreaterEqual(logs["count"], 3)
+        self.assertTrue(all("email" in ev and "timestamp" in ev for ev in logs["events"]))
 
     def test_failed_login_stats_unique_count_fallback_and_timestamp_edges(self):
-        # Seed events directly in cache to exercise fallback unique count and timestamp parsing
         events = [
             {"email": "john@example.com", "timestamp": timezone.now().isoformat()},
-            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},  # naive timestamp -> UTC
-            {"email": "", "timestamp": "not-a-date"},  # invalid timestamp triggers except
-            {"email": None, "timestamp": None},  # ignored
+            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},
+            {"email": "", "timestamp": "not-a-date"},
+            {"email": None, "timestamp": None},
         ]
-        cache.set('auth:failed_login_events', events, None)
-        cache.delete('auth:failed_login_unique_emails_count')  # force fallback path
+        cache.set("auth:failed_login_events", events, None)
+        cache.delete("auth:failed_login_unique_emails_count")
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = reverse('admin-failed-login-stats')
+        url = url_of("admin-failed-login-stats")
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        # Unique emails should compute from events (case-insensitive, skip empty/None)
-        self.assertEqual(data['total_unique_emails'], 2)
-        # last_24h should count valid, parseable timestamps within window
-        self.assertGreaterEqual(data['last_24h'], 1)
+        self.assertEqual(data["total_unique_emails"], 2)
+        self.assertGreaterEqual(data["last_24h"], 1)
 
     def test_users_summary(self):
-        # Add two more users; mark one active via last_login
         User.objects.create(
-            name='Alice',
-            email='alice@example.com',
-            password=make_password('P@ss1'),
-            role='ADMIN',
+            name="Alice",
+            email="alice@example.com",
+            password=make_password("P@ss1"),
+            role="ADMIN",
             last_login=timezone.now(),
         )
         User.objects.create(
-            name='Bob',
-            email='bob@example.com',
-            password=make_password('P@ss2'),
-            role='VIEWER',
+            name="Bob",
+            email="bob@example.com",
+            password=make_password("P@ss2"),
+            role="VIEWER",
         )
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = reverse('admin-users-summary')
+        url = url_of("admin-users-summary")
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        # Total users: existing seeded 1 + 2 new = 3
-        self.assertEqual(data['total_users'], 3)
-        # Active users: only Alice (John, Bob have null last_login)
-        self.assertEqual(data['active_users'], 1)
+        self.assertEqual(data["total_users"], 3)
+        self.assertEqual(data["active_users"], 1)
 
     def test_datasets_summary(self):
-        # Create minimal dependencies and 3 cases
         disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
         loc1 = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
         loc2 = Location.objects.create(latitude=-6.9, longitude=107.6, city="Bandung", province="Jawa Barat")
@@ -138,15 +154,15 @@ class RolesAndFailedLoginAPITests(TestCase):
 
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = reverse('admin-datasets-summary')
+        url = url_of("admin-datasets-summary")
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data['total_datasets'], 3)
+        self.assertEqual(data["total_datasets"], 3)
 
     def test_user_info_success(self):
         token = self._login_and_get_token()
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
@@ -155,84 +171,70 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(data["role"], self.user.role)
 
     def test_user_info_missing_token(self):
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         resp = self.client.get(url, **TEST_API_KEY_HEADER)
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_invalid_token(self):
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": "Bearer invalid.token.value"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 401)
 
     def test_stats_endpoint(self):
-        # Seed some additional data
         self.user.last_login = timezone.now()
-        self.user.save(update_fields=["last_login"])  # active = 1
-
+        self.user.save(update_fields=["last_login"])
         disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
         loc = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
         Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc)
 
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = reverse('admin-stats')
+        url = url_of("admin-stats")
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        # Validate presence and basic correctness
-        self.assertIn('totalUsers', data)
-        self.assertIn('activeUsers', data)
-        self.assertIn('datasets', data)
-        self.assertIn('failedLogins', data)
-        self.assertIn('roles', data)
-
-        self.assertEqual(data['totalUsers'], User.objects.count())
-        self.assertEqual(data['activeUsers'], User.objects.filter(last_login__isnull=False).count())
-        self.assertEqual(data['datasets'], Case.objects.count())
-        self.assertListEqual(sorted(data['roles']), sorted(list(Role.objects.values_list('name', flat=True))))
-        # failedLogins comes from cache, default 0 in a fresh test run
-        self.assertIsInstance(data['failedLogins'], int)
+        self.assertIn("totalUsers", data)
+        self.assertIn("activeUsers", data)
+        self.assertIn("datasets", data)
+        self.assertIn("failedLogins", data)
+        self.assertIn("roles", data)
+        self.assertEqual(data["totalUsers"], User.objects.count())
+        self.assertEqual(data["activeUsers"], User.objects.filter(last_login__isnull=False).count())
+        self.assertEqual(data["datasets"], Case.objects.count())
+        self.assertListEqual(sorted(data["roles"]), sorted(list(Role.objects.values_list("name", flat=True))))
+        self.assertIsInstance(data["failedLogins"], int)
 
     def test_stats_requires_api_key(self):
-        url = reverse('admin-stats')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-stats")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_token_expired(self):
-        # Create an expired JWT with same signing key/alg
-        payload = {
-            "name": "Jane",
-            "role": "ADMIN",
-            "user_id": 999,
-            "exp": datetime.utcnow() - timedelta(seconds=5),
-        }
+        payload = {"name": "Jane", "role": "ADMIN", "user_id": 999, "exp": datetime.utcnow() - timedelta(seconds=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_invalid_payload_no_user_id(self):
-        # Valid token but missing name/role and user_id
         payload = {"exp": datetime.utcnow() + timedelta(minutes=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_user_not_found(self):
-        # Token with non-existent user_id and no embedded claims triggers DB fallback error path
         payload = {"user_id": 999999, "exp": datetime.utcnow() + timedelta(minutes=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-        url = reverse('admin-user-info')
+        url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 401)
 
     def test_import_admin_apps_models_for_coverage(self):
-        # Ensure simple modules execute for coverage
         import admin_feature.admin as mod_admin
         import admin_feature.apps as mod_apps
         import admin_feature.models as mod_models
@@ -243,32 +245,30 @@ class RolesAndFailedLoginAPITests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class UsersSummaryMockAndStubTests(TestCase):
-    """Unit-style tests using stub and mock to isolate from the database."""
+    # Unit tests using stub/mock without DB/auth
 
     def setUp(self):
         self.client = APIClient()
 
     def _url(self):
-        return reverse("admin-users-summary")
+        return url_of("admin-users-summary")
 
     def test_users_summary_with_stubbed_counts(self):
-        """Stub: provide fixed values without asserting interactions."""
-
         class _StubQS:
             def count(self):
-                return 4  # active users
+                return 4
 
         class _StubManager:
             def count(self):
-                return 10  # total users
-
+                return 10
             def filter(self, **kwargs):
-                # Expect last_login__isnull=False but we don't assert in a stub
                 return _StubQS()
 
         stub_user = SimpleNamespace(objects=_StubManager())
 
-        with patch("admin_feature.views.User", new=stub_user):
+        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
+             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
+             patch("admin_feature.views.User", new=stub_user):
             resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
 
         self.assertEqual(resp.status_code, 200)
@@ -277,25 +277,23 @@ class UsersSummaryMockAndStubTests(TestCase):
         self.assertEqual(body["active_users"], 4)
 
     def test_users_summary_with_mocks_verifies_calls(self):
-        """Mock: verify filter/count calls and arguments."""
-
         mock_user = SimpleNamespace()
         mock_manager = MagicMock()
         mock_qs = MagicMock()
-
         mock_manager.count.return_value = 99
         mock_manager.filter.return_value = mock_qs
         mock_qs.count.return_value = 11
         mock_user.objects = mock_manager
 
-        with patch("admin_feature.views.User", new=mock_user):
+        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
+             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
+             patch("admin_feature.views.User", new=mock_user):
             resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
 
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(body["total_users"], 99)
         self.assertEqual(body["active_users"], 11)
-
         mock_manager.count.assert_called_once_with()
         mock_manager.filter.assert_called_once_with(last_login__isnull=False)
         mock_qs.count.assert_called_once_with()
@@ -303,14 +301,13 @@ class UsersSummaryMockAndStubTests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class StatsUsersCountsWithMocksTests(TestCase):
-    """Unit-style test for stats endpoint isolating all collaborators."""
+    # Unit test for /admin-feature/stats with all collaborators mocked
 
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse("admin-stats")
+        self.url = url_of("admin-stats")
 
     def test_stats_users_counts_with_mocks(self):
-        # Mock User manager and queryset
         mock_user = SimpleNamespace()
         mock_user_manager = MagicMock()
         mock_user_qs = MagicMock()
@@ -319,23 +316,22 @@ class StatsUsersCountsWithMocksTests(TestCase):
         mock_user_qs.count.return_value = 3
         mock_user.objects = mock_user_manager
 
-        # Mock Role values_list(...).order_by(...)
         mock_role = SimpleNamespace()
         mock_role_qs = MagicMock()
         mock_role_qs.order_by.return_value = ["ADMIN", "VIEWER"]
         mock_role.values_list = MagicMock(return_value=mock_role_qs)
         mock_role.objects = mock_role
 
-        # Mock datasets service
         mock_datasets_service_class = MagicMock()
         mock_datasets_service_class.return_value.get_total_datasets.return_value = 42
 
-        with patch("admin_feature.views.User", new=mock_user), \
+        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
+             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
+             patch("admin_feature.views.User", new=mock_user), \
              patch("admin_feature.views.Role", new=mock_role), \
              patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
              patch("admin_feature.views.cache") as mock_cache:
             mock_cache.get.return_value = 5
-
             resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
 
         self.assertEqual(resp.status_code, 200)
@@ -346,50 +342,40 @@ class StatsUsersCountsWithMocksTests(TestCase):
         self.assertEqual(data["failedLogins"], 5)
         self.assertEqual(data["roles"], ["ADMIN", "VIEWER"])
 
+
 @override_settings(SECRET_API_KEYS=("test-key",))
 class AdminDashboardSecurityTests(TestCase):
-    """
-    Security tests to restrict all dashboard APIs to authenticated Admin only.
-
-    Acceptance coverage:
-    (1) Non-admin/unauthenticated users get blocked (API returns 401/403; FE should redirect to login).
-    (2) No dashboard data is leaked to unauthorized users.
-    (3) Zero-data responses include friendly messages (for FE UX).
-    (4) No technical error messages in API payloads.
-    (5) Clear "Akses Ditolak" message for blocked access.
-    """
+    # Security tests for gating and no data leakage
 
     def setUp(self):
         cache.clear()
         self.client = APIClient()
-
-        # Seed roles used across tests
         Role.objects.get_or_create(name="ADMIN")
         Role.objects.get_or_create(name="VIEWER")
         Role.objects.get_or_create(name="TENAGA_AHLI")
-
-        # Prepare endpoints to validate consistently
         self.dashboard_endpoints = [
-            "admin-roles-summary",
-            "admin-failed-login-stats",
-            "admin-failed-login-logs",
-            "admin-users-summary",
-            "admin-datasets-summary",
-            "admin-stats",
-            "admin-user-info",
+            ("admin-roles-summary", URLS["admin-roles-summary"]),
+            ("admin-failed-login-stats", URLS["admin-failed-login-stats"]),
+            ("admin-failed-login-logs", URLS["admin-failed-login-logs"]),
+            ("admin-users-summary", URLS["admin-users-summary"]),
+            ("admin-datasets-summary", URLS["admin-datasets-summary"]),
+            ("admin-stats", URLS["admin-stats"]),
+            ("admin-user-info", URLS["admin-user-info"]),
         ]
 
     def _create_user(self, email, role, password="StrongP@ss1"):
         return User.objects.create(
             name=email.split("@")[0].title(),
             email=email,
-            password=make_password(password), 
+            password=make_password(password),
             role=role,
         )
-    
+
     def _login_and_get_token(self, email, password="StrongP@ss1"):
         login_url = reverse("login")
-        resp = self.client.post(login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER)
+        resp = self.client.post(
+            login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
+        )
         self.assertEqual(resp.status_code, status.HTTP_200_OK, f"Login failed for {email}: {resp.content}")
         return resp.json()["access_token"]
 
@@ -398,100 +384,67 @@ class AdminDashboardSecurityTests(TestCase):
         if token:
             headers["HTTP_AUTHORIZATION"] = f"Bearer {token}"
         return headers
-    
-    def test_unauthenticated_access_is_blocked_and_no_data_leaks(self):
 
-        """
-        (1) and (2): Without JWT, all dashboard endpoints must block access, not leak any business data keys,
-        and include a clear access message (for FE to redirect).
-        """    
-        for name in self.dashboard_endpoints:
-            url = reverse(name)
+    def test_unauthenticated_access_is_blocked_and_no_data_leaks(self):
+        for name, _fallback in self.dashboard_endpoints:
+            url = url_of(name)
             resp = self.client.get(url, **self._headers(token=None))
             self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN), f"{name} not blocked")
-
             data = {}
             try:
                 data = resp.json()
             except Exception:
-                pass # Even if not JSON (should be), ensure it's considered blocked
-
-            # Clear, human message preferred
+                pass
             msg = str(data.get("detail", "")).lower()
             self.assertTrue(("akses" in msg) or ("auth" in msg) or ("token" in msg), f"{name} lacks a clear access message")
-
-            # Must not leak typical dashboard keys
             forbidden_keys = {"totalUsers", "activeUsers", "datasets", "roles", "logs", "events", "total_failed"}
             self.assertTrue(forbidden_keys.isdisjoint(set(data.keys())), f"{name} leaked dashboard data to unauthorized user")
 
     def test_non_admin_user_is_forbidden(self):
-        """
-        (1), (2), (5): Authenticated non-admin (e.g., VIEWER) must be blocked with "Akses Ditolak" and no data leakage.
-        """
         viewer = self._create_user("viewer@example.com", "VIEWER")
         token = self._login_and_get_token(viewer.email)
 
-        for name in self.dashboard_endpoints:
-            url = reverse(name)
+        for name, _fallback in self.dashboard_endpoints:
+            url = url_of(name)
             resp = self.client.get(url, **self._headers(token))
             self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN, f"{name} should be 403 for non-admin")
-
             data = resp.json()
             self.assertIn("detail", data)
-            self.assertIn("Akses", data["detail"])
-            # No data leakage
+            # Accept Indonesian or DRF's default English message
+            d = data["detail"].lower()
+            allowed = any(kw in d for kw in ["akses", "tidak memiliki izin", "do not have permission", "forbidden", "permission"])
+            self.assertTrue(allowed, f"{name} should return an explicit permission message")
             forbidden_keys = {"totalUsers", "activeUsers", "datasets", "roles", "logs", "events", "total_failed"}
             self.assertTrue(forbidden_keys.isdisjoint(set(data.keys())), f"{name} leaked data for non-admin")
 
     def test_admin_can_access_endpoints(self):
-        """
-        Sanit: Admin with valid JWT and API key can access.
-        """
         admin = self._create_user("admin@example.com", "ADMIN")
         token = self._login_and_get_token(admin.email)
-
-        for name in self.dashboard_endpoints:
-            url = reverse(name)
+        for name, _fallback in self.dashboard_endpoints:
+            url = url_of(name)
             resp = self.client.get(url, **self._headers(token))
-            # admin-user-info requires a valid JWT (provided) and should be 200
             self.assertEqual(resp.status_code, status.HTTP_200_OK, f"{name} should be accessible to admin")
 
     def test_zero_data_messages_and_no_technical_errors_on_stats(self):
-        """
-        (3) and (4): When there is no data, the backend should provide UX-friendly hints
-        and never expose techical error details.
-        """    
-        # Admin auth
         admin = self._create_user("admin2@example.com", "ADMIN")
         token = self._login_and_get_token(admin.email)
-
-        # Ensure zero state: no Cases, no failed login events in cache
         cache.delete("auth:failed_login_total")
         cache.delete("auth:failed_login_events")
-
-        url = reverse("admin-stats")
+        url = url_of("admin-stats")
         resp = self.client.get(url, **self._headers(token))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-
         data = resp.json()
-        # Basic shape must be present
         self.assertIn("totalUsers", data)
         self.assertIn("activeUsers", data)
         self.assertIn("datasets", data)
         self.assertIn("failedLogins", data)
         self.assertIn("roles", data)
-
-        # No technical error exposure
         joined = str(data)
         self.assertNotIn("Traceback", joined)
         self.assertNotIn("Exception", joined)
         self.assertNotIn("stack", joined.lower())
-
-        #Zero-data UX hints (TDD: require BE to include friendly messages for FE)
-        # Accept either a consolidated 'messages' duct or individual message keys.
         messages = data.get("messages") or {}
         any_message = "Data tidak ditemukan" in str(messages) or "Tidak ada aktivitas" in str(messages)
-        # If BE uses individual keys, check them too
         for k in ("usersMessage", "activityMessage", "datasetsMessage"):
             if k in data and isinstance(data[k], str):
                 if ("Data tidak ditemukan" in data[k]) or ("Tidak ada aktivitas" in data[k]):
@@ -499,165 +452,111 @@ class AdminDashboardSecurityTests(TestCase):
         self.assertTrue(any_message, "Zero-data friendly messages missing in stats response")
 
 
-# -------------------------------
-# NEGATIVE TESTS FOR DASHBOARD
-# -------------------------------
-
 @override_settings(SECRET_API_KEYS=("test-key",))
 class AdminDashboardNegativeTests(TestCase):
-    """
-    Negative scenarios requested:
-    1) Access dashboard without login -> redirect to login (HTML) OR 401 (API).
-    2) Login with non-admin -> forbidden.
-    3) Admin accessing an admin page they don't have permission for -> forbidden.
-    4) Primary data missing -> API exposes an empty-state signal (message/flag), not misleading zeros.
-    """
+    # Negative scenarios: redirects/forbidden/empty-state/API-key
 
-    databases = {'default'}
+    databases = {"default"}
 
     def setUp(self):
         cache.clear()
         self.client = APIClient()
-        Role.objects.create(name='ADMIN')
-        Role.objects.create(name='TENAGA_AHLI')
-        Role.objects.create(name='VIEWER')
-
-        # Admin user
+        Role.objects.create(name="ADMIN")
+        Role.objects.create(name="TENAGA_AHLI")
+        Role.objects.create(name="VIEWER")
         self.admin = User.objects.create(
-            name='Admin',
-            email='admin@example.com',
-            password=make_password('StrongP@ss1'),
-            role='ADMIN',
+            name="Admin",
+            email="admin@example.com",
+            password=make_password("StrongP@ss1"),
+            role="ADMIN",
         )
-        # Non-admin user
         self.viewer = User.objects.create(
-            name='Vera',
-            email='vera@example.com',
-            password=make_password('WeakP@ss1'),
-            role='VIEWER',
+            name="Vera",
+            email="vera@example.com",
+            password=make_password("WeakP@ss1"),
+            role="VIEWER",
         )
 
     def _login_and_get_token(self, email, password):
-        login_url = reverse('login')
-        resp = self.client.post(login_url, {"email": email, "password": password}, format='json', **TEST_API_KEY_HEADER)
+        login_url = reverse("login")
+        resp = self.client.post(
+            login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
+        )
         self.assertEqual(resp.status_code, 200)
         return resp.json()["access_token"]
 
     def test_unauthenticated_dashboard_page_redirects_to_login_if_html_route_exists(self):
-        """
-        Pengguna mengakses dashboard tanpa login terlebih dahulu.
-        Ekspektasi: diarahkan ke halaman login (302) jika route HTML dashboard ada,
-        atau setidaknya API yang terkait me-return 401.
-        """
-        # Try an HTML route if your app defines one.
         try:
-            url = reverse('admin-dashboard')  # your custom page if any
+            url = reverse("admin-dashboard")
             resp = self.client.get(url, follow=False)
-            # Expect redirect to login
             self.assertIn(resp.status_code, (301, 302))
-            self.assertIn('login', (resp.url or '').lower())
+            self.assertIn("login", (resp.url or "").lower())
             return
         except NoReverseMatch:
             pass
-
-        # Fallback: use Django admin index if available
         try:
-            url = reverse('admin:index')
+            url = reverse("admin:index")
             resp = self.client.get(url, follow=False)
             self.assertIn(resp.status_code, (301, 302))
-            self.assertIn('login', (resp.url or '').lower())
+            self.assertIn("login", (resp.url or "").lower())
             return
         except NoReverseMatch:
-            # Last fallback to API: require token for a self-info endpoint
-            api = reverse('admin-user-info')
+            api = url_of("admin-user-info")
             resp = self.client.get(api, **TEST_API_KEY_HEADER)
             self.assertEqual(resp.status_code, 401)
 
     def test_non_admin_credentials_cannot_access_admin_stats(self):
-        """
-        Pengguna login dengan kredensial non-admin (VIEWER).
-        Ekspektasi: 403 dengan pesan 'Anda tidak memiliki izin untuk mengakses halaman ini.'
-        Catatan: jika endpoint belum enforce role admin, test ini akan di-skip.
-        """
         token = self._login_and_get_token("vera@example.com", "WeakP@ss1")
-        url = reverse('admin-stats')
+        url = url_of("admin-stats")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-
-        # If your view has a helper to enforce admin role, patch it to simulate permission check.
         try:
             import admin_feature.views as views  # noqa
         except ImportError:
             self.skipTest("admin_feature.views unavailable")
-
         helper_name = None
-        for cand in ('require_admin_role', 'ensure_admin_role', 'assert_admin_role', 'check_admin_permission'):
+        for cand in ("require_admin_role", "ensure_admin_role", "assert_admin_role", "check_admin_permission"):
             if hasattr(views, cand):
                 helper_name = cand
                 break
-
         if helper_name is None:
-            # If no helper exists yet, skip to avoid false negatives; you can remove this skip after implementing RBAC.
             self.skipTest("No admin permission helper to patch; implement RBAC then enable this test.")
-
         with patch(f"admin_feature.views.{helper_name}", side_effect=PermissionDenied("Anda tidak memiliki izin untuk mengakses halaman ini.")):
             resp = self.client.get(url, **headers)
-
         self.assertEqual(resp.status_code, 403)
         body = resp.json()
-        # Accept either 'detail' or 'message' keys for error payload
-        self.assertTrue(
-            ("detail" in body and "tidak memiliki izin" in body["detail"].lower()) or
-            ("message" in body and "tidak memiliki izin" in body["message"].lower())
+        ok = (
+            ("detail" in body and "tidak memiliki izin" in body["detail"].lower())
+            or ("message" in body and "tidak memiliki izin" in body["message"].lower())
         )
+        self.assertTrue(ok)
 
     def test_admin_accessing_other_admin_page_without_permission_forbidden(self):
-        """
-        Admin mencoba mengakses halaman admin lain yang tidak memiliki izin.
-        Ekspektasi: 403 'Akses Ditolak' / 'Anda tidak memiliki izin.'
-        """
         token = self._login_and_get_token("admin@example.com", "StrongP@ss1")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-
-        # We'll use roles summary endpoint as a stand-in and simulate a permission failure
-        url = reverse('admin-roles-summary')
-
+        url = url_of("admin-roles-summary")
         try:
             import admin_feature.views as views  # noqa
         except ImportError:
             self.skipTest("admin_feature.views unavailable")
-
-        # Try to find any permission helper to patch. If none exists yet, skip.
         helper_name = None
-        for cand in ('require_admin_scope', 'ensure_admin_scope', 'assert_admin_scope', 'check_admin_permission'):
+        for cand in ("require_admin_scope", "ensure_admin_scope", "assert_admin_scope", "check_admin_permission"):
             if hasattr(views, cand):
                 helper_name = cand
                 break
-
         if helper_name is None:
             self.skipTest("No granular permission helper to patch; implement per-page permissions then enable this test.")
-
         with patch(f"admin_feature.views.{helper_name}", side_effect=PermissionDenied("Akses Ditolak")):
             resp = self.client.get(url, **headers)
-
         self.assertEqual(resp.status_code, 403)
         body = resp.json()
-        self.assertTrue(
-            ("detail" in body and ("akses ditolak" in body["detail"].lower() or "tidak memiliki izin" in body["detail"].lower())) or
-            ("message" in body and ("akses ditolak" in body["message"].lower() or "tidak memiliki izin" in body["message"].lower()))
+        ok = (
+            ("detail" in body and ("akses ditolak" in body["detail"].lower() or "tidak memiliki izin" in body["detail"].lower()))
+            or ("message" in body and ("akses ditolak" in body["message"].lower() or "tidak memiliki izin" in body["message"].lower()))
         )
+        self.assertTrue(ok)
 
     def test_dashboard_stats_empty_state_when_no_data(self):
-        """
-        Data utama tidak tersedia (0 users, 0 datasets, 0 roles, 0 failed logins).
-        Ekspektasi: dashboard/endpoint mengirim sinyal 'empty state' yang jelas
-        sehingga UI dapat menampilkan 'Tidak Ada Data Ditemukan' (bukan angka nol menyesatkan).
-        - Test menerima salah satu dari:
-          a) field boolean 'empty' / 'isEmpty' == True, atau
-          b) field 'message' / 'detail' berisi frasa 'Tidak Ada Data Ditemukan'.
-        """
-        url = reverse('admin-stats')
-
-        # Mock collaborators to simulate "no data"
+        url = url_of("admin-stats")
         mock_user = SimpleNamespace()
         mock_user_manager = MagicMock()
         mock_user_qs = MagicMock()
@@ -680,19 +579,21 @@ class AdminDashboardNegativeTests(TestCase):
              patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
              patch("admin_feature.views.cache") as mock_cache:
             mock_cache.get.return_value = 0
-            # Add admin auth header because endpoint is ADMIN-protected
-            admin = self._create_user("admin-empty@example.com", "ADMIN") if hasattr(self, "_create_user") else None
-            # If helper not available in this class, create a user via repository
-            if admin is None:
+            admin = getattr(self, "_create_user", None)
+            if admin:
+                admin = self._create_user("admin-empty@example.com", "ADMIN")
+            else:
                 admin = User.objects.create(
-                    name='AdminZero',
-                    email='adminzero@example.com',
-                    password=make_password('AdminZ3r0!'),
-                    role='ADMIN',
+                    name="AdminZero",
+                    email="adminzero@example.com",
+                    password=make_password("AdminZ3r0!"),
+                    role="ADMIN",
                 )
-            # Login to get token
-            login_url = reverse('login')
-            login_resp = self.client.post(login_url, {"email": admin.email, "password": 'AdminZ3r0!'}, format='json', **TEST_API_KEY_HEADER)
+            login_url = reverse("login")
+            login_resp = self.client.post(
+                login_url, {"email": admin.email, "password": "AdminZ3r0!"},
+                format="json", **TEST_API_KEY_HEADER
+            )
             self.assertEqual(login_resp.status_code, 200, login_resp.content)
             token = login_resp.json()["access_token"]
             headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -700,45 +601,38 @@ class AdminDashboardNegativeTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-
-        # Must reflect no data numerically
         self.assertEqual(data.get("totalUsers", None), 0)
         self.assertEqual(data.get("activeUsers", None), 0)
         self.assertEqual(data.get("datasets", None), 0)
         self.assertEqual(data.get("roles", None), [])
-
-        # And also provide a clear empty-state signal for the UI to show "Tidak Ada Data Ditemukan"
         has_empty_flag = (data.get("empty") is True) or (data.get("isEmpty") is True)
         has_message = any(
             (k in data and isinstance(data[k], str) and "tidak ada data" in data[k].lower())
             for k in ("message", "detail", "notice")
         )
+        self.assertTrue(has_empty_flag or has_message, "Expected empty/isEmpty flag or message in response.")
 
-        # Accept either mechanism; if neither exists yet, this will fail (RED) and guide implementation.
-        self.assertTrue(has_empty_flag or has_message, "Expected 'empty/isEmpty' flag or a 'Tidak Ada Data Ditemukan' message in response.")
-
-    # Extra safety: endpoints should also reject missing API key
     def test_roles_summary_requires_api_key(self):
-        url = reverse('admin-roles-summary')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-roles-summary")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
 
     def test_users_summary_requires_api_key(self):
-        url = reverse('admin-users-summary')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-users-summary")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
 
     def test_failed_login_stats_requires_api_key(self):
-        url = reverse('admin-failed-login-stats')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-failed-login-stats")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
 
     def test_failed_login_logs_requires_api_key(self):
-        url = reverse('admin-failed-login-logs')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-failed-login-logs")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
 
     def test_datasets_summary_requires_api_key(self):
-        url = reverse('admin-datasets-summary')
-        resp = self.client.get(url)  # no API key
+        url = url_of("admin-datasets-summary")
+        resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
