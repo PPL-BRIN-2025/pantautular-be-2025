@@ -36,7 +36,10 @@ DEBUG = False
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,.up.railway.app,.koyeb.app").split(",")
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1,.up.railway.app,.koyeb.app"
+).split(",")
 
 # Application definition
 
@@ -168,6 +171,7 @@ STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
     "https://pantautular.netlify.app",
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",
 ]
 
 
@@ -175,6 +179,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^https:\/\/.*\.up\.railway\.app$",  # Allows all railway.app subdomains
     r"^https:\/\/.*\.netlify\.app$",  # Allows all netlify.app subdomains
+    r"^https:\/\/.*\.koyeb\.app$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -236,3 +241,9 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",  # FE
+    "https://royal-rahel-nayaka-cbe367a7.koyeb.app",           # BE
+    "https://pantautular.netlify.app",
+]
