@@ -131,5 +131,15 @@ class AdminFeatureTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(User.objects.filter(id=self.admin.id).exists())
 
+    def test_change_role_by_id(self):
+        res = self.client.put(
+            f"/admin-feature/users/{self.alice.id}/role",
+            {"role_id": self.curator.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.alice.refresh_from_db()
+        self.assertEqual(self.alice.role, "Curator")
+        self.assertTrue(UserRole.objects.filter(user=self.alice, role=self.curator).exists())
 
 
