@@ -15,6 +15,7 @@ import jwt
 from datetime import datetime, timedelta
 import importlib
 from rest_framework import status
+from admin_feature.views import UserInfoAPIView
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -73,18 +74,8 @@ class RolesAndFailedLoginAPITests(TestCase):
     def test_failed_login_stats_and_logs(self):
         login_url = reverse("login")
         for _ in range(2):
-            self.client.post(
-                login_url,
-                {"email": "john@example.com", "password": "wrongpass"},
-                format="json",
-                **TEST_API_KEY_HEADER,
-            )
-        self.client.post(
-            login_url,
-            {"email": "noone@example.com", "password": "wrongpass"},
-            format="json",
-            **TEST_API_KEY_HEADER,
-        )
+            self.client.post(login_url, {"email": "john@example.com", "password": "wrongpass"}, format="json", **TEST_API_KEY_HEADER)
+        self.client.post(login_url, {"email": "noone@example.com", "password": "wrongpass"}, format="json", **TEST_API_KEY_HEADER)
 
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -106,8 +97,8 @@ class RolesAndFailedLoginAPITests(TestCase):
     def test_failed_login_stats_unique_count_fallback_and_timestamp_edges(self):
         events = [
             {"email": "john@example.com", "timestamp": timezone.now().isoformat()},
-            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},
-            {"email": "", "timestamp": "not-a-date"},
+            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},  # naive -> force tz attach
+            {"email": "", "timestamp": "not-a-date"},  # parse error branch
             {"email": None, "timestamp": None},
         ]
         cache.set("auth:failed_login_events", events, None)
@@ -120,6 +111,32 @@ class RolesAndFailedLoginAPITests(TestCase):
         data = resp.json()
         self.assertEqual(data["total_unique_emails"], 2)
         self.assertGreaterEqual(data["last_24h"], 1)
+
+    def test_failed_login_stats_uses_cached_unique_count(self):
+        cache.set("auth:failed_login_unique_emails_count", 7, None)
+        cache.set("auth:failed_login_total", 11, None)
+        cache.set("auth:failed_login_events", [], None)
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        url = url_of("admin-failed-login-stats")
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["total_unique_emails"], 7)
+
+    def test_failed_login_stats_excludes_old_events_from_last_24h(self):
+        old_ts = (timezone.now() - timedelta(days=2)).isoformat()
+        recent_ts = timezone.now().isoformat()
+        cache.set("auth:failed_login_events", [
+            {"email": "a@b.com", "timestamp": old_ts},
+            {"email": "a@b.com", "timestamp": recent_ts},
+        ], None)
+        token = self._login_and_get_token()
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+        url = url_of("admin-failed-login-stats")
+        resp = self.client.get(url, **headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["last_24h"], 1)
 
     def test_users_summary(self):
         User.objects.create(
@@ -151,7 +168,6 @@ class RolesAndFailedLoginAPITests(TestCase):
         Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc1)
         Case.objects.create(gender="female", age=25, city="Bandung", status="biasa", severity="hospitalisasi", disease=disease, location=loc2)
         Case.objects.create(gender="male", age=40, city="Jakarta", status="bahaya", severity="mortalitas", disease=disease, location=loc1)
-
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = url_of("admin-datasets-summary")
@@ -187,7 +203,6 @@ class RolesAndFailedLoginAPITests(TestCase):
         disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
         loc = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
         Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc)
-
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = url_of("admin-stats")
@@ -245,7 +260,7 @@ class RolesAndFailedLoginAPITests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class UsersSummaryMockAndStubTests(TestCase):
-    # Unit tests using stub/mock without DB/auth
+    # Stub/mock without auth
 
     def setUp(self):
         self.client = APIClient()
@@ -257,20 +272,16 @@ class UsersSummaryMockAndStubTests(TestCase):
         class _StubQS:
             def count(self):
                 return 4
-
         class _StubManager:
             def count(self):
                 return 10
             def filter(self, **kwargs):
                 return _StubQS()
-
         stub_user = SimpleNamespace(objects=_StubManager())
-
         with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
              patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
              patch("admin_feature.views.User", new=stub_user):
             resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
-
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(body["total_users"], 10)
@@ -284,12 +295,10 @@ class UsersSummaryMockAndStubTests(TestCase):
         mock_manager.filter.return_value = mock_qs
         mock_qs.count.return_value = 11
         mock_user.objects = mock_manager
-
         with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
              patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
              patch("admin_feature.views.User", new=mock_user):
             resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
-
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
         self.assertEqual(body["total_users"], 99)
@@ -301,7 +310,7 @@ class UsersSummaryMockAndStubTests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class StatsUsersCountsWithMocksTests(TestCase):
-    # Unit test for /admin-feature/stats with all collaborators mocked
+    # Stats with collaborators mocked
 
     def setUp(self):
         self.client = APIClient()
@@ -342,10 +351,79 @@ class StatsUsersCountsWithMocksTests(TestCase):
         self.assertEqual(data["failedLogins"], 5)
         self.assertEqual(data["roles"], ["ADMIN", "VIEWER"])
 
+    def test_stats_partial_zero_messages_set(self):
+        mock_user = SimpleNamespace()
+        mock_user_manager = MagicMock()
+        mock_user_qs = MagicMock()
+        mock_user_manager.count.return_value = 5      # totalUsers != 0
+        mock_user_manager.filter.return_value = mock_user_qs
+        mock_user_qs.count.return_value = 0           # activeUsers == 0
+        mock_user.objects = mock_user_manager
+
+        mock_role = SimpleNamespace()
+        mock_role_qs = MagicMock()
+        mock_role_qs.order_by.return_value = ["ADMIN"]
+        mock_role.values_list = MagicMock(return_value=mock_role_qs)
+        mock_role.objects = mock_role
+
+        mock_datasets_service_class = MagicMock()
+        mock_datasets_service_class.return_value.get_total_datasets.return_value = 0  # datasets == 0
+
+        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
+             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
+             patch("admin_feature.views.User", new=mock_user), \
+             patch("admin_feature.views.Role", new=mock_role), \
+             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
+             patch("admin_feature.views.cache") as mock_cache:
+                mock_cache.get.return_value = 2
+                resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("messages", data)
+        self.assertIn("activityMessage", data["messages"])
+        self.assertIn("datasetsMessage", data["messages"])
+        self.assertEqual(data["messages"]["activityMessage"], "Tidak ada aktivitas")
+        self.assertEqual(data["messages"]["datasetsMessage"], "Data tidak ditemukan")
+
+    def test_stats_partial_users_zero_message_set(self):
+        # totalUsers == 0 but others non-zero -> usersMessage only
+        mock_user = SimpleNamespace()
+        mock_user_manager = MagicMock()
+        mock_user_qs = MagicMock()
+        mock_user_manager.count.return_value = 0      # triggers usersMessage
+        mock_user_manager.filter.return_value = mock_user_qs
+        mock_user_qs.count.return_value = 2           # activeUsers > 0
+        mock_user.objects = mock_user_manager
+
+        mock_role = SimpleNamespace()
+        mock_role_qs = MagicMock()
+        mock_role_qs.order_by.return_value = ["ADMIN"]
+        mock_role.values_list = MagicMock(return_value=mock_role_qs)
+        mock_role.objects = mock_role
+
+        mock_datasets_service_class = MagicMock()
+        mock_datasets_service_class.return_value.get_total_datasets.return_value = 9  # datasets > 0
+
+        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
+             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
+             patch("admin_feature.views.User", new=mock_user), \
+             patch("admin_feature.views.Role", new=mock_role), \
+             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
+             patch("admin_feature.views.cache") as mock_cache:
+            mock_cache.get.return_value = 1
+            resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("messages", data)
+        self.assertIn("usersMessage", data["messages"])
+        self.assertEqual(data["messages"]["usersMessage"], "Data tidak ditemukan")
+
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class AdminDashboardSecurityTests(TestCase):
-    # Security tests for gating and no data leakage
+    # Security/gating and no leakage
 
     def setUp(self):
         cache.clear()
@@ -386,7 +464,7 @@ class AdminDashboardSecurityTests(TestCase):
         return headers
 
     def test_unauthenticated_access_is_blocked_and_no_data_leaks(self):
-        for name, _fallback in self.dashboard_endpoints:
+        for name, _ in self.dashboard_endpoints:
             url = url_of(name)
             resp = self.client.get(url, **self._headers(token=None))
             self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN), f"{name} not blocked")
@@ -403,14 +481,12 @@ class AdminDashboardSecurityTests(TestCase):
     def test_non_admin_user_is_forbidden(self):
         viewer = self._create_user("viewer@example.com", "VIEWER")
         token = self._login_and_get_token(viewer.email)
-
-        for name, _fallback in self.dashboard_endpoints:
+        for name, _ in self.dashboard_endpoints:
             url = url_of(name)
             resp = self.client.get(url, **self._headers(token))
             self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN, f"{name} should be 403 for non-admin")
             data = resp.json()
             self.assertIn("detail", data)
-            # Accept Indonesian or DRF's default English message
             d = data["detail"].lower()
             allowed = any(kw in d for kw in ["akses", "tidak memiliki izin", "do not have permission", "forbidden", "permission"])
             self.assertTrue(allowed, f"{name} should return an explicit permission message")
@@ -420,7 +496,7 @@ class AdminDashboardSecurityTests(TestCase):
     def test_admin_can_access_endpoints(self):
         admin = self._create_user("admin@example.com", "ADMIN")
         token = self._login_and_get_token(admin.email)
-        for name, _fallback in self.dashboard_endpoints:
+        for name, _ in self.dashboard_endpoints:
             url = url_of(name)
             resp = self.client.get(url, **self._headers(token))
             self.assertEqual(resp.status_code, status.HTTP_200_OK, f"{name} should be accessible to admin")
@@ -454,7 +530,7 @@ class AdminDashboardSecurityTests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class AdminDashboardNegativeTests(TestCase):
-    # Negative scenarios: redirects/forbidden/empty-state/API-key
+    # Negative scenarios and API key checks
 
     databases = {"default"}
 
@@ -636,3 +712,32 @@ class AdminDashboardNegativeTests(TestCase):
         url = url_of("admin-datasets-summary")
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 401)
+
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class UserInfoEdgeUnitTests(TestCase):
+    # Direct-call branches in UserInfoAPIView
+
+    def test_user_info_no_user_internal_401(self):
+        view = UserInfoAPIView()
+        req = SimpleNamespace()  # no 'user'
+        resp = view.get(req)
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn("Authentication credentials were not provided", str(resp.data.get("detail", "")))
+
+    def test_user_info_non_admin_internal_403(self):
+        view = UserInfoAPIView()
+        fake_user = SimpleNamespace(role="VIEWER", name="Vera", email="vera@example.com")
+        req = SimpleNamespace(user=fake_user)
+        resp = view.get(req)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("Akses Ditolak", str(resp.data.get("detail", "")))
+
+    def test_user_info_name_fallback_to_email(self):
+        view = UserInfoAPIView()
+        fake_user = SimpleNamespace(role="ADMIN", name=None, email="no-name@example.com")
+        req = SimpleNamespace(user=fake_user)
+        resp = view.get(req)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["name"], "no-name@example.com")
+        self.assertEqual(resp.data["role"], "ADMIN")
