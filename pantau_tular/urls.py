@@ -28,6 +28,7 @@ urlpatterns = [
     path('', include('pt_backend.urls')),
     path('metrics/', exports.ExportToDjangoView, name='prometheus-django-metrics'),
     path('authentication/', include("authentication.urls")),
+    path('admin-feature/', include('admin_feature.urls')),
     path('health/', health),
 ]
 

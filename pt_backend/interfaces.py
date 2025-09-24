@@ -32,6 +32,11 @@ class CaseRepositoryInterface(ABC):
     def get_status_and_province(self):
         pass # pragma: no cover
 
+    # New: explicit contract for counting cases/datasets
+    @abstractmethod
+    def count_cases(self):
+        pass # pragma: no cover
+
 class CacheInterface(ABC):
     @abstractmethod
     def get(self, key):
