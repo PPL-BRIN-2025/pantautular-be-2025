@@ -12,7 +12,7 @@ class AdminUserLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "admin_user_logs"
+        db_table = "admin_feature_userlog"
         indexes = [
             models.Index(fields=["timestamp"]),
             models.Index(fields=["username"]),

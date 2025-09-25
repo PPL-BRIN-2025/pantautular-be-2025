@@ -32,6 +32,7 @@ SECRET_API_KEY = os.getenv('SECRET_API_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
+# print("DEBUG =", DEBUG)
 
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
@@ -55,7 +56,7 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
-    "admin_feature", 
+    'admin_feature', 
 ]
 
 MIDDLEWARE = [

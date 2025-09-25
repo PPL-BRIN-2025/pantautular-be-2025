@@ -6,7 +6,6 @@ class AdminUserLogSerializer(serializers.ModelSerializer):
         model = AdminUserLog
         fields = ("id", "username", "email", "timestamp", "detail", "note", "action")
 
-
 class AdminUserLogDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminUserLog
