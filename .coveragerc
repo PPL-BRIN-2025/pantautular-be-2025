@@ -4,11 +4,24 @@ branch = True
 omit =
     */migrations/*
     */tests.py
+    */test_*.py
+    */tests/**/*
+    */__pycache__/*
 
 [report]
 show_missing = True
 skip_covered = False
 fail_under = 0
+exclude_lines =
+    pragma: no cover
+    ^\s*if __name__ == ['"]__main__['"]:\s*$
+    ^\s*@abstractmethod
+    ^\s*raise NotImplementedError
+
+[paths]
+source =
+    admin_feature
+    */pantautular-be-2025/admin_feature
 
 [html]
 directory = htmlcov
