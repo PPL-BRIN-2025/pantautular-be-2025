@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
@@ -27,8 +28,8 @@ load_dotenv()
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
-SECRET_API_KEY = os.getenv('SECRET_API_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY') or secrets.token_urlsafe(50)
+SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -119,9 +120,19 @@ WSGI_APPLICATION = 'pantau_tular.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
-}
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.config(default=DATABASE_URL)
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

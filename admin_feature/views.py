@@ -4,17 +4,20 @@ from datetime import datetime, timedelta
 from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
+from django.db import transaction
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.generics import ListAPIView, DestroyAPIView
 
 from authentication.security import CustomJWTAuthentication
 from authentication.permissions import IsTokenAuthenticated
 # Reuse the same ADMIN gate as feature 1
 from admin_feature.permissions import IsAdminRole  # or: from admin_user.permissions import IsAdminRole
 
-from pt_backend.models import Role, User
+from pt_backend.models import Role, User, UserRole
+from .serializers import UserSerializer
 from .services import DatasetsService
 
 
@@ -218,3 +221,65 @@ class UserInfoAPIView(_AdminBaseAPIView):
 
         name = getattr(user, "name", None) or getattr(user, "email", "")
         return Response({"name": name, "role": role}, status=status.HTTP_200_OK)
+
+# Admin role Management (append)
+
+class AdminUserChangeRoleView(APIView):
+    """
+    PUT /admin/users/<int:id>/role
+    Body: { "role_id": 2 }  or  { "role_name": "Curator" }
+    Behavior:
+      - Update string flag user.role
+      - Replace all rows in UserRole for that user with the chosen role (single-role policy)
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+
+    @transaction.atomic
+    def put(self, request, id):
+        try:
+            user = User.objects.get(id=id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        role_obj = None
+        role_id = request.data.get("role_id")
+        role_name = request.data.get("role_name")
+
+        if role_id is not None:
+            role_obj = Role.objects.filter(id=role_id).first()
+        elif role_name:
+            role_obj = Role.objects.filter(name=role_name).first()
+
+        if role_obj is None:
+            return Response({"detail": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update string flag (for quick checks in your existing code paths)
+        user.role = role_obj.name
+        user.save(update_fields=["role"])
+
+        # Replace mapping in UserRole to reflect the chosen role (single-role model)
+        UserRole.objects.filter(user=user).delete()
+        UserRole.objects.create(user=user, role=role_obj)
+
+        return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class AdminUserListView(ListAPIView):
+    """
+    GET /admin/users
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+    serializer_class = UserSerializer
+    queryset = User.objects.all().order_by("id")
+
+
+class AdminUserDeleteView(DestroyAPIView):
+    """
+    DELETE /admin/users/<int:id>
+    """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+    lookup_field = "id"
+    queryset = User.objects.all()

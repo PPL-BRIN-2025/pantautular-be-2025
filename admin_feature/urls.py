@@ -8,9 +8,13 @@ from .views import (
     DatasetsSummaryAPIView,
     StatsAPIView,
     UserInfoAPIView,
+    AdminUserListView,
+    AdminUserDeleteView,
+    AdminUserChangeRoleView,
 )
 
 urlpatterns = [
+    # Admin dashboard endpoints
     path("roles/summary", RolesSummaryAPIView.as_view(), name="roles-summary"),
     path("failed-logins/stats", FailedLoginStatsAPIView.as_view(), name="failed-login-stats"),
     path("failed-logins/logs", FailedLoginEventsAPIView.as_view(), name="failed-login-logs"),
@@ -18,4 +22,9 @@ urlpatterns = [
     path("datasets/summary", DatasetsSummaryAPIView.as_view(), name="datasets-summary"),
     path("stats", StatsAPIView.as_view(), name="admin-stats"),
     path("user-info", UserInfoAPIView.as_view(), name="admin-user-info"),
+
+    # Admin role management endpoints
+    path("users", AdminUserListView.as_view(), name="admin-user-list"),
+    path("users/<int:id>", AdminUserDeleteView.as_view(), name="admin-user-delete"),
+    path("users/<int:id>/role", AdminUserChangeRoleView.as_view(), name="admin-user-change-role"),
 ]
