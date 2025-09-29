@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from typing import Callable, Dict, Iterable, List, Optional
 
 from django.core.cache import cache as django_cache
-from django.utils import timezone
+from django.utils import timezone as django_timezone
 
 from pt_backend.models import Role, User
 from pt_backend.repositories import CaseRepository
@@ -137,7 +137,7 @@ class AdminDashboardService:
         self.user_model = user_model
         self.cache = cache_backend
         self.dataset_service = dataset_service or DatasetsService()
-        self.now_provider = now_provider or timezone.now
+        self.now_provider = now_provider or django_timezone.now
 
     # --- Roles ---
     def get_roles_summary(self) -> RolesSummary:
@@ -195,7 +195,7 @@ class AdminDashboardService:
         except (TypeError, ValueError):
             return None
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=datetime_timezone.utc)
         return dt
 
     # --- Users ---
