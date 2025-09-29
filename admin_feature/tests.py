@@ -1,5 +1,5 @@
 # admin_feature/tests.py
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse, NoReverseMatch
 from django.core.cache import cache
 from django.utils import timezone
@@ -13,12 +13,17 @@ from typing import Dict, List, Optional
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from secrets import token_urlsafe
 import importlib
 from rest_framework import status
-from admin_feature.views import UserInfoAPIView
-from admin_feature.services import AdminDashboardService
+from admin_feature.views import AdminDashboardServiceMixin, UserInfoAPIView
+from admin_feature.services import (
+    AdminDashboardService,
+    EMPTY_DATA_MESSAGE,
+    NO_ACTIVITY_MESSAGE,
+    StatsSummary,
+)
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
 
@@ -41,6 +46,160 @@ def url_of(name: str) -> str:
     except NoReverseMatch:
         return URLS[name]
 
+
+class AdminDashboardServiceMixinTests(SimpleTestCase):
+    def test_dashboard_service_cached_only_once(self):
+        class DummyMixin(AdminDashboardServiceMixin):
+            def __init__(self):
+                self.calls = 0
+
+            def get_dashboard_service(self):
+                self.calls += 1
+                return object()
+
+        mixin = DummyMixin()
+
+        first = mixin.dashboard_service
+        self.assertEqual(mixin.calls, 1)
+
+        second = mixin.dashboard_service
+        self.assertIs(first, second)
+        self.assertEqual(mixin.calls, 1)
+
+
+class StatsSummaryTests(SimpleTestCase):
+    def test_stats_summary_to_dict_includes_optional_fields(self):
+        summary = StatsSummary(
+            total_users=0,
+            active_users=0,
+            datasets=0,
+            failed_logins=0,
+            roles=[],
+            empty=True,
+            is_empty=True,
+            message=EMPTY_DATA_MESSAGE,
+            messages={"usersMessage": EMPTY_DATA_MESSAGE},
+        )
+
+        data = summary.to_dict()
+
+        self.assertTrue(data["empty"])
+        self.assertTrue(data["isEmpty"])
+        self.assertEqual(data["message"], EMPTY_DATA_MESSAGE)
+        self.assertEqual(data["messages"], {"usersMessage": EMPTY_DATA_MESSAGE})
+
+    def test_enrich_stats_messages_sets_full_empty_payload(self):
+        summary = StatsSummary(
+            total_users=0,
+            active_users=0,
+            datasets=0,
+            failed_logins=0,
+            roles=[],
+        )
+
+        AdminDashboardService._enrich_stats_messages(summary)
+
+        self.assertTrue(summary.empty)
+        self.assertTrue(summary.is_empty)
+        self.assertEqual(summary.message, EMPTY_DATA_MESSAGE)
+        self.assertEqual(
+            summary.messages,
+            {
+                "usersMessage": EMPTY_DATA_MESSAGE,
+                "activityMessage": NO_ACTIVITY_MESSAGE,
+                "datasetsMessage": EMPTY_DATA_MESSAGE,
+            },
+        )
+
+    def test_enrich_stats_messages_partial(self):
+        summary = StatsSummary(
+            total_users=2,
+            active_users=0,
+            datasets=5,
+            failed_logins=1,
+            roles=["ADMIN"],
+        )
+
+        AdminDashboardService._enrich_stats_messages(summary)
+
+        self.assertFalse(summary.empty)
+        self.assertFalse(summary.is_empty)
+        self.assertEqual(summary.messages["activityMessage"], NO_ACTIVITY_MESSAGE)
+        self.assertNotIn("datasetsMessage", summary.messages)
+
+
+class FailedLoginStatsHelperTests(SimpleTestCase):
+    def test_calculate_unique_emails(self):
+        events = [
+            {"email": "User@example.com"},
+            {"email": "user@example.com"},
+            {"email": "admin@example.com"},
+            {"email": None},
+        ]
+
+        unique = AdminDashboardService._calculate_unique_emails(events)
+
+        self.assertEqual(unique, 2)
+
+    def test_parse_iso_timestamp_with_naive_datetime(self):
+        now = datetime.utcnow().replace(microsecond=0)
+        parsed = AdminDashboardService._parse_iso_timestamp(now.isoformat())
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.tzinfo, datetime_timezone.utc)
+
+    def test_count_events_last_24h(self):
+        now = datetime(2025, 9, 29, 12, 0, tzinfo=datetime_timezone.utc)
+        events = [
+            {"timestamp": (now - timedelta(hours=10)).isoformat()},
+            {"timestamp": (now - timedelta(hours=25)).isoformat()},
+            {"timestamp": "invalid"},
+            {"timestamp": None},
+        ]
+
+        service = AdminDashboardService(now_provider=lambda: now)
+        count = service._count_events_last_24h(events)
+
+        self.assertEqual(count, 1)
+
+    def test_get_failed_login_stats_reads_unique_from_events_when_missing(self):
+        events = [
+            {"email": "user1@example.com", "timestamp": datetime.now(datetime_timezone.utc).isoformat()},
+            {"email": "user2@example.com", "timestamp": datetime.now(datetime_timezone.utc).isoformat()},
+        ]
+
+        cache_backend = {
+            AdminDashboardService.FAILED_EVENTS_KEY: events,
+            AdminDashboardService.FAILED_TOTAL_KEY: 5,
+        }
+
+        class DictCache:
+            def get(self, key, default=None):
+                return cache_backend.get(key, default)
+
+        service = AdminDashboardService(cache_backend=DictCache())
+        stats = service.get_failed_login_stats().to_dict()
+
+        self.assertEqual(stats["total_unique_emails"], 2)
+
+    def test_get_failed_login_stats_uses_cached_unique_value(self):
+        cache_backend = {
+            AdminDashboardService.FAILED_EVENTS_KEY: [],
+            AdminDashboardService.FAILED_TOTAL_KEY: 7,
+            AdminDashboardService.FAILED_UNIQUE_KEY: 3,
+        }
+
+        class DictCache:
+            def get(self, key, default=None):
+                return cache_backend.get(key, default)
+
+        service = AdminDashboardService(cache_backend=DictCache())
+
+        with patch.object(AdminDashboardService, "_calculate_unique_emails") as mocked_calc:
+            stats = service.get_failed_login_stats().to_dict()
+
+        mocked_calc.assert_not_called()
+        self.assertEqual(stats["total_unique_emails"], 3)
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class RolesAndFailedLoginAPITests(TestCase):
