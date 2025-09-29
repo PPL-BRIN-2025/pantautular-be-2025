@@ -4,7 +4,7 @@ from django.urls import reverse, NoReverseMatch
 from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
-from pt_backend.models import Role, User
+from pt_backend.models import Role, User, UserRole
 from django.contrib.auth.hashers import make_password
 from pt_backend.models import Disease, Location, Case
 from unittest.mock import MagicMock, patch
@@ -419,6 +419,95 @@ class StatsUsersCountsWithMocksTests(TestCase):
         self.assertIn("messages", data)
         self.assertIn("usersMessage", data["messages"])
         self.assertEqual(data["messages"]["usersMessage"], "Data tidak ditemukan")
+
+
+@override_settings(SECRET_API_KEYS=("test-key",))
+class AdminUserManagementTests(TestCase):
+    databases = {"default"}
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+        self.admin_role = Role.objects.create(name="ADMIN")
+        self.viewer_role = Role.objects.create(name="VIEWER")
+        self.editor_role = Role.objects.create(name="EDITOR")
+
+        self.admin_user = User.objects.create(
+            name="Super Admin",
+            email="admin@example.com",
+            password=make_password("StrongP@ss1"),
+            role="ADMIN",
+        )
+
+        self.viewer_user = User.objects.create(
+            name="Viewer One",
+            email="viewer1@example.com",
+            password=make_password("ViewerP@ss1"),
+            role="VIEWER",
+        )
+        UserRole.objects.create(user=self.viewer_user, role=self.viewer_role)
+
+    def _auth_headers(self):
+        login_url = reverse("login")
+        resp = self.client.post(
+            login_url,
+            {"email": self.admin_user.email, "password": "StrongP@ss1"},
+            format="json",
+            **TEST_API_KEY_HEADER,
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
+        token = resp.json()["access_token"]
+        return {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+    def test_list_users_returns_roles_field(self):
+        editor_user = User.objects.create(
+            name="Editor One",
+            email="editor@example.com",
+            password=make_password("EditorP@ss1"),
+            role="EDITOR",
+        )
+        UserRole.objects.create(user=editor_user, role=self.editor_role)
+        UserRole.objects.create(user=editor_user, role=self.viewer_role)
+
+        url = reverse("admin-user-list")
+        resp = self.client.get(url, **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.json()
+        editor_entry = next((item for item in data if item["email"] == "editor@example.com"), None)
+        self.assertIsNotNone(editor_entry)
+        self.assertCountEqual(editor_entry["roles"], ["EDITOR", "VIEWER"])
+        self.assertEqual(editor_entry["role"], "EDITOR")
+
+    def test_delete_user_removes_user_and_roles(self):
+        url = reverse("admin-user-delete", kwargs={"id": self.viewer_user.id})
+        resp = self.client.delete(url, **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(id=self.viewer_user.id).exists())
+        self.assertFalse(UserRole.objects.filter(user=self.viewer_user).exists())
+
+    def test_change_role_updates_string_flag_and_mapping(self):
+        payload = {"role_id": self.editor_role.id}
+        url = reverse("admin-user-change-role", kwargs={"id": self.viewer_user.id})
+        resp = self.client.put(url, payload, format="json", **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        body = resp.json()
+        self.assertEqual(body["role"], "EDITOR")
+        self.viewer_user.refresh_from_db()
+        self.assertEqual(self.viewer_user.role, "EDITOR")
+        self.assertEqual(UserRole.objects.filter(user=self.viewer_user).count(), 1)
+        self.assertEqual(UserRole.objects.get(user=self.viewer_user).role_id, self.editor_role.id)
+
+    def test_change_role_invalid_role_returns_400(self):
+        url = reverse("admin-user-change-role", kwargs={"id": self.viewer_user.id})
+        resp = self.client.put(url, {"role_id": 999999}, format="json", **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.viewer_user.refresh_from_db()
+        self.assertEqual(self.viewer_user.role, "VIEWER")
 
 
 @override_settings(SECRET_API_KEYS=("test-key",))
