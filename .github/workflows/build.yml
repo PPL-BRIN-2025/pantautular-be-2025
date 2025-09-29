@@ -30,7 +30,7 @@ jobs:
         run: |
           coverage erase
           coverage run --branch manage.py test admin_feature
-          coverage xml -i -o coverage.xml --include="*/admin_feature/*"
+          coverage xml -i -o coverage.xml
           coverage report --include="*/admin_feature/*"
 
       - name: SonarQube Scan

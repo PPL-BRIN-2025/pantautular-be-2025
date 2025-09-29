@@ -1,6 +1,7 @@
 [run]
 source = admin_feature
 branch = True
+relative_files = True
 omit =
     */migrations/*
     */tests.py
