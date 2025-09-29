@@ -11,7 +11,6 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
-import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
@@ -28,7 +27,7 @@ load_dotenv()
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY') or secrets.token_urlsafe(50)
+SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
 SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
