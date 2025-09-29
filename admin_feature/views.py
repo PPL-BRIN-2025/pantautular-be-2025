@@ -48,7 +48,7 @@ class AdminUserLogsAPIView(APIView):
                 try:
                     dt = datetime.fromisoformat(v)
                 except Exception:
-                    dt = None
+                    return None
             return dt
 
         start_dt = to_dt(start_raw)
