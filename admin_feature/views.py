@@ -93,3 +93,14 @@ class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
     queryset = AdminUserLog.objects.all()
     serializer_class = AdminUserLogDetailSerializer
     lookup_field = "id"
+
+
+class AdminUserLogUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET /api/admin/user-logs/<id>/
+    PATCH /api/admin/user-logs/<id>/
+    DELETE /api/admin/user-logs/<id>/
+    """
+    queryset = AdminUserLog.objects.all()
+    serializer_class = AdminUserLogSerializer
+    lookup_field = "id"
