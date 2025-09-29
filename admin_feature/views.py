@@ -1,9 +1,4 @@
 # admin_feature/views.py
-from datetime import datetime, timedelta
-
-from django.core.cache import cache
-from django.utils import timezone
-from django.conf import settings
 from django.db import transaction
 
 from rest_framework.views import APIView
@@ -18,7 +13,7 @@ from admin_feature.permissions import IsAdminRole  # or: from admin_user.permiss
 
 from pt_backend.models import Role, User, UserRole
 from .serializers import UserSerializer
-from .services import DatasetsService
+from .services import AdminDashboardService
 
 
 class _AdminBaseAPIView(APIView):
@@ -32,7 +27,20 @@ class _AdminBaseAPIView(APIView):
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
 
-class RolesSummaryAPIView(_AdminBaseAPIView):
+class AdminDashboardServiceMixin:
+    service_class = AdminDashboardService
+
+    def get_dashboard_service(self) -> AdminDashboardService:
+        return self.service_class()
+
+    @property
+    def dashboard_service(self) -> AdminDashboardService:
+        if not hasattr(self, "_dashboard_service"):
+            self._dashboard_service = self.get_dashboard_service()
+        return self._dashboard_service
+
+
+class RolesSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/roles/summary
     Response:
@@ -42,11 +50,11 @@ class RolesSummaryAPIView(_AdminBaseAPIView):
     }
     """
     def get(self, request):
-        names = list(Role.objects.values_list("name", flat=True).order_by("name"))
-        return Response({"count": len(names), "roles": names}, status=status.HTTP_200_OK)
+        summary = self.dashboard_service.get_roles_summary()
+        return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class FailedLoginStatsAPIView(_AdminBaseAPIView):
+class FailedLoginStatsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/failed-logins/stats
     Response:
@@ -58,42 +66,11 @@ class FailedLoginStatsAPIView(_AdminBaseAPIView):
     }
     """
     def get(self, request):
-        total_failed = cache.get("auth:failed_login_total", 0)
-        events = cache.get("auth:failed_login_events", [])
-
-        unique_count = cache.get("auth:failed_login_unique_emails_count")
-        if unique_count is None:
-            unique_count = len({(e.get("email") or "").lower() for e in events if e.get("email")})
-
-        now = timezone.now()
-        threshold = now - timedelta(hours=24)
-        count_24h = 0
-        for e in events:
-            ts = e.get("timestamp")
-            if not ts:
-                continue
-            try:
-                dt = datetime.fromisoformat(ts)
-                if dt.tzinfo is None:
-                    # assume UTC for naive timestamps
-                    dt = dt.replace(tzinfo=timezone.utc)
-                if dt >= threshold:
-                    count_24h += 1
-            except Exception:
-                continue
-
-        return Response(
-            {
-                "total_failed": total_failed,
-                "total_unique_emails": unique_count,
-                "last_24h": count_24h,
-                "logs_url": "/admin-feature/failed-logins/logs",
-            },
-            status=status.HTTP_200_OK,
-        )
+        stats = self.dashboard_service.get_failed_login_stats()
+        return Response(stats.to_dict(), status=status.HTTP_200_OK)
 
 
-class FailedLoginEventsAPIView(_AdminBaseAPIView):
+class FailedLoginEventsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/failed-logins/logs
     Response:
@@ -103,37 +80,31 @@ class FailedLoginEventsAPIView(_AdminBaseAPIView):
     }
     """
     def get(self, request):
-        events = cache.get("auth:failed_login_events", [])
-        recent = list(reversed(events[-200:]))
-        return Response({"count": len(recent), "events": recent}, status=status.HTTP_200_OK)
+        events = self.dashboard_service.get_failed_login_events()
+        return Response(events.to_dict(), status=status.HTTP_200_OK)
 
 
-class UsersSummaryAPIView(_AdminBaseAPIView):
+class UsersSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/users/summary
     Response: { "total_users": int, "active_users": int }
     """
     def get(self, request):
-        total_users = User.objects.count()
-        active_users = User.objects.filter(last_login__isnull=False).count()
-        return Response({"total_users": total_users, "active_users": active_users}, status=status.HTTP_200_OK)
+        summary = self.dashboard_service.get_users_summary()
+        return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class DatasetsSummaryAPIView(_AdminBaseAPIView):
+class DatasetsSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/datasets/summary
     Response: { "total_datasets": int }
     """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.datasets_service = DatasetsService()
-
     def get(self, request):
-        total_datasets = self.datasets_service.get_total_datasets()
-        return Response({"total_datasets": total_datasets}, status=status.HTTP_200_OK)
+        summary = self.dashboard_service.get_datasets_summary()
+        return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class StatsAPIView(_AdminBaseAPIView):
+class StatsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     """
     GET /admin-feature/stats
     Response:
@@ -155,47 +126,8 @@ class StatsAPIView(_AdminBaseAPIView):
     }
     """
     def get(self, request):
-        total_users = User.objects.count()
-        active_users = User.objects.filter(last_login__isnull=False).count()
-
-        datasets_service = DatasetsService()
-        datasets = datasets_service.get_total_datasets()
-
-        roles = list(Role.objects.values_list("name", flat=True).order_by("name"))
-        failed_logins = cache.get("auth:failed_login_total", 0)
-
-        payload = {
-            "totalUsers": total_users,
-            "activeUsers": active_users,
-            "datasets": datasets,
-            "failedLogins": failed_logins,
-            "roles": roles,
-        }
-
-        primary_all_zero = (
-            total_users == 0 and active_users == 0 and datasets == 0 and failed_logins == 0
-        )
-        if primary_all_zero:
-            payload["empty"] = True
-            payload["isEmpty"] = True
-            payload["message"] = "Data tidak ditemukan"
-            payload["messages"] = {
-                "usersMessage": "Data tidak ditemukan",
-                "activityMessage": "Tidak ada aktivitas",
-                "datasetsMessage": "Data tidak ditemukan",
-            }
-        else:
-            messages = {}
-            if total_users == 0:
-                messages["usersMessage"] = "Data tidak ditemukan"
-            if active_users == 0:
-                messages["activityMessage"] = "Tidak ada aktivitas"
-            if datasets == 0:
-                messages["datasetsMessage"] = "Data tidak ditemukan"
-            if messages:
-                payload["messages"] = messages
-
-        return Response(payload, status=status.HTTP_200_OK)
+        summary = self.dashboard_service.get_stats()
+        return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
 class UserInfoAPIView(_AdminBaseAPIView):

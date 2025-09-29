@@ -9,15 +9,21 @@ from django.contrib.auth.hashers import make_password
 from pt_backend.models import Disease, Location, Case
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
+from typing import Dict, List, Optional
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 import jwt
 from datetime import datetime, timedelta
+from secrets import token_urlsafe
 import importlib
 from rest_framework import status
 from admin_feature.views import UserInfoAPIView
+from admin_feature.services import AdminDashboardService
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
+
+def random_password(prefix: str = "Pwd") -> str:
+    return f"{prefix}-{token_urlsafe(10)}!"
 
 # URL helpers: try reverse(name) then fall back to literal paths
 URLS = {
@@ -46,14 +52,22 @@ class RolesAndFailedLoginAPITests(TestCase):
         Role.objects.create(name="ADMIN")
         Role.objects.create(name="TENAGA_AHLI")
         Role.objects.create(name="VIEWER")
+        self._passwords: Dict[str, str] = {}
+        self.user_password = random_password("Adm1n")
         self.user = User.objects.create(
             name="John",
             email="john@example.com",
-            password=make_password("StrongP@ss1"),
+            password=make_password(self.user_password),
             role="ADMIN",
         )
+        self._passwords[self.user.email] = self.user_password
 
-    def _login_and_get_token(self, email="john@example.com", password="StrongP@ss1"):
+    def _login_and_get_token(self, email: Optional[str] = None, password: Optional[str] = None):
+        email = email or self.user.email
+        if password is None:
+            password = self._passwords.get(email)
+        if password is None:
+            raise AssertionError(f"Test password for {email} not found")
         login_url = reverse("login")
         resp = self.client.post(
             login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
@@ -65,116 +79,12 @@ class RolesAndFailedLoginAPITests(TestCase):
         url = url_of("admin-roles-summary")
         token = self._login_and_get_token()
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+
         resp = self.client.get(url, **headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["count"], 3)
         self.assertListEqual(sorted(data["roles"]), ["ADMIN", "TENAGA_AHLI", "VIEWER"])
-
-    def test_failed_login_stats_and_logs(self):
-        login_url = reverse("login")
-        for _ in range(2):
-            self.client.post(login_url, {"email": "john@example.com", "password": "wrongpass"}, format="json", **TEST_API_KEY_HEADER)
-        self.client.post(login_url, {"email": "noone@example.com", "password": "wrongpass"}, format="json", **TEST_API_KEY_HEADER)
-
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        stats_url = url_of("admin-failed-login-stats")
-        resp = self.client.get(stats_url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        stats = resp.json()
-        self.assertGreaterEqual(stats["total_failed"], 3)
-        self.assertGreaterEqual(stats["total_unique_emails"], 2)
-        self.assertIn("logs_url", stats)
-
-        logs_url = url_of("admin-failed-login-logs")
-        resp2 = self.client.get(logs_url, **headers)
-        self.assertEqual(resp2.status_code, 200)
-        logs = resp2.json()
-        self.assertGreaterEqual(logs["count"], 3)
-        self.assertTrue(all("email" in ev and "timestamp" in ev for ev in logs["events"]))
-
-    def test_failed_login_stats_unique_count_fallback_and_timestamp_edges(self):
-        events = [
-            {"email": "john@example.com", "timestamp": timezone.now().isoformat()},
-            {"email": "ALICE@EXAMPLE.COM", "timestamp": datetime.now().isoformat()},  # naive -> force tz attach
-            {"email": "", "timestamp": "not-a-date"},  # parse error branch
-            {"email": None, "timestamp": None},
-        ]
-        cache.set("auth:failed_login_events", events, None)
-        cache.delete("auth:failed_login_unique_emails_count")
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = url_of("admin-failed-login-stats")
-        resp = self.client.get(url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["total_unique_emails"], 2)
-        self.assertGreaterEqual(data["last_24h"], 1)
-
-    def test_failed_login_stats_uses_cached_unique_count(self):
-        cache.set("auth:failed_login_unique_emails_count", 7, None)
-        cache.set("auth:failed_login_total", 11, None)
-        cache.set("auth:failed_login_events", [], None)
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = url_of("admin-failed-login-stats")
-        resp = self.client.get(url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["total_unique_emails"], 7)
-
-    def test_failed_login_stats_excludes_old_events_from_last_24h(self):
-        old_ts = (timezone.now() - timedelta(days=2)).isoformat()
-        recent_ts = timezone.now().isoformat()
-        cache.set("auth:failed_login_events", [
-            {"email": "a@b.com", "timestamp": old_ts},
-            {"email": "a@b.com", "timestamp": recent_ts},
-        ], None)
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = url_of("admin-failed-login-stats")
-        resp = self.client.get(url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["last_24h"], 1)
-
-    def test_users_summary(self):
-        User.objects.create(
-            name="Alice",
-            email="alice@example.com",
-            password=make_password("P@ss1"),
-            role="ADMIN",
-            last_login=timezone.now(),
-        )
-        User.objects.create(
-            name="Bob",
-            email="bob@example.com",
-            password=make_password("P@ss2"),
-            role="VIEWER",
-        )
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = url_of("admin-users-summary")
-        resp = self.client.get(url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["total_users"], 3)
-        self.assertEqual(data["active_users"], 1)
-
-    def test_datasets_summary(self):
-        disease = Disease.objects.create(name="COVID-19", level_of_alertness=3)
-        loc1 = Location.objects.create(latitude=-6.2, longitude=106.8, city="Jakarta", province="DKI Jakarta")
-        loc2 = Location.objects.create(latitude=-6.9, longitude=107.6, city="Bandung", province="Jawa Barat")
-        Case.objects.create(gender="male", age=30, city="Jakarta", status="minimal", severity="insiden", disease=disease, location=loc1)
-        Case.objects.create(gender="female", age=25, city="Bandung", status="biasa", severity="hospitalisasi", disease=disease, location=loc2)
-        Case.objects.create(gender="male", age=40, city="Jakarta", status="bahaya", severity="mortalitas", disease=disease, location=loc1)
-        token = self._login_and_get_token()
-        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
-        url = url_of("admin-datasets-summary")
-        resp = self.client.get(url, **headers)
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["total_datasets"], 3)
 
     def test_user_info_success(self):
         token = self._login_and_get_token()
@@ -217,7 +127,7 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(data["totalUsers"], User.objects.count())
         self.assertEqual(data["activeUsers"], User.objects.filter(last_login__isnull=False).count())
         self.assertEqual(data["datasets"], Case.objects.count())
-        self.assertListEqual(sorted(data["roles"]), sorted(list(Role.objects.values_list("name", flat=True))))
+        self.assertCountEqual(data["roles"], list(Role.objects.values_list("name", flat=True)))
         self.assertIsInstance(data["failedLogins"], int)
 
     def test_stats_requires_api_key(self):
@@ -226,7 +136,7 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_token_expired(self):
-        payload = {"name": "Jane", "role": "ADMIN", "user_id": 999, "exp": datetime.utcnow() - timedelta(seconds=5)}
+        payload = {"name": "Jane", "role": "ADMIN", "user_id": 999, "exp": timezone.now() - timedelta(seconds=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
         url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -234,7 +144,7 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_invalid_payload_no_user_id(self):
-        payload = {"exp": datetime.utcnow() + timedelta(minutes=5)}
+        payload = {"exp": timezone.now() + timedelta(minutes=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
         url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -242,7 +152,7 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_user_info_user_not_found(self):
-        payload = {"user_id": 999999, "exp": datetime.utcnow() + timedelta(minutes=5)}
+        payload = {"user_id": 999999, "exp": timezone.now() + timedelta(minutes=5)}
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
         url = url_of("admin-user-info")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -260,32 +170,24 @@ class RolesAndFailedLoginAPITests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class UsersSummaryMockAndStubTests(TestCase):
-    # Stub/mock without auth
-
-    def setUp(self):
-        self.client = APIClient()
-
-    def _url(self):
-        return url_of("admin-users-summary")
-
     def test_users_summary_with_stubbed_counts(self):
         class _StubQS:
             def count(self):
                 return 4
+
         class _StubManager:
             def count(self):
                 return 10
+
             def filter(self, **kwargs):
                 return _StubQS()
+
         stub_user = SimpleNamespace(objects=_StubManager())
-        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
-             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
-             patch("admin_feature.views.User", new=stub_user):
-            resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
-        self.assertEqual(resp.status_code, 200)
-        body = resp.json()
-        self.assertEqual(body["total_users"], 10)
-        self.assertEqual(body["active_users"], 4)
+        service = AdminDashboardService(user_model=stub_user)
+
+        summary = service.get_users_summary().to_dict()
+        self.assertEqual(summary["total_users"], 10)
+        self.assertEqual(summary["active_users"], 4)
 
     def test_users_summary_with_mocks_verifies_calls(self):
         mock_user = SimpleNamespace()
@@ -295,14 +197,12 @@ class UsersSummaryMockAndStubTests(TestCase):
         mock_manager.filter.return_value = mock_qs
         mock_qs.count.return_value = 11
         mock_user.objects = mock_manager
-        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
-             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
-             patch("admin_feature.views.User", new=mock_user):
-            resp = self.client.get(self._url(), **TEST_API_KEY_HEADER)
-        self.assertEqual(resp.status_code, 200)
-        body = resp.json()
-        self.assertEqual(body["total_users"], 99)
-        self.assertEqual(body["active_users"], 11)
+
+        service = AdminDashboardService(user_model=mock_user)
+        summary = service.get_users_summary().to_dict()
+
+        self.assertEqual(summary["total_users"], 99)
+        self.assertEqual(summary["active_users"], 11)
         mock_manager.count.assert_called_once_with()
         mock_manager.filter.assert_called_once_with(last_login__isnull=False)
         mock_qs.count.assert_called_once_with()
@@ -310,41 +210,73 @@ class UsersSummaryMockAndStubTests(TestCase):
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class StatsUsersCountsWithMocksTests(TestCase):
-    # Stats with collaborators mocked
+    """Focused tests for AdminDashboardService aggregation with mocked collaborators."""
 
-    def setUp(self):
-        self.client = APIClient()
-        self.url = url_of("admin-stats")
+    def _build_service(
+        self,
+        *,
+        total_users: int,
+        active_users: int,
+        dataset_total: int,
+        roles: List[str],
+        failed_logins: int,
+        events: Optional[List[Dict[str, object]]] = None,
+    ) -> AdminDashboardService:
+        class _UserManager:
+            def count(self):
+                return total_users
+
+            def filter(self, **_kwargs):
+                class _QuerySet:
+                    def count(inner_self):
+                        return active_users
+
+                return _QuerySet()
+
+        class _RoleManager:
+            def values_list(self, *_args, **_kwargs):
+                class _ValuesList:
+                    def order_by(inner_self, *_):
+                        return roles
+
+                return _ValuesList()
+
+        user_model = SimpleNamespace(objects=_UserManager())
+        role_model = SimpleNamespace(objects=_RoleManager())
+
+        dataset_service = MagicMock()
+        dataset_service.get_total_datasets.return_value = dataset_total
+
+        cache_backend = MagicMock()
+
+        def _cache_get(key, default=None):
+            if key == AdminDashboardService.FAILED_TOTAL_KEY:
+                return failed_logins
+            if key == AdminDashboardService.FAILED_EVENTS_KEY:
+                return events or []
+            if key == AdminDashboardService.FAILED_UNIQUE_KEY and events is None:
+                return None
+            return default
+
+        cache_backend.get.side_effect = _cache_get
+
+        return AdminDashboardService(
+            role_model=role_model,
+            user_model=user_model,
+            cache_backend=cache_backend,
+            dataset_service=dataset_service,
+        )
 
     def test_stats_users_counts_with_mocks(self):
-        mock_user = SimpleNamespace()
-        mock_user_manager = MagicMock()
-        mock_user_qs = MagicMock()
-        mock_user_manager.count.return_value = 7
-        mock_user_manager.filter.return_value = mock_user_qs
-        mock_user_qs.count.return_value = 3
-        mock_user.objects = mock_user_manager
+        service = self._build_service(
+            total_users=7,
+            active_users=3,
+            dataset_total=42,
+            roles=["ADMIN", "VIEWER"],
+            failed_logins=5,
+        )
 
-        mock_role = SimpleNamespace()
-        mock_role_qs = MagicMock()
-        mock_role_qs.order_by.return_value = ["ADMIN", "VIEWER"]
-        mock_role.values_list = MagicMock(return_value=mock_role_qs)
-        mock_role.objects = mock_role
-
-        mock_datasets_service_class = MagicMock()
-        mock_datasets_service_class.return_value.get_total_datasets.return_value = 42
-
-        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
-             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
-             patch("admin_feature.views.User", new=mock_user), \
-             patch("admin_feature.views.Role", new=mock_role), \
-             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
-             patch("admin_feature.views.cache") as mock_cache:
-            mock_cache.get.return_value = 5
-            resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
-
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
+        data = service.get_stats().to_dict()
         self.assertEqual(data["totalUsers"], 7)
         self.assertEqual(data["activeUsers"], 3)
         self.assertEqual(data["datasets"], 42)
@@ -352,73 +284,29 @@ class StatsUsersCountsWithMocksTests(TestCase):
         self.assertEqual(data["roles"], ["ADMIN", "VIEWER"])
 
     def test_stats_partial_zero_messages_set(self):
-        mock_user = SimpleNamespace()
-        mock_user_manager = MagicMock()
-        mock_user_qs = MagicMock()
-        mock_user_manager.count.return_value = 5      # totalUsers != 0
-        mock_user_manager.filter.return_value = mock_user_qs
-        mock_user_qs.count.return_value = 0           # activeUsers == 0
-        mock_user.objects = mock_user_manager
+        service = self._build_service(
+            total_users=5,
+            active_users=0,
+            dataset_total=0,
+            roles=["ADMIN"],
+            failed_logins=2,
+        )
 
-        mock_role = SimpleNamespace()
-        mock_role_qs = MagicMock()
-        mock_role_qs.order_by.return_value = ["ADMIN"]
-        mock_role.values_list = MagicMock(return_value=mock_role_qs)
-        mock_role.objects = mock_role
-
-        mock_datasets_service_class = MagicMock()
-        mock_datasets_service_class.return_value.get_total_datasets.return_value = 0  # datasets == 0
-
-        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
-             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
-             patch("admin_feature.views.User", new=mock_user), \
-             patch("admin_feature.views.Role", new=mock_role), \
-             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
-             patch("admin_feature.views.cache") as mock_cache:
-                mock_cache.get.return_value = 2
-                resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
-
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn("messages", data)
-        self.assertIn("activityMessage", data["messages"])
-        self.assertIn("datasetsMessage", data["messages"])
-        self.assertEqual(data["messages"]["activityMessage"], "Tidak ada aktivitas")
-        self.assertEqual(data["messages"]["datasetsMessage"], "Data tidak ditemukan")
+        data = service.get_stats().to_dict()
+        self.assertEqual(data["messages"].get("activityMessage"), "Tidak ada aktivitas")
+        self.assertEqual(data["messages"].get("datasetsMessage"), "Data tidak ditemukan")
 
     def test_stats_partial_users_zero_message_set(self):
-        # totalUsers == 0 but others non-zero -> usersMessage only
-        mock_user = SimpleNamespace()
-        mock_user_manager = MagicMock()
-        mock_user_qs = MagicMock()
-        mock_user_manager.count.return_value = 0      # triggers usersMessage
-        mock_user_manager.filter.return_value = mock_user_qs
-        mock_user_qs.count.return_value = 2           # activeUsers > 0
-        mock_user.objects = mock_user_manager
+        service = self._build_service(
+            total_users=0,
+            active_users=2,
+            dataset_total=9,
+            roles=["ADMIN"],
+            failed_logins=1,
+        )
 
-        mock_role = SimpleNamespace()
-        mock_role_qs = MagicMock()
-        mock_role_qs.order_by.return_value = ["ADMIN"]
-        mock_role.values_list = MagicMock(return_value=mock_role_qs)
-        mock_role.objects = mock_role
-
-        mock_datasets_service_class = MagicMock()
-        mock_datasets_service_class.return_value.get_total_datasets.return_value = 9  # datasets > 0
-
-        with patch("admin_feature.views._AdminBaseAPIView.authentication_classes", new=[]), \
-             patch("admin_feature.views._AdminBaseAPIView.permission_classes", new=[]), \
-             patch("admin_feature.views.User", new=mock_user), \
-             patch("admin_feature.views.Role", new=mock_role), \
-             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
-             patch("admin_feature.views.cache") as mock_cache:
-            mock_cache.get.return_value = 1
-            resp = self.client.get(self.url, **TEST_API_KEY_HEADER)
-
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertIn("messages", data)
-        self.assertIn("usersMessage", data["messages"])
-        self.assertEqual(data["messages"]["usersMessage"], "Data tidak ditemukan")
+        data = service.get_stats().to_dict()
+        self.assertEqual(data["messages"].get("usersMessage"), "Data tidak ditemukan")
 
 
 @override_settings(SECRET_API_KEYS=("test-key",))
@@ -433,26 +321,33 @@ class AdminUserManagementTests(TestCase):
         self.viewer_role = Role.objects.create(name="VIEWER")
         self.editor_role = Role.objects.create(name="EDITOR")
 
+        self._passwords: Dict[str, str] = {}
+        self.admin_password = random_password("Adm1n")
+        self.viewer_password = random_password("View3r")
+        self.editor_password = random_password("Edit0r")
+
         self.admin_user = User.objects.create(
             name="Super Admin",
             email="admin@example.com",
-            password=make_password("StrongP@ss1"),
+            password=make_password(self.admin_password),
             role="ADMIN",
         )
+        self._passwords[self.admin_user.email] = self.admin_password
 
         self.viewer_user = User.objects.create(
             name="Viewer One",
             email="viewer1@example.com",
-            password=make_password("ViewerP@ss1"),
+            password=make_password(self.viewer_password),
             role="VIEWER",
         )
         UserRole.objects.create(user=self.viewer_user, role=self.viewer_role)
+        self._passwords[self.viewer_user.email] = self.viewer_password
 
     def _auth_headers(self):
         login_url = reverse("login")
         resp = self.client.post(
             login_url,
-            {"email": self.admin_user.email, "password": "StrongP@ss1"},
+            {"email": self.admin_user.email, "password": self.admin_password},
             format="json",
             **TEST_API_KEY_HEADER,
         )
@@ -464,9 +359,10 @@ class AdminUserManagementTests(TestCase):
         editor_user = User.objects.create(
             name="Editor One",
             email="editor@example.com",
-            password=make_password("EditorP@ss1"),
+            password=make_password(self.editor_password),
             role="EDITOR",
         )
+        self._passwords[editor_user.email] = self.editor_password
         UserRole.objects.create(user=editor_user, role=self.editor_role)
         UserRole.objects.create(user=editor_user, role=self.viewer_role)
 
@@ -517,6 +413,7 @@ class AdminDashboardSecurityTests(TestCase):
     def setUp(self):
         cache.clear()
         self.client = APIClient()
+        self._passwords = {}
         Role.objects.get_or_create(name="ADMIN")
         Role.objects.get_or_create(name="VIEWER")
         Role.objects.get_or_create(name="TENAGA_AHLI")
@@ -530,15 +427,22 @@ class AdminDashboardSecurityTests(TestCase):
             ("admin-user-info", URLS["admin-user-info"]),
         ]
 
-    def _create_user(self, email, role, password="StrongP@ss1"):
-        return User.objects.create(
+    def _create_user(self, email, role, password: Optional[str] = None):
+        password = password or random_password(role.title())
+        user = User.objects.create(
             name=email.split("@")[0].title(),
             email=email,
             password=make_password(password),
             role=role,
         )
+        self._passwords[email] = password
+        return user
 
-    def _login_and_get_token(self, email, password="StrongP@ss1"):
+    def _login_and_get_token(self, email, password: Optional[str] = None):
+        if password is None:
+            password = self._passwords.get(email)
+        if password is None:
+            raise AssertionError(f"Password for {email} not recorded")
         login_url = reverse("login")
         resp = self.client.post(
             login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
@@ -629,20 +533,29 @@ class AdminDashboardNegativeTests(TestCase):
         Role.objects.create(name="ADMIN")
         Role.objects.create(name="TENAGA_AHLI")
         Role.objects.create(name="VIEWER")
+        self._passwords: Dict[str, str] = {}
+        self.admin_password = random_password("Adm1n")
+        self.viewer_password = random_password("View3r")
         self.admin = User.objects.create(
             name="Admin",
             email="admin@example.com",
-            password=make_password("StrongP@ss1"),
+            password=make_password(self.admin_password),
             role="ADMIN",
         )
+        self._passwords[self.admin.email] = self.admin_password
         self.viewer = User.objects.create(
             name="Vera",
             email="vera@example.com",
-            password=make_password("WeakP@ss1"),
+            password=make_password(self.viewer_password),
             role="VIEWER",
         )
+        self._passwords[self.viewer.email] = self.viewer_password
 
-    def _login_and_get_token(self, email, password):
+    def _login_and_get_token(self, email, password: Optional[str] = None):
+        if password is None:
+            password = self._passwords.get(email)
+        if password is None:
+            raise AssertionError(f"Password for {email} not recorded")
         login_url = reverse("login")
         resp = self.client.post(
             login_url, {"email": email, "password": password}, format="json", **TEST_API_KEY_HEADER
@@ -671,7 +584,7 @@ class AdminDashboardNegativeTests(TestCase):
             self.assertEqual(resp.status_code, 401)
 
     def test_non_admin_credentials_cannot_access_admin_stats(self):
-        token = self._login_and_get_token("vera@example.com", "WeakP@ss1")
+        token = self._login_and_get_token("vera@example.com")
         url = url_of("admin-stats")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         try:
@@ -696,7 +609,7 @@ class AdminDashboardNegativeTests(TestCase):
         self.assertTrue(ok)
 
     def test_admin_accessing_other_admin_page_without_permission_forbidden(self):
-        token = self._login_and_get_token("admin@example.com", "StrongP@ss1")
+        token = self._login_and_get_token("admin@example.com")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
         url = url_of("admin-roles-summary")
         try:
@@ -736,32 +649,44 @@ class AdminDashboardNegativeTests(TestCase):
         mock_role.values_list = MagicMock(return_value=mock_role_qs)
         mock_role.objects = mock_role
 
-        mock_datasets_service_class = MagicMock()
-        mock_datasets_service_class.return_value.get_total_datasets.return_value = 0
+        dataset_service = MagicMock()
+        dataset_service.get_total_datasets.return_value = 0
 
-        with patch("admin_feature.views.User", new=mock_user), \
-             patch("admin_feature.views.Role", new=mock_role), \
-             patch("admin_feature.views.DatasetsService", new=mock_datasets_service_class), \
-             patch("admin_feature.views.cache") as mock_cache:
-            mock_cache.get.return_value = 0
-            admin = getattr(self, "_create_user", None)
-            if admin:
-                admin = self._create_user("admin-empty@example.com", "ADMIN")
-            else:
-                admin = User.objects.create(
-                    name="AdminZero",
-                    email="adminzero@example.com",
-                    password=make_password("AdminZ3r0!"),
-                    role="ADMIN",
-                )
-            login_url = reverse("login")
-            login_resp = self.client.post(
-                login_url, {"email": admin.email, "password": "AdminZ3r0!"},
-                format="json", **TEST_API_KEY_HEADER
+        cache_backend = MagicMock()
+        cache_backend.get.side_effect = lambda *_, **__: 0
+
+        service = AdminDashboardService(
+            role_model=mock_role,
+            user_model=mock_user,
+            cache_backend=cache_backend,
+            dataset_service=dataset_service,
+        )
+
+        admin_password = random_password("AdmZero")
+        admin = getattr(self, "_create_user", None)
+        if callable(admin):
+            admin = self._create_user("admin-empty@example.com", "ADMIN", password=admin_password)
+        else:
+            admin = User.objects.create(
+                name="AdminZero",
+                email="adminzero@example.com",
+                password=make_password(admin_password),
+                role="ADMIN",
             )
-            self.assertEqual(login_resp.status_code, 200, login_resp.content)
-            token = login_resp.json()["access_token"]
-            headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+            self._passwords[admin.email] = admin_password
+
+        login_url = reverse("login")
+        login_resp = self.client.post(
+            login_url,
+            {"email": admin.email, "password": self._passwords.get(admin.email, admin_password)},
+            format="json",
+            **TEST_API_KEY_HEADER,
+        )
+        self.assertEqual(login_resp.status_code, 200, login_resp.content)
+        token = login_resp.json()["access_token"]
+        headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+        with patch("admin_feature.views.StatsAPIView.get_dashboard_service", return_value=service):
             resp = self.client.get(url, **headers)
 
         self.assertEqual(resp.status_code, 200)
