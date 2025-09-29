@@ -23,3 +23,17 @@ class AdminUserLog(models.Model):
 
     def __str__(self):
         return f"{self.username} - {self.action or self.detail} @ {self.created_at}"
+
+class PtBackendUser(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(max_length=255, db_index=True)
+    email = models.EmailField(max_length=254, db_index=True)
+    last_login = models.DateTimeField(null=True, blank=True)
+    role = models.CharField(max_length=100, null=True, blank=True)
+
+    class Meta:
+        db_table = "pt_backend_user"
+        managed = False  
+
+    def __str__(self):
+        return f"{self.name} ({self.email})"

@@ -8,11 +8,20 @@ from rest_framework import status, generics
 from .models import AdminUserLog
 from .serializers import AdminUserLogSerializer, AdminUserLogDetailSerializer
 
+from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import PtBackendUser
+from .serializers import PtBackendUserSerializer
+
+
 class AdminUserLogsAPIView(APIView):
     """
-    GET /api/admin/user-logs/?page=1&pageSize=10&search=&start=&end=&sort=timestamp:desc
-    POST /api/admin/user-logs/
+    GET /api/admin/user-logs/?page=1&pageSize=10&search=&sort=last_login:desc
     """
+
     def get(self, request):
         try:
             page = int(request.query_params.get("page", 1))
@@ -26,19 +35,31 @@ class AdminUserLogsAPIView(APIView):
         page_size = max(1, min(100, page_size))
 
         search = (request.query_params.get("search") or "").strip()
-        start_raw = request.query_params.get("start")
-        end_raw = request.query_params.get("end")
-        sort = request.query_params.get("sort") or "timestamp:desc"
+        sort = request.query_params.get("sort") or "last_login:desc"
+        order = "-last_login" if sort.endswith(":desc") else "last_login"
 
-        order = "-timestamp" if sort.endswith(":desc") else "timestamp"
+        qs = PtBackendUser.objects.all()
 
-        qs = AdminUserLog.objects.all()
         if search:
             qs = qs.filter(
-                Q(username__icontains=search) |
-                Q(email__icontains=search) |
-                Q(detail__icontains=search)
+                Q(name__icontains=search) |
+                Q(email__icontains=search)
             )
+
+        total = qs.count()
+        qs = qs.order_by(order)
+
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        items = qs[start_idx:end_idx]
+
+        data = PtBackendUserSerializer(items, many=True).data
+        return Response({
+            "data": data,
+            "page": page,
+            "pageSize": page_size,
+            "total": total
+        }, status=status.HTTP_200_OK)
 
         def to_dt(v):
             if not v:

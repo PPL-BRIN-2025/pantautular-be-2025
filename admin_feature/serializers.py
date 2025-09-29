@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AdminUserLog
+from .models import AdminUserLog, PtBackendUser
 
 class AdminUserLogSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,3 +11,8 @@ class AdminUserLogDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminUserLog
         fields = ["id", "username", "email", "action", "detail", "created_at"]
+
+class PtBackendUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PtBackendUser
+        fields = ["id", "name", "email", "last_login", "role"]
