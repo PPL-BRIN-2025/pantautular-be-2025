@@ -30,5 +30,6 @@ urlpatterns = [
     path('authentication/', include("authentication.urls")),
     path('admin-feature/', include('admin_feature.urls')),
     path('health/', health),
+    path("", include("admin_feature.urls")),
 ]
 
