@@ -116,12 +116,12 @@ class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
     lookup_field = "id"
 
 
-class AdminUserLogUpdateAPIView(generics.RetrieveUpdateDestroyAPIView):
+class AdminUserLogUpdateAPIView(generics.RetrieveUpdateAPIView):
     """
     GET /api/admin/user-logs/<id>/
     PATCH /api/admin/user-logs/<id>/
-    DELETE /api/admin/user-logs/<id>/
     """
     queryset = AdminUserLog.objects.all()
     serializer_class = AdminUserLogSerializer
     lookup_field = "id"
+
