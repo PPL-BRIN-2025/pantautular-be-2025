@@ -27,8 +27,8 @@ load_dotenv()
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
-SECRET_API_KEY = os.getenv('SECRET_API_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
+SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -37,7 +37,10 @@ DEBUG = False
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,.up.railway.app,.koyeb.app").split(",")
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1,.up.railway.app,.koyeb.app"
+).split(",")
 
 # Application definition
 
@@ -57,6 +60,7 @@ INSTALLED_APPS = [
     'authentication',
     'rest_framework_simplejwt',
     'admin_feature', 
+
 ]
 
 MIDDLEWARE = [
@@ -117,9 +121,19 @@ WSGI_APPLICATION = 'pantau_tular.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
-}
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.config(default=DATABASE_URL)
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -170,6 +184,7 @@ STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
     "https://pantautular.netlify.app",
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",
 ]
 
 
@@ -177,6 +192,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^https:\/\/.*\.up\.railway\.app$",  # Allows all railway.app subdomains
     r"^https:\/\/.*\.netlify\.app$",  # Allows all netlify.app subdomains
+    r"^https:\/\/.*\.koyeb\.app$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -238,3 +254,9 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",  # FE
+    "https://royal-rahel-nayaka-cbe367a7.koyeb.app",           # BE
+    "https://pantautular.netlify.app",
+]
