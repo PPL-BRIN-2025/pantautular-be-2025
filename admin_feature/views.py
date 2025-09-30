@@ -228,10 +228,14 @@ class AdminUserDeleteView(DestroyAPIView):
 
 class AdminUserLogsAPIView(APIView):
     """
-    GET /api/admin/user-logs/?page=1&pageSize=10&search=&sort=last_login:desc
+    GET  /api/admin/user-logs/?page=1&pageSize=10&search=&sort=last_login:desc
+    POST /api/admin/user-logs/
     """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
     def get(self, request):
+        # pagination
         try:
             page = int(request.query_params.get("page", 1))
         except ValueError:
@@ -243,83 +247,42 @@ class AdminUserLogsAPIView(APIView):
         page = max(1, page)
         page_size = max(1, min(100, page_size))
 
+        # filters
         search = (request.query_params.get("search") or "").strip()
         sort = request.query_params.get("sort") or "last_login:desc"
-        order = "-last_login" if sort.endswith(":desc") else "last_login"
+        order = "-last_login" if str(sort).endswith(":desc") else "last_login"
 
         qs = PtBackendUser.objects.all()
-
         if search:
-            qs = qs.filter(
-                Q(name__icontains=search) |
-                Q(email__icontains=search)
-            )
+            qs = qs.filter(Q(name__icontains=search) | Q(email__icontains=search))
 
         total = qs.count()
-        qs = qs.order_by(order)
-
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        items = qs[start_idx:end_idx]
+        items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
 
         data = PtBackendUserSerializer(items, many=True).data
-        return Response({
-            "data": data,
-            "page": page,
-            "pageSize": page_size,
-            "total": total
-        }, status=status.HTTP_200_OK)
-
-        def to_dt(v):
-            if not v:
-                return None
-            dt = parse_datetime(v)
-            if dt is None:
-                try:
-                    dt = datetime.fromisoformat(v)
-                except Exception:
-                    return None
-            return dt
-
-        start_dt = to_dt(start_raw)
-        end_dt = to_dt(end_raw)
-
-        if start_dt:
-            qs = qs.filter(timestamp__gte=start_dt)
-        if end_dt:
-            qs = qs.filter(timestamp__lte=end_dt)
-
-        total = qs.count()
-        qs = qs.order_by(order)
-
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        items = qs[start_idx:end_idx]
-
-        data = AdminUserLogSerializer(items, many=True).data
-        return Response({
-            "data": data,
-            "page": page,
-            "pageSize": page_size,
-            "total": total
-        })
+        return Response(
+            {"data": data, "page": page, "pageSize": page_size, "total": total},
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request):
         payload = request.data.copy()
         if not payload.get("timestamp"):
-            payload["timestamp"] = datetime.utcnow().isoformat()
-
+            payload["timestamp"] = datetime.utcnow().isoformat() + "Z"
         ser = AdminUserLogSerializer(data=payload)
         if ser.is_valid():
             obj = ser.save()
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
-        return Response({"errors": ser.errors}, status=400)
+        return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
     """
     GET /api/admin/user-logs/<id>/detail/
     """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+
     queryset = AdminUserLog.objects.all()
     serializer_class = AdminUserLogDetailSerializer
     lookup_field = "id"
@@ -327,9 +290,12 @@ class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
 
 class AdminUserLogUpdateAPIView(generics.RetrieveUpdateAPIView):
     """
-    GET /api/admin/user-logs/<id>/
+    GET   /api/admin/user-logs/<id>/
     PATCH /api/admin/user-logs/<id>/
     """
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsAdminRole]
+
     queryset = AdminUserLog.objects.all()
     serializer_class = AdminUserLogSerializer
     lookup_field = "id"
