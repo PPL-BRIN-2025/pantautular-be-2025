@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from authentication.email_services import EmailService, PasswordResetEmailStrategy
-
+from admin_feature.audittrail import write_log
 import os
 import logging
 
@@ -280,7 +280,8 @@ class AuthService:
         cache_key = self._get_lockout_cache_key(email)
         cache.delete(cache_key)
     
-    def login(self, email, password):
+    # add request=None
+    def login(self, email, password, request=None):
         """
         Authenticate user and generate tokens
         
@@ -315,17 +316,21 @@ class AuthService:
         
         # Successful login, reset failed attempts
         self.reset_failed_attempts(email)
-        
+
+        # ---- AUDIT: record login success ----
+        ip = request.META.get("REMOTE_ADDR") if request else None
+        ua = request.META.get("HTTP_USER_AGENT", "") if request else ""
+        path = getattr(request, "path", "") if request else ""
+        note = f"path={path} ip={ip} ua={ua}"
+        write_log(request=request, user=user, action="LOGIN", detail="User logged in", note=note)
+
         # Generate token with user data in payload
         refresh = RefreshToken.for_user(user)
-        
-        # Menambahkan data user ke payload token
         refresh['name'] = user.name
         refresh['email'] = user.email
         refresh['role'] = user.role
         refresh['user_id'] = user.id
         
-        # Hanya mengembalikan token
         return {
             "access_token": str(refresh.access_token)
         }
