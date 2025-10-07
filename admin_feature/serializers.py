@@ -6,7 +6,7 @@ class AdminUserLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminUserLog
         fields = ("id", "username", "email", "timestamp", "detail", "note", "action", "created_at")
-        read_only_fields = ("id", "username", "email", "timestamp", "action", "created_at")
+        read_only_fields = ("id", "created_at")
 
 class AdminUserLogDetailSerializer(serializers.ModelSerializer):
     class Meta:

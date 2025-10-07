@@ -323,12 +323,13 @@ class RolesAndFailedLoginAPITests(TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_import_admin_apps_models_for_coverage(self):
-        import admin_feature.admin as mod_admin
-        import admin_feature.apps as mod_apps
-        import admin_feature.models as mod_models
-        importlib.reload(mod_admin)
-        importlib.reload(mod_apps)
-        importlib.reload(mod_models)
+        """Verify admin module imports cleanly"""
+        try:
+            import admin_feature.admin as mod_admin  # noqa: F401
+            import admin_feature.apps as mod_apps  # noqa: F401
+            import admin_feature.models as mod_models  # noqa: F401
+        except Exception as e:
+            self.fail(f"Failed to import admin modules: {e}")
 
 
 @override_settings(SECRET_API_KEYS=("test-key",))
@@ -1064,43 +1065,80 @@ class AdminFeatureTests(TestCase):
         self.assertTrue(UserRole.objects.filter(user=self.alice, role=self.curator).exists())
 
 # Admin user log menu
+@override_settings(SECRET_API_KEYS=("test-key",))
+@override_settings(SECRET_API_KEYS=("test-key",))
 class AdminUserLogsTableTests(TestCase):
     def setUp(self):
+        # Clean up any existing data
+        User.objects.all().delete()
+        AdminUserLog.objects.all().delete()
+        
         self.client = APIClient()
         self.url = reverse("admin_user_logs")
+        
+        # Setup admin user
+        self.admin_password = random_password("Adm1n")
+        self.admin = User.objects.create(
+            name="Admin",
+            email="admin@example.com",
+            password=make_password(self.admin_password),
+            role="ADMIN"  # Set role directly on User
+        )
+        self.admin.save()
+
+        # Get token by creating JWT directly
+        refresh = RefreshToken.for_user(self.admin)
+        refresh['name'] = self.admin.name
+        refresh['email'] = self.admin.email
+        refresh['role'] = self.admin.role
+        refresh['user_id'] = self.admin.id
+        self.token = str(refresh.access_token)
+        self.auth_headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {self.token}"}
+
+    def tearDown(self):
+        AdminUserLog.objects.all().delete()
+        User.objects.all().delete()
 
     def _mk(self, **kw):
-        defaults = dict(
-            username="user",
-            email="user@example.com",
-            detail="Login success",
-            action="LOGIN_SUCCESS",
-            timestamp=timezone.now(),
-        )
-        defaults.update(kw)
-        return AdminUserLog.objects.create(**defaults)
+        """Helper to create an AdminUserLog with defaults"""
+        data = {
+            "username": kw.pop("username", "test-user"),
+            "email": kw.pop("email", "test@example.com"),
+            "detail": kw.pop("detail", "Login success"),
+            "note": kw.pop("note", ""),
+            "action": kw.pop("action", "LOGIN_SUCCESS"),
+            "timestamp": kw.pop("timestamp", timezone.now())
+        }
+        data.update(kw)  # Add any remaining kwargs
+        return AdminUserLog.objects.create(**data)
 
     def test_get_returns_empty_table_initially(self):
-        res = self.client.get(self.url)
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
+        
+        res = self.client.get(self.url, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["total"], 0)
         self.assertEqual(body["data"], [])
 
     def test_post_creates_log_entry_without_action_and_triggers_201(self):
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
+        
         payload = {
             "username": "user1",
             "email": "user1@gmail.com",
             "detail": "Login success",
         }
-        res = self.client.post(self.url, payload, format="json")
-        self.assertEqual(res.status_code, 201)
+        res = self.client.post(self.url, payload, format="json", **self.auth_headers)
+        self.assertEqual(res.status_code, 201, msg=f"Response data: {res.content}")
         body = res.json()
         self.assertEqual(body["username"], "user1")
         self.assertEqual(body["email"], "user1@gmail.com")
         self.assertIn("timestamp", body)
 
-        res2 = self.client.get(self.url)
+        res2 = self.client.get(self.url, **self.auth_headers)
         self.assertEqual(res2.status_code, 200)
         body2 = res2.json()
         self.assertEqual(body2["total"], 1)
@@ -1110,9 +1148,12 @@ class AdminUserLogsTableTests(TestCase):
         self.assertEqual(body2["data"][0]["detail"], "Login success")
 
     def test_post_invalid_payload_returns_400_and_errors_branch(self):
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
+        
         bad = {"username": "no-email", "detail": "Login success"}
-        res = self.client.post(self.url, bad, format="json")
-        self.assertEqual(res.status_code, 400)
+        res = self.client.post(self.url, bad, format="json", **self.auth_headers)
+        self.assertEqual(res.status_code, 400, msg=f"Response data: {res.content}")
         data = res.json()
         self.assertIn("errors", data)
 
@@ -1120,7 +1161,7 @@ class AdminUserLogsTableTests(TestCase):
         for i in range(3):
             self._mk(username=f"user{i}", email=f"user{i}@x.com")
 
-        res = self.client.get(self.url, {"page": "abc"})
+        res = self.client.get(self.url, {"page": "abc"}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["page"], 1)
 
@@ -1128,19 +1169,24 @@ class AdminUserLogsTableTests(TestCase):
         for i in range(3):
             self._mk(username=f"user{i}", email=f"user{i}@x.com")
 
-        res = self.client.get(self.url, {"pageSize": "NaN"})
+        res = self.client.get(self.url, {"pageSize": "NaN"}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["pageSize"], 10)
 
     def test_pagination_defaults_when_params_invalid(self):
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
+        
+        # Create 12 test logs
+        base_time = timezone.now()
         for i in range(12):
             self._mk(
                 username=f"user{i}",
                 email=f"user{i}@x.com",
-                timestamp=timezone.now() + timedelta(minutes=i),
+                timestamp=base_time + timedelta(minutes=i)
             )
 
-        res = self.client.get(self.url, {"page": "not-int", "pageSize": "NaN"})
+        res = self.client.get(self.url, {"page": "not-int", "pageSize": "NaN"}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["page"], 1)
@@ -1149,32 +1195,39 @@ class AdminUserLogsTableTests(TestCase):
         self.assertEqual(len(body["data"]), 10)
 
     def test_sort_asc_orders_by_oldest_first(self):
-        self._mk(username="old", timestamp=timezone.now() - timedelta(days=1))
-        self._mk(username="new", timestamp=timezone.now())
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
 
-        res = self.client.get(self.url, {"sort": "timestamp:asc"})
+        # Create test logs with different timestamps
+        now = timezone.now()
+        self._mk(username="old", timestamp=now - timedelta(days=1))
+        self._mk(username="new", timestamp=now)
+
+        res = self.client.get(self.url, {"sort": "timestamp:asc"}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         rows = res.json()["data"]
-        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["username"], "old")
 
-        res2 = self.client.get(self.url, {"sort": "timestamp:desc"})
+        res2 = self.client.get(self.url, {"sort": "timestamp:desc"}, **self.auth_headers)
         rows2 = res2.json()["data"]
         self.assertEqual(rows2[0]["username"], "new")
 
     def test_search_filters_username_email_detail(self):
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
         self._mk(username="alice", email="alice@example.com", detail="Login success")
         self._mk(username="bob", email="bob@example.com", detail="Change Role")
         self._mk(username="charlie", email="c@example.com", detail="Login Failed")
 
-        res = self.client.get(self.url, {"search": "bob"})
+        res = self.client.get(self.url, {"search": "bob"}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["total"], 1)
         self.assertEqual(len(body["data"]), 1)
         self.assertEqual(body["data"][0]["username"], "bob")
 
-        res2 = self.client.get(self.url, {"search": "Login Failed"})
+        res2 = self.client.get(self.url, {"search": "Login Failed"}, **self.auth_headers)
         self.assertEqual(res2.status_code, 200)
         body2 = res2.json()
         self.assertEqual(body2["total"], 1)
@@ -1189,12 +1242,12 @@ class AdminUserLogsTableTests(TestCase):
         start_str_fromiso = (base - timedelta(days=1, hours=12)).strftime("%Y-%m-%d %H:%M:%S")
         end_invalid = "not-a-date"
 
-        res = self.client.get(self.url, {"start": start_str_fromiso, "end": end_invalid})
+        res = self.client.get(self.url, {"start": start_str_fromiso, "end": end_invalid}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         self.assertIn("data", res.json())
 
         end_valid = (base - timedelta(hours=12)).isoformat()
-        res2 = self.client.get(self.url, {"start": start_str_fromiso, "end": end_valid})
+        res2 = self.client.get(self.url, {"start": start_str_fromiso, "end": end_valid}, **self.auth_headers)
         self.assertEqual(res2.status_code, 200)
         usernames2 = [r["username"] for r in res2.json()["data"]]
         self.assertIn("b", usernames2)
@@ -1204,24 +1257,27 @@ class AdminUserLogsTableTests(TestCase):
         """Force a string that parse_datetime can't handle but looks like datetime → hits fromisoformat except."""
         self._mk(username="z", timestamp=timezone.now())
         bad_date = "2025-09-29T99:99:99"  # invalid, triggers ValueError inside fromisoformat
-        res = self.client.get(self.url, {"start": bad_date})
+        res = self.client.get(self.url, {"start": bad_date}, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         self.assertIn("data", res.json())
 
     def test_get_returns_multiple_rows_matching_table_example(self):
-        seed = [
-            {"username": "user1", "email": "user1@gmail.com", "detail": "Login success"},
-            {"username": "user2", "email": "user2@gmail.com", "detail": "Change Role"},
-            {"username": "user3", "email": "user3@gmail.com", "detail": "Login Failed"},
-            {"username": "user1", "email": "user1@gmail.com", "detail": "Login success"},
-            {"username": "user2", "email": "user2@gmail.com", "detail": "Change Role"},
+        # First ensure table is empty
+        AdminUserLog.objects.all().delete()
+        
+        # Create test logs
+        now = timezone.now()
+        logs = [
+            {"username": "user1", "email": "user1@gmail.com", "detail": "Login success", "timestamp": now},
+            {"username": "user2", "email": "user2@gmail.com", "detail": "Change Role", "timestamp": now},
+            {"username": "user3", "email": "user3@gmail.com", "detail": "Login Failed", "timestamp": now},
+            {"username": "user1", "email": "user1@gmail.com", "detail": "Login success", "timestamp": now},
+            {"username": "user2", "email": "user2@gmail.com", "detail": "Change Role", "timestamp": now}
         ]
-        now_iso = timezone.now().isoformat()
-        for p in seed:
-            payload = {**p, "timestamp": now_iso}
-            self.client.post(self.url, payload, format="json")
+        for log in logs:
+            self._mk(**log)
 
-        res = self.client.get(self.url)
+        res = self.client.get(self.url, **self.auth_headers)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["total"], 5)

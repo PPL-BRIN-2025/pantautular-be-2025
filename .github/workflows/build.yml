@@ -1,4 +1,5 @@
-name: Build
+name: Build & SonarCloud Analysis
+
 on:
   push:
     branches: [staging]
@@ -7,11 +8,34 @@ on:
 
 jobs:
   sonarqube:
-    name: SonarQube
-    runs-on: windows-latest
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        # health check ensures DB is ready before tests
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      PYTHONPATH: ${{ github.workspace }}
+      DJANGO_SETTINGS_MODULE: pantau_tular.settings
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -26,14 +50,19 @@ jobs:
           pip install -r requirements.txt
           pip install coverage
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (PostgreSQL)
         run: |
           coverage erase
-          coverage run --branch manage.py test admin_feature
+          coverage run --branch manage.py test
           coverage xml -i -o coverage.xml
-          coverage report --include="*/admin_feature/*"
+          coverage report
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@1a6d90ebcb0e6a6b1d87e37ba693fe453195ae25 # v5.3.1
+      - name: Normalize coverage paths
+        run: |
+          echo "Normalizing coverage.xml paths for SonarCloud..."
+          sed -i 's#/home/runner/work/[^/]*/[^/]*#.#g' coverage.xml || true
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5.3.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
