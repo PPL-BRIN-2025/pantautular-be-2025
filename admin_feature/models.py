@@ -5,10 +5,10 @@ class AdminUserLog(models.Model):
     id = models.BigAutoField(primary_key=True)
     username = models.CharField(max_length=150, db_index=True)
     email = models.EmailField(db_index=True)
-    timestamp = models.DateTimeField(db_index=True, default=timezone.now)
-    action = models.CharField(max_length=100, null=True, blank=True, db_index=True)
-    detail = models.TextField(null=True, blank=True, db_index=True)
-    note = models.TextField(null=True, blank=True)
+    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
+    action = models.CharField(max_length=100, null=True, blank=True, db_index=True)   
+    detail = models.TextField(null=True, blank=True, db_index=True)                 
+    note = models.TextField(null=True, blank=True)                                    
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -17,7 +17,6 @@ class AdminUserLog(models.Model):
             models.Index(fields=["timestamp"]),
             models.Index(fields=["username"]),
             models.Index(fields=["email"]),
-            models.Index(fields=["detail"]),
             models.Index(fields=["action"]),
         ]
 
