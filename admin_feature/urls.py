@@ -10,7 +10,11 @@ from .views import (
     UserInfoAPIView,
     AdminUserListView,
     AdminUserDeleteView,
-    AdminUserChangeRoleView, AdminUserLogsAPIView, AdminUserLogDetailAPIView, AdminUserLogUpdateAPIView
+    AdminUserChangeRoleView,
+    AdminUserLogsAPIView,
+    AdminUserLogsAllAPIView,  
+    AdminUserLogDetailAPIView,
+    AdminUserLogUpdateAPIView,
 )
 
 urlpatterns = [
@@ -29,8 +33,8 @@ urlpatterns = [
     path("users/<int:id>/role", AdminUserChangeRoleView.as_view(), name="admin-user-change-role"),
   
     # Admin user log menu endpoints
-    path("api/admin/user-logs/", AdminUserLogsAPIView.as_view(), name="admin_user_logs"),
-    path("api/admin/user-logs/<int:id>/", AdminUserLogUpdateAPIView.as_view(), name="log-update"),
-    path("api/admin/user-logs/<int:id>/detail/", AdminUserLogDetailAPIView.as_view(), name="log-detail"),
-
+    path("api/admin/user-logs/", AdminUserLogsAPIView.as_view(), name="admin-user-logs"),
+    path("api/admin/user-logs/all", AdminUserLogsAllAPIView.as_view(), name="admin-user-logs-all"), 
+    path("api/admin/user-logs/<int:id>/detail/", AdminUserLogDetailAPIView.as_view(), name="admin-user-log-detail"),
+    path("api/admin/user-logs/<int:id>/", AdminUserLogUpdateAPIView.as_view(), name="admin-user-log-update"),
 ]
