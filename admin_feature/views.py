@@ -46,6 +46,64 @@ class AdminDashboardServiceMixin:
         return self._dashboard_service
 
 
+# --- Small, single-purpose mixins to follow SOLID principles ---
+class PaginationMixin:
+    """Extract pagination logic so views don't handle parsing/validation themselves."""
+
+    def get_pagination_params(self, request):
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (ValueError, TypeError):
+            page = 1
+        try:
+            page_size = max(1, min(100, int(request.query_params.get("pageSize", 10))))
+        except (ValueError, TypeError):
+            page_size = 10
+        return page, page_size
+
+
+class SearchMixin:
+    """Apply simple icontains search across provided fields."""
+
+    def apply_search(self, qs, search: str, fields: list):
+        if not search:
+            return qs
+        q = Q()
+        for f in fields:
+            kwargs = {f + "__icontains": search}
+            q |= Q(**kwargs)
+        return qs.filter(q)
+
+
+class DateFilterMixin:
+    """Apply start/end datetime filters using parse_datetime safely."""
+
+    def apply_date_filter(self, qs, param_value, field_op):
+        if not param_value:
+            return qs
+        try:
+            dt = parse_datetime(param_value)
+            if dt:
+                return qs.filter(**{field_op: dt})
+        except (ValueError, TypeError):
+            pass
+        return qs
+
+
+class AuditLogMixin:
+    """Wrap the write_log dependency behind a method so views use a single responsibility for logging.
+
+    If in the future we want to change the audit implementation this isolates the dependency.
+    """
+
+    def log(self, request, action: str, detail: str, note: str = ""):
+        try:
+            write_log(request=request, user=getattr(request, "user", None), action=action, detail=detail, note=note)
+        except Exception:
+            # Audit logging should not break the main flow; swallow errors intentionally.
+            pass
+
+
 class RolesSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         summary = self.dashboard_service.get_roles_summary()
@@ -88,7 +146,7 @@ class StatsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
         return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class UserInfoAPIView(_AdminBaseAPIView):
+class UserInfoAPIView(_AdminBaseAPIView, AuditLogMixin):
     def get(self, request):
         user = getattr(request, "user", None)
         if not user:
@@ -100,11 +158,12 @@ class UserInfoAPIView(_AdminBaseAPIView):
             return Response({"detail": "Akses Ditolak"}, status=status.HTTP_403_FORBIDDEN)
 
         name = getattr(user, "name", None) or getattr(user, "email", "")
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed own admin user info")
+        # Use mixin-provided logging helper
+        self.log(request=request, action="VIEW", detail="Viewed own admin user info")
         return Response({"name": name, "role": role}, status=status.HTTP_200_OK)
 
 
-class AdminUserChangeRoleView(APIView):
+class AdminUserChangeRoleView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
@@ -132,9 +191,8 @@ class AdminUserChangeRoleView(APIView):
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
-        write_log(
+        self.log(
             request=request,
-            user=request.user,
             action="UPDATE_ROLE",
             detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
             note=f"path={request.path} method={request.method}"
@@ -142,18 +200,18 @@ class AdminUserChangeRoleView(APIView):
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
 
 
-class AdminUserListView(ListAPIView):
+class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
     queryset = User.objects.all().order_by("id")
 
     def list(self, request, *args, **kwargs):
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed admin users list")
+        self.log(request=request, action="VIEW", detail="Viewed admin users list")
         return super().list(request, *args, **kwargs)
 
 
-class AdminUserDeleteView(DestroyAPIView):
+class AdminUserDeleteView(DestroyAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     lookup_field = "id"
@@ -164,9 +222,8 @@ class AdminUserDeleteView(DestroyAPIView):
         user_id = getattr(instance, "id", None)
         user_email = getattr(instance, "email", "")
         response = super().destroy(request, *args, **kwargs)
-        write_log(
+        self.log(
             request=request,
-            user=request.user,
             action="DELETE_USER",
             detail=f"Deleted user id={user_id} email={user_email}",
             note=f"path={request.path} method={request.method}"
@@ -174,79 +231,38 @@ class AdminUserDeleteView(DestroyAPIView):
         return response
 
 
-class AdminUserLogsAPIView(APIView):
+class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin, DateFilterMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
     def get(self, request):
-        try:
-            page = max(1, int(request.query_params.get("page", 1)))
-        except ValueError:
-            page = 1
-        try:
-            page_size = max(1, min(100, int(request.query_params.get("pageSize", 10))))
-        except ValueError:
-            page_size = 10
-        return page, page_size
-
-    def _apply_date_filter(self, qs, param_value, field_op):
-        """Apply date filtering with error handling"""
-        if not param_value:
-            return qs
-        try:
-            dt = parse_datetime(param_value)
-            if dt:
-                return qs.filter(**{field_op: dt})
-        except (ValueError, TypeError):
-            pass
-        return qs
+        page, page_size = self.get_pagination_params(request)
 
         search = (request.query_params.get("search") or "").strip()
         sort = request.query_params.get("sort") or "timestamp:desc"
         order = "-timestamp" if str(sort).endswith(":desc") else "timestamp"
 
-        # Build queryset with filters
         qs = AdminUserLog.objects.all()
-        
-        if search:
-            qs = qs.filter(
-                Q(username__icontains=search) |
-                Q(email__icontains=search) |
-                Q(detail__icontains=search)
-            )
+        qs = self.apply_search(qs, search, ["username", "email", "detail"])
+        qs = self.apply_date_filter(qs, request.query_params.get("start"), "timestamp__gte")
+        qs = self.apply_date_filter(qs, request.query_params.get("end"), "timestamp__lte")
 
-        # Apply date filters
-        qs = self._apply_date_filter(qs, request.query_params.get("start"), "timestamp__gte")
-        qs = self._apply_date_filter(qs, request.query_params.get("end"), "timestamp__lte")
-
-        # Get paginated results
         total = qs.count()
         items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
 
-        data = PtBackendUserSerializer(items, many=True).data
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed user-logs list")
-        return Response(
-            {"data": data, "page": page, "pageSize": page_size, "total": total},
-            status=status.HTTP_200_OK,
-        )
+        data = AdminUserLogSerializer(items, many=True).data
+        self.log(request=request, action="VIEW", detail="Viewed user-logs list")
+        return Response({"data": data, "page": page, "pageSize": page_size, "total": total}, status=status.HTTP_200_OK)
 
     def post(self, request):
         data = request.data.copy()
-        
-        # If no timestamp provided, use current time
         if "timestamp" not in data:
             data["timestamp"] = timezone.now()
-            
+
         ser = AdminUserLogSerializer(data=data)
         if ser.is_valid():
             obj = ser.save()
-            write_log(
-                request=request,
-                user=request.user,
-                action="CREATE",
-                detail="Created AdminUserLog via API",
-                note=f"log_id={obj.id}"
-            )
+            self.log(request=request, action="CREATE", detail="Created AdminUserLog via API", note=f"log_id={obj.id}")
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -277,21 +293,16 @@ class AdminUserLogUpdateAPIView(generics.RetrieveUpdateAPIView):
     def partial_update(self, request, *args, **kwargs):
         resp = super().partial_update(request, *args, **kwargs)
         instance = self.get_object()
-        write_log(
-            request=request,
-            user=request.user,
-            action="UPDATE",
-            detail=f"Patched AdminUserLog id={instance.id}"
-        )
+        write_log(request=request, user=request.user, action="UPDATE", detail=f"Patched AdminUserLog id={instance.id}")
         return resp
 
 
-class AdminUserLogsAllAPIView(APIView):
+class AdminUserLogsAllAPIView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
     def get(self, request):
         logs = AdminUserLog.objects.all().order_by("-timestamp")
         data = AdminUserLogSerializer(logs, many=True).data
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed all user-logs")
+        self.log(request=request, action="VIEW", detail="Viewed all user-logs")
         return Response({"count": len(data), "logs": data}, status=status.HTTP_200_OK)
