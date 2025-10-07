@@ -1,5 +1,5 @@
 # admin_feature/views.py
-from datetime import datetime
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
 from django.db.models import Q
@@ -234,42 +234,70 @@ class AdminUserLogsAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
-    def get(self, request):
-        # pagination
+    def _get_pagination_params(self, request):
+        """Extract and validate pagination parameters"""
         try:
-            page = int(request.query_params.get("page", 1))
+            page = max(1, int(request.query_params.get("page", 1)))
         except ValueError:
             page = 1
         try:
-            page_size = int(request.query_params.get("pageSize", 10))
+            page_size = max(1, min(100, int(request.query_params.get("pageSize", 10))))
         except ValueError:
             page_size = 10
-        page = max(1, page)
-        page_size = max(1, min(100, page_size))
+        return page, page_size
 
-        # filters
+    def _apply_date_filter(self, qs, param_value, field_op):
+        """Apply date filtering with error handling"""
+        if not param_value:
+            return qs
+        try:
+            dt = parse_datetime(param_value)
+            if dt:
+                return qs.filter(**{field_op: dt})
+        except (ValueError, TypeError):
+            pass
+        return qs
+
+    def get(self, request):
+        page, page_size = self._get_pagination_params(request)
+
+        # Apply filters
         search = (request.query_params.get("search") or "").strip()
-        sort = request.query_params.get("sort") or "last_login:desc"
-        order = "-last_login" if str(sort).endswith(":desc") else "last_login"
+        sort = request.query_params.get("sort") or "timestamp:desc"
+        order = "-timestamp" if str(sort).endswith(":desc") else "timestamp"
 
-        qs = PtBackendUser.objects.all()
+        # Build queryset with filters
+        qs = AdminUserLog.objects.all()
+        
         if search:
-            qs = qs.filter(Q(name__icontains=search) | Q(email__icontains=search))
+            qs = qs.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(detail__icontains=search)
+            )
 
+        # Apply date filters
+        qs = self._apply_date_filter(qs, request.query_params.get("start"), "timestamp__gte")
+        qs = self._apply_date_filter(qs, request.query_params.get("end"), "timestamp__lte")
+
+        # Get paginated results
         total = qs.count()
         items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
 
-        data = PtBackendUserSerializer(items, many=True).data
+        data = AdminUserLogSerializer(items, many=True).data
         return Response(
             {"data": data, "page": page, "pageSize": page_size, "total": total},
             status=status.HTTP_200_OK,
         )
 
     def post(self, request):
-        payload = request.data.copy()
-        if not payload.get("timestamp"):
-            payload["timestamp"] = datetime.utcnow().isoformat() + "Z"
-        ser = AdminUserLogSerializer(data=payload)
+        data = request.data.copy()
+        
+        # If no timestamp provided, use current time
+        if "timestamp" not in data:
+            data["timestamp"] = timezone.now()
+            
+        ser = AdminUserLogSerializer(data=data)
         if ser.is_valid():
             obj = ser.save()
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
