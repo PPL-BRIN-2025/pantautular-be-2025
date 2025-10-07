@@ -11,6 +11,28 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        # health check ensures DB is ready before tests
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      PYTHONPATH: ${{ github.workspace }}
+      DJANGO_SETTINGS_MODULE: pantau_tular.settings
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,7 +50,7 @@ jobs:
           pip install -r requirements.txt
           pip install coverage
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (PostgreSQL)
         run: |
           coverage erase
           coverage run --branch manage.py test
@@ -38,10 +60,9 @@ jobs:
       - name: Normalize coverage paths
         run: |
           echo "Normalizing coverage.xml paths for SonarCloud..."
-          sed -i 's#C:\\Kuliah\\PPL#.#g' coverage.xml || true
           sed -i 's#/home/runner/work/[^/]*/[^/]*#.#g' coverage.xml || true
 
-      - name: SonarQube Scan
+      - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.3.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
