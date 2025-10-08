@@ -198,5 +198,37 @@ class News(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
 
+
+class DownloadEvent(models.Model):
+    class Metric(models.TextChoices):
+        TOTAL_CASES = "jumlah_kasus", "Jumlah Kasus"
+        PREVALENCE = "estimasi_prevalensi", "Estimasi Prevalensi"
+        AGE = "usia", "Usia"
+        GENDER = "jenis_kelamin", "Jenis Kelamin"
+        CASE_LEVEL = "tingkat_kasus", "Tingkat Kasus"
+        NEWS_SOURCE = "distribusi_sumber_berita", "Distribusi Sumber Berita"
+
+    class FileFormat(models.TextChoices):
+        PNG = "png", "PNG"
+        JPG = "jpg", "JPG"
+        JPEG = "jpeg", "JPEG"
+
+    id = models.BigAutoField(primary_key=True)
+    metric = models.CharField(max_length=64, choices=Metric.choices)
+    file_format = models.CharField(max_length=16, choices=FileFormat.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    metadata = models.JSONField(blank=True, null=True)
+    client_ip = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.CharField(max_length=512, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["metric", "created_at"]),
+        ]
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.get_metric_display()} ({self.file_format}) at {self.created_at.isoformat()}"
+
     def __str__(self):
         return self.title

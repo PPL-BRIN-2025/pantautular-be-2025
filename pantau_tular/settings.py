@@ -29,6 +29,7 @@ load_dotenv()
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
 SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
+ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False

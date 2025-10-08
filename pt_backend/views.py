@@ -4,12 +4,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.http import require_http_methods
+from django.conf import settings
 
 
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
-from pt_backend.models import Location
-from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
+from pt_backend.models import Location, DownloadEvent
+from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer, DownloadLogSerializer
 from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
 from .filter.service import CaseFilterService
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
@@ -588,6 +589,45 @@ class WeightedSeverityAnalysisView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class DownloadLogView(APIView):
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+
+    def post(self, request):
+        serializer = DownloadLogSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if not getattr(settings, "ENABLE_DOWNLOAD_LOGGING", False):
+            return Response(
+                {"logged": False, "detail": "Download logging disabled"},
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        metadata = {}
+        if filters := data.get("filters"):
+            metadata["filters"] = filters
+        if source := data.get("source"):
+            metadata["source"] = source
+
+        event = DownloadEvent.objects.create(
+            metric=data["metric"],
+            file_format=data["file_format"],
+            metadata=metadata or None,
+            client_ip=self._extract_client_ip(request),
+            user_agent=(request.META.get("HTTP_USER_AGENT") or "")[:512],
+        )
+
+        return Response({"id": event.id, "logged": True}, status=status.HTTP_201_CREATED)
+
+    def _extract_client_ip(self, request):
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR")
+
 
 @require_http_methods(['GET'])
 def health_check(request):

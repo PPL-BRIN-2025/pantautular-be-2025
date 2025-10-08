@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .constants import PROVINCE_TO_CODE
+from .models import DownloadEvent
 
 class CaseLocationSerializer(serializers.Serializer):
     id = serializers.UUIDField()
@@ -66,3 +67,11 @@ ProvinceTemperatureSerializer = ProvinceClimateSerializer
 ProvincePrecipitationSerializer = ProvinceClimateSerializer
 
 
+class DownloadLogSerializer(serializers.Serializer):
+    metric = serializers.ChoiceField(choices=DownloadEvent.Metric.choices)
+    file_format = serializers.ChoiceField(choices=DownloadEvent.FileFormat.choices)
+    filters = serializers.JSONField(required=False)
+    source = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_file_format(self, value):
+        return value.lower()
