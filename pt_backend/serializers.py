@@ -2,6 +2,13 @@ from rest_framework import serializers
 from .constants import PROVINCE_TO_CODE
 from .models import DownloadEvent
 
+
+class CaseInsensitiveChoiceField(serializers.ChoiceField):
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = data.lower()
+        return super().to_internal_value(data)
+
 class CaseLocationSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     location__longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
@@ -68,8 +75,8 @@ ProvincePrecipitationSerializer = ProvinceClimateSerializer
 
 
 class DownloadLogSerializer(serializers.Serializer):
-    metric = serializers.ChoiceField(choices=DownloadEvent.Metric.choices)
-    file_format = serializers.ChoiceField(choices=DownloadEvent.FileFormat.choices)
+    metric = CaseInsensitiveChoiceField(choices=DownloadEvent.Metric.choices)
+    file_format = CaseInsensitiveChoiceField(choices=DownloadEvent.FileFormat.choices)
     filters = serializers.JSONField(required=False)
     source = serializers.CharField(required=False, allow_blank=True)
 
