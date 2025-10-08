@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'authentication',
     'rest_framework_simplejwt',
     'admin_feature', 
+    'curator_feature',
 
 ]
 
