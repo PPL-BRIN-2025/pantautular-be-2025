@@ -3,7 +3,7 @@ from .views import (AllCaseLocationsView, CitySeverityStatsView,
                     DiseaseSeverityStatsView, CaseDetailView, FiltersView, 
                     StatisticsView, LocationSeverityStatsView, SeverityFilteringStatsView,
                     ProvinceHumidityView, ProvincePrecipitationView, ProvinceTemperatureView,
-                    WeightedSeverityAnalysisView)
+                    WeightedSeverityAnalysisView, DownloadLogView)
 from . import views
 
 urlpatterns = [
@@ -19,5 +19,6 @@ urlpatterns = [
     path('api/province-precipitation/', ProvincePrecipitationView.as_view(), name='province-precipitation'),
     path('api/province-temperature/', ProvinceTemperatureView.as_view(), name='province-temperature'),
     path('api/province-weighted-severity/', WeightedSeverityAnalysisView.as_view(), name='province-weighted-severity'),
+    path('api/downloads/log/', DownloadLogView.as_view(), name='download-log'),
     path('health/', views.health_check, name='health_check'),
 ]
