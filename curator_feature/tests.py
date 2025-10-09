@@ -177,6 +177,20 @@ class CuratorPermissionPolicyTest(APITestCase):
         self.auth_as(self.user_role_only)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
+    
+    @override_settings(CURATOR_ROLE_NAME="Curator", CURATOR_ROLE_CHECKS=("role",))
+    def test_role_match_is_case_insensitive(self):
+        self.user_role_only.role = "curator"
+        self.user_role_only.save()
+        self.auth_as(self.user_role_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("unknown",))
+    def test_unknown_check_strategy_denies(self):
+        self.auth_as(self.user_role_only)  # should pass under role
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
     @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
     def test_group_membership_allows_access(self):
