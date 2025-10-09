@@ -15,7 +15,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
-from csp.constants import SELF
+try:
+    from csp.constants import SELF
+except ImportError:
+    SELF = "'self'"
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -61,6 +64,7 @@ INSTALLED_APPS = [
     'authentication',
     'rest_framework_simplejwt',
     'admin_feature', 
+    'curator_feature',
 
 ]
 
