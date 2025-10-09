@@ -1,12 +1,15 @@
+import os
 from django.utils import timezone
 from django.db import DatabaseError
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import patch
+from django.test import override_settings
+from django.urls import reverse
 
 from pt_backend.models import User
-from curator_feature.models import DownloadLog
+from curator_feature.models import DownloadLog, DashboardDownloadEvent
 
 
 class DownloadLogAPIViewTests(APITestCase):
@@ -91,3 +94,46 @@ class DownloadLogAPIViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data.get("message"), "Download logging failed")
+
+
+class DashboardDownloadEventAPIViewTests(APITestCase):
+    def setUp(self):
+        self.url = reverse("dashboard-download-log")
+        os.environ["SECRET_API_KEY"] = "test-api-key"
+        self.client = APIClient()
+        self.client.credentials(HTTP_X_API_KEY="test-api-key")
+
+    def tearDown(self):
+        os.environ.pop("SECRET_API_KEY", None)
+        DashboardDownloadEvent.objects.all().delete()
+
+    def _payload(self, **overrides):
+        payload = {
+            "metric": "jumlah_kasus",
+            "file_format": "PNG",
+            "filters": {"diseases": ["Dengue"]},
+            "source": "dashboard",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_logging_disabled_returns_accepted(self):
+        response = self.client.post(self.url, data=self._payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertFalse(response.data.get("logged", True))
+        self.assertEqual(DashboardDownloadEvent.objects.count(), 0)
+
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=True)
+    def test_logging_enabled_creates_event(self):
+        response = self.client.post(self.url, data=self._payload(file_format="jpeg"), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data.get("logged"))
+        self.assertEqual(DashboardDownloadEvent.objects.count(), 1)
+
+        event = DashboardDownloadEvent.objects.get()
+        self.assertEqual(event.metric, "jumlah_kasus")
+        self.assertEqual(event.file_format, "jpeg")
+        self.assertEqual(event.metadata["filters"]["diseases"], ["Dengue"])
+        self.assertEqual(event.metadata["source"], "dashboard")
