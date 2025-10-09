@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from django.urls import reverse
 from django.contrib.auth.models import User, Group
+from django.test import override_settings
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 
@@ -124,3 +125,109 @@ class CuratorCasesAPITest(APITestCase):
                 for c in res.data["data"])
         )
 
+# additional tests to test for the permission policy
+
+class CuratorPermissionPolicyTest(APITestCase):
+    """
+    TDD for curator access policy:
+    - Allow by role attribute
+    - Allow by Django Group
+    - Role name and check strategy are configurable via settings
+    """
+
+    def setUp(self):
+        self.grp_curator, _ = Group.objects.get_or_create(name="CURATOR")
+        self.grp_kurator, _ = Group.objects.get_or_create(name="KURATOR")
+
+        # role-only user (no group)
+        self.user_role_only = User.objects.create_user(
+            username="roleonly@example.com", password="pw", email="roleonly@example.com"
+        )
+        setattr(self.user_role_only, "role", "CURATOR")
+        self.user_role_only.save()
+
+        # group-only user (no role)
+        self.user_group_only = User.objects.create_user(
+            username="grouponly@example.com", password="pw", email="grouponly@example.com"
+        )
+        self.user_group_only.groups.add(self.grp_curator)
+
+        # plain user
+        self.user_plain = User.objects.create_user(
+            username="plain@example.com", password="pw", email="plain@example.com"
+        )
+
+        # minimal data for list endpoint
+        BackendCase.objects.create(
+            id=uuid4(), gender="female", age=21, city="Depok",
+            status="active", disease_id=uuid4(), location_id=uuid4(), severity="low"
+        )
+
+        self.client = APIClient()
+        self.url = reverse("curator_cases_list")
+
+    def auth_as(self, user):
+        self.client.force_authenticate(user=user)
+
+    def unauth(self):
+        self.client.force_authenticate(user=None)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
+    def test_role_attribute_allows_access(self):
+        self.auth_as(self.user_role_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
+    def test_group_membership_allows_access(self):
+        self.auth_as(self.user_group_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
+    def test_plain_user_forbidden(self):
+        self.auth_as(self.user_plain)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(CURATOR_ROLE_NAME="KURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
+    def test_changed_role_name_is_respected(self):
+        setattr(self.user_role_only, "role", "KURATOR")
+        self.user_role_only.save()
+
+        self.auth_as(self.user_role_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        user_group_kurator = User.objects.create_user(
+            username="gkurator@example.com", password="pw", email="gkurator@example.com"
+        )
+        user_group_kurator.groups.add(self.grp_kurator)
+        self.auth_as(user_group_kurator)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role",))
+    def test_checks_role_only_denies_group_only_user(self):
+        self.auth_as(self.user_group_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.auth_as(self.user_role_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("group",))
+    def test_checks_group_only_denies_role_only_user(self):
+        self.auth_as(self.user_role_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.auth_as(self.user_group_only)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_unauthenticated_is_401(self):
+        self.unauth()
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
