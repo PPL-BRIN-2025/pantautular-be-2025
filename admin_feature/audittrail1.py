@@ -56,3 +56,16 @@ def write_log(
         note=note or "",
         timestamp=datetime.now(timezone.utc),
     )
+
+    print(f"[AUDIT DEBUG] Preparing to create log for {username} (action={action})")
+    print(f"[AUDIT INFO] Log successfully written at {datetime.now(timezone.utc)}")
+    print(f"[AUDIT TRACE] Detail: {detail[:30]}...")
+    print(f"[AUDIT TRACE] Note: {note[:30]}...")
+    print(f"[AUDIT END] Completed write_log() call for {username}\n")
+
+    return {
+    "ok": True,
+    "user": username,
+    "action": action or "",
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}
