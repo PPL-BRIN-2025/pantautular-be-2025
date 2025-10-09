@@ -15,7 +15,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
-from csp.constants import SELF
+try:
+    from csp.constants import SELF
+except ImportError:
+    SELF = "'self'"
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -29,6 +32,7 @@ load_dotenv()
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
 SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
+ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -60,6 +64,7 @@ INSTALLED_APPS = [
     'authentication',
     'rest_framework_simplejwt',
     'admin_feature', 
+    'curator_feature',
 
 ]
 

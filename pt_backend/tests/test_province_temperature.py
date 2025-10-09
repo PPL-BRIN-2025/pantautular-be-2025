@@ -25,9 +25,12 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.service = MagicMock()
         self.view.climate_service = self.service
         self.request = MagicMock()
-        self.request.META = {'HTTP_X_API_KEY': 'test-api-key'}
+        self.request.META = {
+            'HTTP_X_API_KEY': 'test-api-key',
+            'HTTP_AUTHORIZATION': f'Bearer {self.access_token}',
+        }
         os.environ['SECRET_API_KEY'] = 'test-api-key'
-        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        self._set_credentials()
 
     def tearDown(self):
         super().tearDown()
