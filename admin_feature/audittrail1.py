@@ -56,3 +56,5 @@ def write_log(
         note=note or "",
         timestamp=datetime.now(timezone.utc),
     )
+
+    print(f"[AUDIT DEBUG] Preparing to create log for {username} (action={action})")
