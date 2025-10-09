@@ -16,9 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
 from django_prometheus import exports
 from django.http import JsonResponse
+
+from curator_feature.views import DashboardDownloadEventAPIView
 
 def health(request):               
     return JsonResponse({"status": "ok"})
@@ -29,8 +30,8 @@ urlpatterns = [
     path('metrics/', exports.ExportToDjangoView, name='prometheus-django-metrics'),
     path('authentication/', include("authentication.urls")),
     path('admin-feature/', include('admin_feature.urls')),
+    path('api/downloads/log/', DashboardDownloadEventAPIView.as_view(), name='dashboard-download-log'),
     path('api/logs/', include('curator_feature.urls')),
     path('health/', health),
     path("", include("admin_feature.urls")),
 ]
-

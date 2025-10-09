@@ -1,10 +1,10 @@
 from datetime import datetime
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 from pantau_tular.settings import CACHES
-from pt_backend.models import Case, Location, Disease, News, DownloadEvent, User
+from pt_backend.models import Case, Location, Disease, News, User
 from pt_backend.services import CacheService
 from unittest.mock import patch, MagicMock
 from django.utils import timezone
@@ -990,50 +990,3 @@ class SeverityFilteringStatsViewTest(TestCase):
         self.assertEqual(len(cities), 2)
         self.assertIn('Jakarta', cities)
         self.assertIn('Bandung', cities)
-
-
-class DownloadLogViewTest(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-        self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
-        self.url = reverse('download-log')
-
-        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
-        self.mock_auth = self.auth_patcher.start()
-        self.mock_auth.return_value = (None, None)
-
-    def tearDown(self):
-        self.auth_patcher.stop()
-
-    def _payload(self, **overrides):
-        payload = {
-            "metric": "jumlah_kasus",
-            "file_format": "PNG",
-            "filters": {"diseases": ["Dengue"]},
-            "source": "dashboard",
-        }
-        payload.update(overrides)
-        return payload
-
-    def test_download_logging_disabled_returns_accepted(self):
-        response = self.client.post(self.url, data=self._payload(), format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertIn("logged", response.data)
-        self.assertFalse(response.data["logged"])
-        self.assertEqual(DownloadEvent.objects.count(), 0)
-
-    @override_settings(ENABLE_DOWNLOAD_LOGGING=True)
-    def test_download_logging_enabled_creates_event(self):
-        response = self.client.post(self.url, data=self._payload(file_format="JPEG"), format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["logged"])
-        self.assertEqual(DownloadEvent.objects.count(), 1)
-
-        event = DownloadEvent.objects.get()
-        self.assertEqual(event.metric, "jumlah_kasus")
-        self.assertEqual(event.file_format, "jpeg")
-        self.assertEqual(event.metadata["filters"]["diseases"], ["Dengue"])
-        self.assertEqual(event.metadata["source"], "dashboard")
