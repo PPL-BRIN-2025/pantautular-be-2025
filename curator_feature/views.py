@@ -1,20 +1,16 @@
 from django.db.models import Q
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import BackendCase
-
-class IsCurator(BasePermission):
-    def has_permission(self, request, view):
-        u = getattr(request, "user", None)
-        return bool(u and u.is_authenticated and u.groups.filter(name="CURATOR").exists())
+from .permissions import IsCuratorRole
 
 class CuratorCasesListAPIView(APIView):
     """
     GET /curator-feature/cases/?page=1&pageSize=10&search=&gender=&minAge=&maxAge=&status=&severity=&disease_id=&location_id=&sort=age:desc
     """
-    permission_classes = [IsAuthenticated, IsCurator]
+    permission_classes = [IsAuthenticated, IsCuratorRole]
 
     def get(self, request):
         def _i(v, default=None):

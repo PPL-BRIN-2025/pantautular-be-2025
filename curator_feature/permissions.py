@@ -1,5 +1,8 @@
-from django.contrib.auth.models import Group
+from django.conf import settings
 from rest_framework.permissions import BasePermission
+
+def _norm(s: str) -> str:
+    return (s or "").strip().upper()
 
 class IsCuratorRole(BasePermission):
     def has_permission(self, request, view):
@@ -7,8 +10,15 @@ class IsCuratorRole(BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        role = (getattr(user, "role", "") or "").upper()
-        if role == "CURATOR":
-            return True
+        required = _norm(getattr(settings, "CURATOR_ROLE_NAME", "CURATOR"))
+        checks = tuple(getattr(settings, "CURATOR_ROLE_CHECKS", ("role", "group")))
 
-        return user.groups.filter(name="CURATOR").exists()
+        if "role" in checks:
+            if _norm(getattr(user, "role", "")) == required:
+                return True
+
+        if "group" in checks:
+            if user.groups.filter(name=required).exists():
+                return True
+
+        return False

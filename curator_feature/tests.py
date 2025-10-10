@@ -5,10 +5,63 @@ from django.contrib.auth.models import User, Group
 from django.test import override_settings
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
+from django.db import connection
+from django.contrib.auth.models import AnonymousUser
+from rest_framework.test import APIRequestFactory
+from curator_feature.permissions import IsCuratorRole
 
 from curator_feature.models import BackendCase
 
+def _drop_case_table():
+    with connection.cursor() as cur:
+        if connection.vendor == "postgresql":
+            cur.execute("DROP TABLE IF EXISTS pt_backend_case CASCADE")
+        else:
+            cur.execute("DROP TABLE IF EXISTS pt_backend_case")
+
+def _create_case_table_no_fk():
+    with connection.cursor() as cur:
+        if connection.vendor == "postgresql":
+            cur.execute("""
+                CREATE TABLE pt_backend_case (
+                  id UUID PRIMARY KEY,
+                  gender VARCHAR(10),
+                  age INTEGER,
+                  city VARCHAR(255),
+                  status VARCHAR(20),
+                  disease_id UUID,
+                  location_id UUID,
+                  severity VARCHAR(255)
+                )
+            """)
+        else:  # sqlite fallback
+            cur.execute("""
+                CREATE TABLE pt_backend_case (
+                  id TEXT PRIMARY KEY,
+                  gender TEXT,
+                  age INTEGER,
+                  city TEXT,
+                  status TEXT,
+                  disease_id TEXT,
+                  location_id TEXT,
+                  severity TEXT
+                )
+            """)
+
+
 class CuratorCasesAPITest(APITestCase):
+    
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _drop_case_table()
+        _create_case_table_no_fk()
+
+    @classmethod
+    def tearDownClass(cls):
+        _drop_case_table()
+        super().tearDownClass()
+    
     def setUp(self):
         self.group_curator, _ = Group.objects.get_or_create(name="CURATOR")
 
@@ -43,7 +96,7 @@ class CuratorCasesAPITest(APITestCase):
 
     def unauth(self):
         """Clear any forced authentication."""
-        self.client.force_authenticate(user=None)
+        self.client = APIClient()
 
     def test_unauthenticated_cannot_access(self):
         self.unauth()
@@ -134,6 +187,16 @@ class CuratorPermissionPolicyTest(APITestCase):
     - Allow by Django Group
     - Role name and check strategy are configurable via settings
     """
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        _drop_case_table()
+        _create_case_table_no_fk()
+
+    @classmethod
+    def tearDownClass(cls):
+        _drop_case_table()
+        super().tearDownClass()
 
     def setUp(self):
         self.grp_curator, _ = Group.objects.get_or_create(name="CURATOR")
@@ -170,7 +233,7 @@ class CuratorPermissionPolicyTest(APITestCase):
         self.client.force_authenticate(user=user)
 
     def unauth(self):
-        self.client.force_authenticate(user=None)
+        self.client = APIClient()
 
     @override_settings(CURATOR_ROLE_NAME="CURATOR", CURATOR_ROLE_CHECKS=("role", "group"))
     def test_role_attribute_allows_access(self):
@@ -245,3 +308,9 @@ class CuratorPermissionPolicyTest(APITestCase):
         self.unauth()
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_is_curator_role_denies_anonymous(self):
+        req = APIRequestFactory().get("/curator-feature/cases/")
+        req.user = AnonymousUser()  # no auth
+        perm = IsCuratorRole()
+        assert perm.has_permission(req, None) is False
