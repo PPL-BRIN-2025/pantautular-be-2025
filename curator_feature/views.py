@@ -20,6 +20,21 @@ from curator_feature.services import ChartDataService, DownloadLogService
 logger = logging.getLogger(__name__)
 
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+class ChartsSimpleView(APIView):
+    def get(self, request, *args, **kwargs):
+        from curator_feature.services import ChartDataService
+        service = ChartDataService()
+        try:
+            payload = service.get_chart_data()
+        except Exception:
+            logger.exception("Unable to retrieve chart data from pt_backend")
+            return Response({"message": "Failed to fetch chart data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
 class ChartDataAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated]
