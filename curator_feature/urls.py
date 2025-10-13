@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import CuratorCasesListAPIView
+from .views import CuratorDataLogListCreateAPIView
 
 urlpatterns = [
-    path("cases/", CuratorCasesListAPIView.as_view(), name="curator_cases_list"),
+    path("api/curator/audit-logs/", CuratorDataLogListCreateAPIView.as_view(),
+         name="curator_audit_logs"),
 ]

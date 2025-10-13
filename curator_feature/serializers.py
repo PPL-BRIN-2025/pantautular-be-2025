@@ -1,11 +1,10 @@
-# curator_feature/serializers.py
 from rest_framework import serializers
-from .models import BackendCase
+from .models import CuratorDataLog
 
-class BackendCaseSerializer(serializers.ModelSerializer):
+class CuratorDataLogSerializer(serializers.ModelSerializer):
+    lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
+    submittedBy = serializers.CharField(source="submitted_by")
+
     class Meta:
-        model = BackendCase
-        fields = (
-            "id", "gender", "age", "city", "status",
-            "disease_id", "location_id", "severity",
-        )
+        model = CuratorDataLog
+        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "note")

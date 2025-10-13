@@ -3,63 +3,81 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from .models import BackendCase
+
+from .models import CuratorDataLog, BackendCase
+from .serializers import CuratorDataLogSerializer
 from .permissions import IsCuratorRole
 
-class CuratorCasesListAPIView(APIView):
+class CuratorDataLogListCreateAPIView(APIView):
     """
-    GET /curator-feature/cases/?page=1&pageSize=10&search=&gender=&minAge=&maxAge=&status=&severity=&disease_id=&location_id=&sort=age:desc
+    GET /curator-feature/api/curator/audit-logs/
+      ?page=1&pageSize=10&search=&start=&end=&submitted_by=&sort=last_edited:desc
+
+    POST /curator-feature/api/curator/audit-logs/
+      { "data_id": "<uuid>", "title": "hospitalisasi", "note": "optional" }
     """
     permission_classes = [IsAuthenticated, IsCuratorRole]
 
     def get(self, request):
-        def _i(v, default=None):
+        # pagination
+        def _i(v, d=None):
             try: return int(v)
-            except: return default
+            except: return d
         page = max(1, _i(request.query_params.get("page", 1), 1))
         page_size = max(1, min(100, _i(request.query_params.get("pageSize", 10), 10)))
 
         # filters
         search = (request.query_params.get("search") or "").strip()
-        gender = (request.query_params.get("gender") or "").strip()
-        status_f = (request.query_params.get("status") or "").strip()
-        severity = (request.query_params.get("severity") or "").strip()
-        disease_id = (request.query_params.get("disease_id") or "").strip()
-        location_id = (request.query_params.get("location_id") or "").strip()
-        min_age = _i(request.query_params.get("minAge"))
-        max_age = _i(request.query_params.get("maxAge"))
+        submitted_by = (request.query_params.get("submitted_by") or "").strip()
+        start = request.query_params.get("start") or ""
+        end = request.query_params.get("end") or ""
 
         # sorting
-        sort = (request.query_params.get("sort") or "id:asc").lower()
-        field = sort.split(":")[0]
-        direction = sort.split(":")[1] if ":" in sort else "asc"
-        sort_field = field if field in {"id","age","city","status","severity"} else "id"
-        order_by = f"-{sort_field}" if direction == "desc" else sort_field
+        sort = (request.query_params.get("sort") or "last_edited:desc").lower()
+        f = sort.split(":")[0]
+        d = sort.split(":")[1] if ":" in sort else "desc"
+        allowed = {"last_edited", "title", "submitted_by", "data_id"}
+        sort_field = f if f in allowed else "last_edited"
+        order_by = f"-{sort_field}" if d == "desc" else sort_field
 
-        qs = BackendCase.objects.all()
+        qs = CuratorDataLog.objects.all()
+
         if search:
             qs = qs.filter(
-                Q(city__icontains=search) |
-                Q(status__icontains=search) |
-                Q(severity__icontains=search)
+                Q(title__icontains=search) |
+                Q(submitted_by__icontains=search) |
+                Q(data_id__icontains=search)
             )
-        if gender:
-            qs = qs.filter(gender__iexact=gender)
-        if status_f:
-            qs = qs.filter(status__iexact=status_f)
-        if severity:
-            qs = qs.filter(severity__icontains=severity)
-        if disease_id:
-            qs = qs.filter(disease_id=disease_id)
-        if location_id:
-            qs = qs.filter(location_id=location_id)
-        if min_age is not None:
-            qs = qs.filter(age__gte=min_age)
-        if max_age is not None:
-            qs = qs.filter(age__lte=max_age)
+        if submitted_by:
+            qs = qs.filter(submitted_by__icontains=submitted_by)
+        if start:
+            qs = qs.filter(last_edited__gte=start)
+        if end:
+            qs = qs.filter(last_edited__lte=end)
 
         total = qs.count()
         items = qs.order_by(order_by)[(page-1)*page_size : page*page_size]
-        data = list(items.values("id","gender","age","city","status","disease_id","location_id","severity"))
+        data = CuratorDataLogSerializer(items, many=True).data
 
-        return Response({"data": data, "page": page, "pageSize": page_size, "total": total}, status=status.HTTP_200_OK)
+        return Response(
+            {"data": data, "page": page, "pageSize": page_size, "total": total},
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        # optional helper endpoint to create a log
+        payload = request.data.copy()
+        # if title not provided, try to derive from pt_backend_case.severity
+        if not payload.get("title") and payload.get("data_id"):
+            try:
+                case = BackendCase.objects.get(id=payload["data_id"])
+                payload["title"] = case.severity or "N/A"
+            except BackendCase.DoesNotExist:
+                pass
+
+        payload["submittedBy"] = getattr(request.user, "username", "") or getattr(request.user, "email", "")
+        ser = CuratorDataLogSerializer(data=payload)
+        if ser.is_valid():
+            ser.save()
+            return Response(ser.data, status=status.HTTP_201_CREATED)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -11,5 +11,25 @@ class BackendCase(models.Model):
     severity = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
-        managed = False              
+        managed = False
         db_table = "pt_backend_case"
+
+class CuratorDataLog(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    data_id = models.UUIDField()             
+    title = models.CharField(max_length=255)    
+    last_edited = models.DateTimeField(auto_now_add=True)
+    submitted_by = models.CharField(max_length=150)
+    note = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "curator_feature_datalog"
+        indexes = [
+            models.Index(fields=["data_id"]),
+            models.Index(fields=["submitted_by"]),
+            models.Index(fields=["-last_edited"]),
+        ]
+        ordering = ["-last_edited"]
+
+    def __str__(self):
+        return f"{self.data_id} - {self.title} by {self.submitted_by}"
