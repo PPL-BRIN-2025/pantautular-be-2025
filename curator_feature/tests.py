@@ -865,3 +865,33 @@ class CuratorCaseAPITests(TestCase):
         self.assertEqual(case.location.city, "Sukabumi")
         self.assertEqual(case.severity, "mortalitas")
 
+    def test_delete_case_and_cascade_news(self):
+            """DELETE removes Case and cascades News (depends on FK on_delete)."""
+            case = Case.objects.create(
+                id=uuid.uuid4(),
+                disease=self.disease_hb,
+                location=self.loc_palangka,
+                gender="P",
+                age=12,
+                city="Palangka Raya",
+                status="bahaya",
+                severity="insiden",
+            )
+            News.objects.create(
+                case=case,
+                portal="P",
+                title="T",
+                type="artikel",
+                content="C",
+                url="https://example.com/x",
+                author="A",
+                date_published=datetime(2024, 1, 23, tzinfo=timezone.utc),
+                img_url="",
+            )
+
+            self.as_curator()
+            res = self.client.delete(f"{CASES_BASE}{case.id}/")
+            self.assertEqual(res.status_code, 204)
+            self.assertFalse(Case.objects.filter(id=case.id).exists())
+            self.assertEqual(News.objects.filter(case_id=case.id).count(), 0)
+

@@ -189,8 +189,7 @@ class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
 
     def get_serializer_class(self):
         return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
-
-
+    
 class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIView):
     lookup_field = "id"
     queryset = (
