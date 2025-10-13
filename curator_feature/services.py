@@ -4,7 +4,8 @@ from typing import Any, Dict, Optional
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
-from curator_feature.models import DownloadLog
+from curator_feature.models import DashboardDownloadEvent, DownloadLog
+from curator_feature.value_objects import ClientMetadata
 from pt_backend.repositories import CaseRepository
 from pt_backend.services import CacheService, CaseService, CasesFilterService
 from pt_backend.statistics.coordinator import StatisticsCoordinator
@@ -26,6 +27,53 @@ class DownloadLogService:
         except DatabaseError as exc:
             logger.exception("Failed to persist download log for user=%s chart=%s", username, chart_type)
             raise
+
+
+class DashboardDownloadEventService:
+    """Persist curated dashboard download events while isolating metadata assembly."""
+
+    def __init__(self, *, model=DashboardDownloadEvent):
+        self.model = model
+
+    def log_event(
+        self,
+        *,
+        metric: str,
+        file_format: str,
+        filters: Optional[Dict[str, Any]] = None,
+        source: Optional[str] = None,
+        client: Optional[ClientMetadata] = None,
+    ) -> DashboardDownloadEvent:
+        metadata = self._build_metadata(filters=filters, source=source)
+        client_details = client or ClientMetadata()
+
+        try:
+            with transaction.atomic():
+                return self.model.objects.create(
+                    metric=metric,
+                    file_format=file_format,
+                    metadata=metadata,
+                    client_ip=client_details.ip_address,
+                    user_agent=(client_details.user_agent or "")[: client_details.max_user_agent_length],
+                )
+        except DatabaseError:
+            logger.exception(
+                "Failed to persist dashboard download event metric=%s format=%s",
+                metric,
+                file_format,
+            )
+            raise
+
+    def _build_metadata(
+        self, *, filters: Optional[Dict[str, Any]], source: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        metadata: Dict[str, Any] = {}
+        if filters:
+            metadata["filters"] = filters
+        if source:
+            metadata["source"] = source
+
+        return metadata or None
 
 
 class ChartDataService:
