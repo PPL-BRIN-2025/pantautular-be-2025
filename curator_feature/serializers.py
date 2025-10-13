@@ -87,7 +87,7 @@ class ChartDataFiltersSerializer(serializers.Serializer):
         return seen
 
     def to_filters(self):
-        if not hasattr(self, "validated_data"):
+        if not hasattr(self, "_validated_data"):
             raise AssertionError("`to_filters` requires validated data.")
         chart_filters = ChartFilters.from_validated_data(self.validated_data)
         return chart_filters.to_service_filters()

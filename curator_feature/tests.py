@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.utils import timezone
 from django.db import DatabaseError
-from rest_framework.test import APITestCase, APIClient
+from rest_framework.test import APITestCase, APIClient, APIRequestFactory
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import patch
@@ -21,12 +21,41 @@ from curator_feature.serializers import (
     DownloadLogRequestSerializer,
     DownloadLogResponseSerializer,
 )
-from curator_feature.services import ChartDataService, DownloadLogService
+from curator_feature.services import ChartDataService, DashboardDownloadEventService, DownloadLogService
 from curator_feature.views import (
     ChartDataAPIView,
     DashboardDownloadEventAPIView,
     DownloadLogAPIView,
+    ChartsSimpleView,
 )
+from curator_feature.value_objects import ClientMetadata
+
+
+class ChartsSimpleViewTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    def test_returns_chart_payload(self):
+        class DummyService:
+            def get_chart_data(self):
+                return {"charts": {"foo": "bar"}}
+
+        with patch.object(ChartsSimpleView, "service_class", DummyService):
+            response = ChartsSimpleView.as_view()(self.factory.get("/charts/simple"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["charts"]["foo"], "bar")
+
+    def test_handles_service_error(self):
+        class FailingService:
+            def get_chart_data(self):
+                raise RuntimeError("boom")
+
+        with patch.object(ChartsSimpleView, "service_class", FailingService):
+            response = ChartsSimpleView.as_view()(self.factory.get("/charts/simple"))
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["message"], "Failed to fetch chart data")
 
 
 class ChartDataAPIViewTests(APITestCase):
@@ -398,6 +427,25 @@ class DashboardDownloadEventAPIViewTests(APITestCase):
         self.assertEqual(event.user_agent, "")
 
 
+class DashboardDownloadEventServiceTests(TestCase):
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=True)
+    def test_log_event_re_raises_database_error(self):
+        service = DashboardDownloadEventService()
+
+        with patch(
+            "curator_feature.services.DashboardDownloadEvent.objects.create",
+            side_effect=DatabaseError("down"),
+        ):
+            with self.assertRaises(DatabaseError):
+                service.log_event(
+                    metric="jumlah_kasus",
+                    file_format="png",
+                    filters={"foo": "bar"},
+                    source="dashboard",
+                    client=ClientMetadata(ip_address="1.2.3.4", user_agent="agent"),
+                )
+
+
 class SerializerUnitTests(SimpleTestCase):
     def test_case_insensitive_choice_field_normalizes_strings(self):
         field = CaseInsensitiveChoiceField(choices=[("png", "PNG")])
@@ -436,6 +484,11 @@ class SerializerUnitTests(SimpleTestCase):
         self.assertEqual(serializer.validated_data["diseases"], ["Flu"])
         self.assertEqual(serializer.validated_data["portals"], ["A"])
         self.assertEqual(serializer.validated_data["locations"]["cities"], ["Bandung", "Bandung"])
+
+    def test_chart_data_filters_to_filters_requires_validation(self):
+        serializer = ChartDataFiltersSerializer()
+        with self.assertRaises(AssertionError):
+            serializer.to_filters()
 
     def test_dashboard_download_event_serializer_rejects_invalid_filters(self):
         serializer = DashboardDownloadEventSerializer(
