@@ -110,14 +110,26 @@ class CuratorCaseAPITests(TestCase):
 
     def test_patch_update_disease_location_and_severity(self):
         """PATCH updates disease by name, resolves ambiguous city with provided province, and changes severity."""
-        # Arrange
-        case = None
+        case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_hb,
+            location=self.loc_palangka,
+            gender="P",
+            age=12,
+            city="Palangka Raya",
+            status="biasa",
+            severity="hospitalisasi",
+        )
         self.as_curator()
-        payload = {}
+        payload = {
+            "disease": "DBD",
+            "location": {"city": "Sukabumi", "province": "Jawa Barat"},
+            "severity": "mortalitas",
+        }
+        res = self.client.patch(f"{CASES_BASE}{case.id}/", payload, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        case.refresh_from_db()
+        self.assertEqual(case.disease.name, "DBD")
+        self.assertEqual(case.location.city, "Sukabumi")
+        self.assertEqual(case.severity, "mortalitas")
 
-        # Act
-        res = None
-
-        # Assert
-        self.assertEqual(res.status_code, 200)
-        pass
