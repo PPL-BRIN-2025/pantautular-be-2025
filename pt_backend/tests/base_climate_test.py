@@ -2,7 +2,8 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from ..models import Climate
+from rest_framework_simplejwt.tokens import RefreshToken
+from ..models import Climate, User
 from ..repositories import ClimateRepository
 from ..services import ClimateService, CacheService
 import uuid
@@ -269,7 +270,9 @@ class BaseClimateViewTest(TestCase):
         self.service_method = None  # To be set by child classes to the relevant service method name
         
         os.environ['SECRET_API_KEY'] = 'test-api-key'
-        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        self.api_key = os.getenv('SECRET_API_KEY', 'test-api-key')
+        self._create_authenticated_user()
+        self._set_credentials()
 
     def tearDown(self):
         # Clean up environment variable
@@ -279,6 +282,23 @@ class BaseClimateViewTest(TestCase):
         if not self.service_method:
             return None
         return f'pt_backend.services.ClimateService.{self.service_method}'
+
+    def _create_authenticated_user(self):
+        self.user = User.objects.create(
+            name="Test User",
+            email="climate-test@example.com",
+            password="test-password",
+            role="ADMIN"
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(refresh.access_token)
+
+    def _set_credentials(self, api_key=None, access_token=None):
+        headers = {
+            "HTTP_X_API_KEY": api_key or self.api_key,
+            "HTTP_AUTHORIZATION": f"Bearer {access_token or self.access_token}",
+        }
+        self.client.credentials(**headers)
 
     def test_get_success(self):
         if not self.url or not self.get_patch_path():  # Skip if not properly configured
@@ -330,6 +350,7 @@ class BaseClimateViewTest(TestCase):
         self.client.credentials()
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data, {"detail": "Invalid API Key"})
 
 class BaseHumidityRepositoryTest(BaseClimateRepositoryTest):
     def setUp(self):

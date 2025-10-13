@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 from pantau_tular.settings import CACHES
-from pt_backend.models import Case, Location, Disease, News
+from pt_backend.models import Case, Location, Disease, News, User
 from pt_backend.services import CacheService
 from unittest.mock import patch, MagicMock
 from django.utils import timezone
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import uuid
 import os
 from unittest.mock import patch, Mock
+from rest_framework_simplejwt.tokens import RefreshToken
 import json
 from ..views import StatisticsView, SeverityFilteringStatsView
 
@@ -473,7 +474,15 @@ class WeightedSeverityAnalysisViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        self.user = User.objects.create(
+            name="Weighted Tester",
+            email="weighted@example.com",
+            password="test-password",
+            role="ADMIN",
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(refresh.access_token)
+        self._set_credentials()
         self.url = reverse('province-weighted-severity')
         
         # Mock the APIKeyAuthentication to always authenticate successfully
@@ -494,8 +503,16 @@ class WeightedSeverityAnalysisViewTest(TestCase):
         
     def tearDown(self):
         self.auth_patcher.stop()
+        DownloadEvent.objects.all().delete()
         self.case_service_patcher.stop()
         self.severity_analyzer_patcher.stop()
+
+    def _set_credentials(self, api_key=None):
+        headers = {
+            "HTTP_X_API_KEY": api_key or self.api_key,
+            "HTTP_AUTHORIZATION": f"Bearer {self.access_token}",
+        }
+        self.client.credentials(**headers)
     
     def test_get_success(self):
         # Setup mock data
@@ -543,30 +560,40 @@ class WeightedSeverityAnalysisViewTest(TestCase):
     def test_authentication_required(self):
         # Stop the authentication mock to test real authentication
         self.auth_patcher.stop()
-        
+
         # Remove API key from request
         self.client.credentials()
-        
+
         # Make request
         response = self.client.get(self.url)
-        
+
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data, {"detail": "Invalid API Key"})
-    
+
+        # Restore patcher for future tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
+
     def test_invalid_api_key(self):
         # Stop the authentication mock to test real authentication
         self.auth_patcher.stop()
-        
+
         # Set invalid API key
-        self.client.credentials(HTTP_X_API_KEY="invalid-key")
-        
+        self._set_credentials(api_key="invalid-key")
+
         # Make request
         response = self.client.get(self.url)
-        
+
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data, {"detail": "Invalid API Key"})
+
+        # Restore patcher for future tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
 
 class SeverityFilteringStatsViewTest(TestCase):
     def setUp(self):

@@ -64,5 +64,3 @@ class ProvinceClimateSerializer(serializers.Serializer):
 ProvinceHumiditySerializer = ProvinceClimateSerializer
 ProvinceTemperatureSerializer = ProvinceClimateSerializer
 ProvincePrecipitationSerializer = ProvinceClimateSerializer
-
-
