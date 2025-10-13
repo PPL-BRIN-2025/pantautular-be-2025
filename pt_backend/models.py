@@ -197,6 +197,3 @@ class News(models.Model):
     date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
-
-    def __str__(self):
-        return self.title
