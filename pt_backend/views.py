@@ -4,8 +4,6 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.http import require_http_methods
-
-
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
 from pt_backend.models import Location
@@ -588,6 +586,7 @@ class WeightedSeverityAnalysisView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
 @require_http_methods(['GET'])
 def health_check(request):

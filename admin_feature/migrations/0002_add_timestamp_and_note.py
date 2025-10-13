@@ -19,6 +19,13 @@ CREATE INDEX IF NOT EXISTS admin_feature_userlog_timestamp_idx
   ON public.admin_feature_userlog("timestamp");
 """
 
+
+def forwards(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    schema_editor.execute(SQL)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -26,12 +33,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.SeparateDatabaseAndState(
-            database_operations=[
-                migrations.RunSQL(SQL, reverse_sql=migrations.RunSQL.noop),
-            ],
-            state_operations=[
-                # No state changes: 0001 already says these fields exist.
-            ],
-        ),
+        migrations.RunPython(forwards, migrations.RunPython.noop),
     ]
