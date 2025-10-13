@@ -225,3 +225,4 @@ class CaseDetailViewTest(BaseCaseDetailTest):
         url = reverse('case-detail', args=[self.case.id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json(), {"detail": "Invalid API Key"})
