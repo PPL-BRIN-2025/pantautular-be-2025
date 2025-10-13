@@ -26,6 +26,9 @@ class Migration(migrations.Migration):
             options={
                 'db_table': 'pt_backend_case',
                 'managed': False,
+            },
+        ),
+    ]
 
     dependencies = []
 
