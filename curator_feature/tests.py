@@ -108,3 +108,16 @@ class CuratorCaseAPITests(TestCase):
         self.assertEqual(case.severity, "insiden")
         self.assertEqual(News.objects.filter(case=case).count(), 1)
 
+    def test_patch_update_disease_location_and_severity(self):
+        """PATCH updates disease by name, resolves ambiguous city with provided province, and changes severity."""
+        # Arrange
+        case = None
+        self.as_curator()
+        payload = {}
+
+        # Act
+        res = None
+
+        # Assert
+        self.assertEqual(res.status_code, 200)
+        pass
