@@ -95,24 +95,19 @@ class ChartDataAPIViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data["message"], "Failed to fetch chart data")
 
-    def test_build_filters_maps_all_fields(self):
-        class DummyService:
-            def __init__(self):
-                """No-op service used to satisfy the view constructor during tests."""
-
-        with patch.object(ChartDataAPIView, "service_class", DummyService):
-            view = ChartDataAPIView()
-
-        filters = view._build_filters(
-            {
+    def test_serializer_to_filters_maps_all_fields(self):
+        serializer = ChartDataFiltersSerializer(
+            data={
                 "diseases": ["Flu"],
                 "portals": ["Portal"],
                 "level_of_alertness": 3,
                 "locations": {"provinces": ["Jawa Barat"], "cities": ["Bandung"]},
-                "start_date": date(2024, 1, 1),
-                "end_date": None,
+                "start_date": "2024-01-01",
             }
         )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        filters = serializer.to_filters()
 
         self.assertEqual(filters["disease"], ["Flu"])
         self.assertEqual(filters["portals"], ["Portal"])
@@ -122,28 +117,20 @@ class ChartDataAPIViewTests(APITestCase):
         self.assertEqual(filters["date_range"]["start"], "2024-01-01")
         self.assertIsNone(filters["date_range"]["end"])
 
-    def test_build_filters_handles_end_date_without_start(self):
-        class DummyService:
-            def __init__(self):
-                """No-op service used to satisfy the view constructor during tests."""
+    def test_serializer_to_filters_handles_end_date_without_start(self):
+        serializer = ChartDataFiltersSerializer(data={"end_date": "2024-01-10"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
-        with patch.object(ChartDataAPIView, "service_class", DummyService):
-            view = ChartDataAPIView()
-
-        filters = view._build_filters({"end_date": date(2024, 1, 10)})
+        filters = serializer.to_filters()
 
         self.assertEqual(filters["date_range"]["start"], None)
         self.assertEqual(filters["date_range"]["end"], "2024-01-10")
 
-    def test_build_filters_skips_empty_date_range(self):
-        class DummyService:
-            def __init__(self):
-                """No-op service used to satisfy the view constructor during tests."""
+    def test_serializer_to_filters_skips_empty_date_range(self):
+        serializer = ChartDataFiltersSerializer(data={})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
-        with patch.object(ChartDataAPIView, "service_class", DummyService):
-            view = ChartDataAPIView()
-
-        filters = view._build_filters({})
+        filters = serializer.to_filters()
 
         self.assertNotIn("date_range", filters)
 

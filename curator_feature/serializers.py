@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from curator_feature.models import DashboardDownloadEvent, DownloadLog
+from curator_feature.value_objects import ChartFilters
 
 
 class CaseInsensitiveChoiceField(serializers.ChoiceField):
@@ -84,6 +85,12 @@ class ChartDataFiltersSerializer(serializers.Serializer):
             if item not in seen:
                 seen.append(item)
         return seen
+
+    def to_filters(self):
+        if not hasattr(self, "validated_data"):
+            raise AssertionError("`to_filters` requires validated data.")
+        chart_filters = ChartFilters.from_validated_data(self.validated_data)
+        return chart_filters.to_service_filters()
 
 
 class DashboardDownloadEventSerializer(serializers.Serializer):

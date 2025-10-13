@@ -1,34 +1,40 @@
 import logging
-from django.conf import settings
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 
-from authentication.security import CustomJWTAuthentication
+from django.conf import settings
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from authentication.permissions import IsTokenAuthenticated
+from authentication.security import CustomJWTAuthentication
 from pt_backend.authentication import APIKeyAuthentication
 
-from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import (
     ChartDataFiltersSerializer,
+    DashboardDownloadEventSerializer,
     DownloadLogRequestSerializer,
     DownloadLogResponseSerializer,
-    DashboardDownloadEventSerializer,
 )
-from curator_feature.services import ChartDataService, DownloadLogService
+from curator_feature.services import (
+    ChartDataService,
+    DashboardDownloadEventService,
+    DownloadLogService,
+)
+from curator_feature.value_objects import ClientMetadata
 
 logger = logging.getLogger(__name__)
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-
 class ChartsSimpleView(APIView):
+    service_class = ChartDataService
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = self.service_class()
+
     def get(self, request, *args, **kwargs):
-        from curator_feature.services import ChartDataService
-        service = ChartDataService()
         try:
-            payload = service.get_chart_data()
+            payload = self.service.get_chart_data()
         except Exception:
             logger.exception("Unable to retrieve chart data from pt_backend")
             return Response({"message": "Failed to fetch chart data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -63,7 +69,7 @@ class ChartDataAPIView(APIView):
             logger.debug("Invalid chart data filters: %s", serializer.errors)
             return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        filters = self._build_filters(serializer.validated_data)
+        filters = serializer.to_filters()
         try:
             payload = self.service.get_chart_data(filters=filters or None)
         except Exception:
@@ -73,39 +79,6 @@ class ChartDataAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
-
-    def _build_filters(self, data):
-        filters = {}
-        diseases = data.get("diseases") or []
-        if diseases:
-            filters["disease"] = diseases
-
-        portals = data.get("portals") or []
-        if portals:
-            filters["portals"] = portals
-
-        level = data.get("level_of_alertness")
-        if level:
-            filters["disease_alertness"] = level
-
-        locations = data.get("locations") or {}
-        provinces = locations.get("provinces") or []
-        cities = locations.get("cities") or []
-        if provinces:
-            filters["provinces"] = provinces
-        if cities:
-            filters["cities"] = cities
-
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
-        if start_date or end_date:
-            filters["date_range"] = {
-                "start": start_date.isoformat() if start_date else None,
-                "end": end_date.isoformat() if end_date else None,
-            }
-
-        return filters
-
 
 class DownloadLogAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication]
@@ -158,6 +131,11 @@ class DashboardDownloadEventAPIView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     serializer_class = DashboardDownloadEventSerializer
+    service_class = DashboardDownloadEventService
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = self.service_class()
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
@@ -170,26 +148,13 @@ class DashboardDownloadEventAPIView(APIView):
                 status=status.HTTP_202_ACCEPTED,
             )
 
-        metadata = {}
-        filters = payload.get("filters")
-        if filters:
-            metadata["filters"] = filters
-        source = payload.get("source")
-        if source:
-            metadata["source"] = source
-
-        event = DashboardDownloadEvent.objects.create(
+        client_metadata = ClientMetadata.from_request(request)
+        event = self.service.log_event(
             metric=payload["metric"],
             file_format=payload["file_format"],
-            metadata=metadata or None,
-            client_ip=self._extract_client_ip(request),
-            user_agent=(request.META.get("HTTP_USER_AGENT") or "")[:512],
+            filters=payload.get("filters"),
+            source=payload.get("source"),
+            client=client_metadata,
         )
 
         return Response({"id": event.id, "logged": True}, status=status.HTTP_201_CREATED)
-
-    def _extract_client_ip(self, request):
-        forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.META.get("REMOTE_ADDR")
