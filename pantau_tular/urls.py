@@ -34,4 +34,5 @@ urlpatterns = [
     path('api/logs/', include('curator_feature.urls')),
     path('health/', health),
     path("", include("admin_feature.urls")),
+    path("curator-feature/", include("curator_feature.urls")),
 ]

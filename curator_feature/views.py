@@ -1,7 +1,9 @@
 import logging
 
 from django.conf import settings
-from rest_framework import status
+from django.shortcuts import render  # if unused, you can remove later
+
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -10,10 +12,14 @@ from authentication.security import CustomJWTAuthentication
 from pt_backend.authentication import APIKeyAuthentication
 
 from curator_feature.serializers import (
+    # charts/download
     ChartDataFiltersSerializer,
     DashboardDownloadEventSerializer,
     DownloadLogRequestSerializer,
     DownloadLogResponseSerializer,
+    # curator cases
+    CaseWriteSerializer,
+    CaseReadSerializer,
 )
 from curator_feature.services import (
     ChartDataService,
@@ -21,10 +27,15 @@ from curator_feature.services import (
     DownloadLogService,
 )
 from curator_feature.value_objects import ClientMetadata
+from pt_backend.models import Case
+from .permissions import IsCuratorRole
 
 logger = logging.getLogger(__name__)
 
 
+# ===============================
+# Charts & Downloads APIs
+# ===============================
 class ChartsSimpleView(APIView):
     service_class = ChartDataService
 
@@ -79,6 +90,7 @@ class ChartDataAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
+
 
 class DownloadLogAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication]
@@ -158,3 +170,35 @@ class DashboardDownloadEventAPIView(APIView):
         )
 
         return Response({"id": event.id, "logged": True}, status=status.HTTP_201_CREATED)
+
+
+# ===============================
+# Curator Case APIs
+# ===============================
+class _CuratorBaseView(generics.GenericAPIView):
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsCuratorRole]
+
+
+class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
+    queryset = (
+        Case.objects.select_related("disease", "location")
+        .prefetch_related("news")
+        .order_by("-id")
+    )
+
+    def get_serializer_class(self):
+        return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+
+
+class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIView):
+    lookup_field = "id"
+    queryset = (
+        Case.objects.select_related("disease", "location")
+        .prefetch_related("news")
+        .order_by("-id")
+    )
+
+    def get_serializer_class(self):
+        # GET returns read serializer; PATCH/PUT use write serializer
+        return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
