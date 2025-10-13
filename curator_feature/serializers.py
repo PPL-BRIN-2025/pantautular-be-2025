@@ -115,3 +115,54 @@ class CaseWriteSerializer(serializers.ModelSerializer):
         )
         News.objects.create(case=case, **news_data)
         return case
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # disease by name (optional)
+        if "disease" in validated_data:
+            instance.disease_id = self._resolve_disease_id(validated_data.pop("disease"))
+
+        # location resolution (optional)
+        if "location" in validated_data:
+            lser = LocationByNameSerializer(data=validated_data.pop("location"))
+            lser.is_valid(raise_exception=True)
+            instance.location = lser.resolve()
+
+        # update simple fields
+        news_data = validated_data.pop("news", None)
+        for k, v in validated_data.items():
+            setattr(instance, k, v)
+        instance.save()
+
+        # upsert "latest" news
+        if news_data:
+            latest = instance.news.order_by("date_published", "id").last()
+            if latest:
+                for k, v in news_data.items():
+                    setattr(latest, k, v)
+                latest.save()
+            else:
+                News.objects.create(case=instance, **news_data)
+        return instance
+
+
+# ---------- Read serializer (GET) ----------
+class LocationReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+
+class CaseReadSerializer(serializers.ModelSerializer):
+    disease_name = serializers.CharField(source="disease.name", read_only=True)
+    location = LocationReadSerializer(read_only=True)
+    news = NewsInlineReadSerializer(many=True, read_only=True)  # all news for the case
+
+    class Meta:
+        model = Case
+        fields = [
+            "id",
+            "gender", "age", "city", "status", "severity",
+            "disease_name",
+            "location",
+            "news",
+        ]
