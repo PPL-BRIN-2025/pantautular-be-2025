@@ -731,7 +731,7 @@ class ModelRepresentationTests(TestCase):
         self.assertIn("Jumlah Kasus", str(event))
         
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from django.test import TestCase
 from rest_framework.test import APIClient
 from pt_backend.models import Case, Disease, Location, News, User
