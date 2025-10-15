@@ -1,6 +1,11 @@
+import copy
+import hashlib
+import json
 import logging
 from typing import Any, Dict, Optional
 
+from django.conf import settings
+from django.core.cache import cache as default_cache
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
@@ -79,10 +84,18 @@ class DashboardDownloadEventService:
 class ChartDataService:
     """Provide normalized chart payloads for the curator dashboard."""
 
+    CACHE_NAMESPACE = "curator_feature.chart_statistics"
+    DEFAULT_CACHE_TIMEOUT = 300
     SEVERITY_ORDER = ("hospitalisasi", "insiden", "mortalitas")
     AGE_BUCKETS = ("under_12", "12_25", "26_45", "above_45")
 
-    def __init__(self, statistics_coordinator: Optional[StatisticsCoordinator] = None):
+    def __init__(
+        self,
+        statistics_coordinator: Optional[StatisticsCoordinator] = None,
+        *,
+        cache_backend=None,
+        cache_timeout: Optional[int] = None,
+    ):
         if statistics_coordinator is None:
             cache_service = CacheService()
             case_service = CaseService(repository=CaseRepository(), cache_service=cache_service)
@@ -90,15 +103,16 @@ class ChartDataService:
             statistics_coordinator = StatisticsCoordinator(case_filter_service=filter_service)
 
         self.statistics_coordinator = statistics_coordinator
+        self._cache = cache_backend or default_cache
+        if cache_timeout is None:
+            cache_timeout = getattr(settings, "CURATOR_CHART_CACHE_TIMEOUT", self.DEFAULT_CACHE_TIMEOUT)
+        self._cache_timeout = cache_timeout
+        self._cache_enabled = bool(self._cache_timeout and self._cache_timeout > 0)
 
     def get_chart_data(self, *, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         filters = filters or {}
 
-        try:
-            statistics = self.statistics_coordinator.generate_comprehensive_report(**filters)
-        except Exception:
-            logger.exception("Failed to generate curator chart statistics")
-            raise
+        statistics = self._fetch_statistics(filters)
 
         charts = self._build_charts(statistics or {})
         meta = {
@@ -108,6 +122,64 @@ class ChartDataService:
         }
 
         return {"charts": charts, "meta": meta}
+
+    def _fetch_statistics(self, filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        cache_key = self._build_cache_key(filters)
+        if self._cache_enabled:
+            cached_payload = self._cache_get(cache_key)
+            if cached_payload is not None:
+                return cached_payload
+
+        try:
+            statistics = self.statistics_coordinator.generate_comprehensive_report(**filters)
+        except Exception:
+            logger.exception("Failed to generate curator chart statistics")
+            raise
+
+        if self._cache_enabled and statistics is not None:
+            self._cache_set(cache_key, statistics)
+
+        return statistics
+
+    def _cache_get(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        try:
+            cached_value = self._cache.get(cache_key)
+        except Exception:
+            logger.warning("Failed to read curator chart cache key=%s", cache_key, exc_info=True)
+            return None
+
+        if cached_value is None:
+            logger.debug("Chart statistics cache miss key=%s", cache_key)
+            return None
+
+        logger.debug("Chart statistics cache hit key=%s", cache_key)
+        return copy.deepcopy(cached_value)
+
+    def _cache_set(self, cache_key: str, value: Dict[str, Any]) -> None:
+        try:
+            self._cache.set(cache_key, copy.deepcopy(value), timeout=self._cache_timeout)
+        except Exception:
+            logger.warning("Failed to store curator chart cache key=%s", cache_key, exc_info=True)
+            return
+
+        logger.debug(
+            "Stored curator chart statistics cache key=%s timeout=%s",
+            cache_key,
+            self._cache_timeout,
+        )
+
+    def _build_cache_key(self, filters: Dict[str, Any]) -> str:
+        if not filters:
+            return f"{self.CACHE_NAMESPACE}:default"
+        serialized = json.dumps(filters, sort_keys=True, default=self._json_serializer)
+        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        return f"{self.CACHE_NAMESPACE}:{digest}"
+
+    @staticmethod
+    def _json_serializer(value: Any) -> Any:
+        if isinstance(value, set):
+            return sorted(value)
+        return str(value)
 
     def _build_charts(self, statistics: Dict[str, Any]) -> Dict[str, Any]:
         return {
