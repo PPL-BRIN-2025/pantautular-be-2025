@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from pt_backend.authentication import APIKeyAuthentication
 
 from curator_feature.serializers import (
@@ -21,6 +22,7 @@ from curator_feature.serializers import (
     CaseWriteSerializer,
     CaseReadSerializer,
 )
+from pt_backend.serializers import DiseaseSerializer
 from curator_feature.services import (
     ChartDataService,
     DashboardDownloadEventService,
@@ -172,6 +174,37 @@ class DashboardDownloadEventAPIView(APIView):
         return Response({"id": event.id, "logged": True}, status=status.HTTP_201_CREATED)
 
 
+# --- Public endpoint for diseases (GET + POST) ---
+from rest_framework import generics
+from rest_framework.permissions import SAFE_METHODS
+
+
+class DiseaseListCreateView(generics.ListCreateAPIView):
+    """Expose GET for everyone and allow POST only for curator users.
+
+    This view accepts POST when the request is authenticated and the user has
+    curator role (enforced by ReadOnlyOrCurator permission). Otherwise POST
+    will be denied while GET remains public.
+    """
+    serializer_class = DiseaseSerializer
+    # Accept JWT or session-based auth so both token and logged-in users can POST
+    authentication_classes = [CustomJWTAuthentication, SessionAuthentication, BasicAuthentication]
+
+    def get_permissions(self):
+        # For safe methods allow everyone; for unsafe methods enforce curator checks
+        from .permissions import ReadOnlyOrCurator
+
+        if self.request.method in SAFE_METHODS:
+            return []
+        return [ReadOnlyOrCurator()]
+
+    def get_queryset(self):
+        # Lazy import to avoid circular import issues at module import time
+        from pt_backend.models import Disease as _Disease
+
+        return _Disease.objects.all().order_by("name")
+
+
 # ===============================
 # Curator Case APIs
 # ===============================
@@ -201,3 +234,18 @@ class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIV
     def get_serializer_class(self):
         # GET returns read serializer; PATCH/PUT use write serializer
         return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+
+
+class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
+    """Curator-only endpoint to list and create Disease records.
+
+    Uses the `DiseaseSerializer` defined in `curator_feature.serializers` and
+    enforces curator-level permissions via `_CuratorBaseView`.
+    """
+    serializer_class = DiseaseSerializer
+
+    def get_queryset(self):
+        # Lazy import to avoid circular import issues during module load
+        from pt_backend.models import Disease as _Disease
+
+        return _Disease.objects.all().order_by("name")

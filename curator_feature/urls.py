@@ -7,6 +7,8 @@ from curator_feature.views import (
     ChartsSimpleView,
     CuratorCaseListCreateView,
     CuratorCaseDetailView,
+    DiseaseListCreateView,
+    CuratorDiseaseListCreateView,
 )
 
 urlpatterns = [
@@ -15,8 +17,10 @@ urlpatterns = [
     path("download", DownloadLogAPIView.as_view(), name="curator-download-log"),
     path("downloads/log/", DashboardDownloadEventAPIView.as_view(), name="curator-dashboard-download-log"),
     path("charts", ChartsSimpleView.as_view(), name="curator-charts-simple"),
+    path("diseases/", DiseaseListCreateView.as_view(), name="curator-diseases-list"),
 
     # --- Curator Case CRUD endpoints ---
     path("curator/cases/", CuratorCaseListCreateView.as_view(), name="curator-cases"),
     path("curator/cases/<uuid:id>/", CuratorCaseDetailView.as_view(), name="curator-case-detail"),
+    path("curator/diseases/", CuratorDiseaseListCreateView.as_view(), name="curator-disease-list-create"),
 ]
