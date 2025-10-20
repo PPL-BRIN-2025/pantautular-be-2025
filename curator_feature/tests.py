@@ -1,4 +1,9 @@
 import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pantau_tular.test_settings")
+
+import django
+django.setup()
 from datetime import date, datetime
 from decimal import Decimal
 
