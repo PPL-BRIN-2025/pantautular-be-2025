@@ -1325,3 +1325,176 @@ class CuratorCaseAPITests(TestCase):
         self.assertEqual(News.objects.filter(case_id=case.id).count(), 0)
 
 
+class DashboardDownloadAPIKeyAuthExtraTests(APITestCase):
+    def setUp(self):
+        self.url = reverse("dashboard-download-log")
+
+    def test_missing_api_key_denied(self):
+        os.environ["SECRET_API_KEY"] = "super-secret"
+        try:
+            res = APIClient().post(self.url, data={}, format="json")
+            self.assertIn(res.status_code, (401, 403))
+        finally:
+            os.environ.pop("SECRET_API_KEY", None)
+
+    def test_wrong_api_key_denied(self):
+        os.environ["SECRET_API_KEY"] = "super-secret"
+        try:
+            c = APIClient()
+            c.credentials(HTTP_X_API_KEY="WRONG")
+            res = c.post(self.url, data={}, format="json")
+            self.assertIn(res.status_code, (401, 403))
+        finally:
+            os.environ.pop("SECRET_API_KEY", None)
+
+
+class DashboardDownloadUserAgentTests(APITestCase):
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=True)
+    def test_user_agent_and_xff_captured(self):
+        os.environ["SECRET_API_KEY"] = "k"
+        try:
+            c = APIClient()
+            c.credentials(HTTP_X_API_KEY="k")
+            payload = {
+                "metric": "jumlah_kasus",
+                "file_format": "png",
+                "filters": {"diseases": ["DBD"]},
+                "source": "dashboard",
+            }
+            res = c.post(
+                reverse("dashboard-download-log"),
+                data=payload,
+                format="json",
+                HTTP_X_FORWARDED_FOR="8.8.8.8, 9.9.9.9",
+                HTTP_USER_AGENT="pytest-agent",
+            )
+            self.assertEqual(res.status_code, 201, res.data)
+            ev = DashboardDownloadEvent.objects.get()
+            self.assertEqual(ev.client_ip, "8.8.8.8")      # first hop
+            self.assertEqual(ev.user_agent, "pytest-agent")
+        finally:
+            os.environ.pop("SECRET_API_KEY", None)
+            DashboardDownloadEvent.objects.all().delete()
+
+
+class DownloadLogHTTPMethodTests(APITestCase):
+    def setUp(self):
+        self.url = "/api/logs/download"
+        # auth user with JWT
+        u = User.objects.create(
+            name="Curator X",
+            email="cx@example.com",
+            password="x",
+            role="CURATOR",
+        )
+        token = RefreshToken.for_user(u).access_token
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def test_get_not_allowed(self):
+        res = self.client.get(self.url)
+        self.assertIn(res.status_code, (status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND))
+
+    def test_put_not_allowed(self):
+        res = self.client.put(self.url, data={}, format="json")
+        self.assertIn(res.status_code, (status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND))
+
+
+class CaseInsensitiveChoiceFieldErrorTests(SimpleTestCase):
+    def test_invalid_choice_raises(self):
+        field = CaseInsensitiveChoiceField(choices=[("png", "PNG"), ("jpeg", "JPEG")])
+        with self.assertRaises(serializers.ValidationError):
+            field.to_internal_value("gif")  # not in choices
+
+
+class ChartDataFiltersSerializerDateValidationTests(SimpleTestCase):
+    def test_end_before_start_is_invalid(self):
+        s = ChartDataFiltersSerializer(
+            data={"start_date": "2024-02-10", "end_date": "2024-02-01"}
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("end_date", s.errors)
+
+
+class CuratorCasesSearchEmptyResults(APITestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # ensure temp table for BackendCase
+        with connection.cursor() as cur:
+            if connection.vendor == "postgresql":
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS pt_backend_case (
+                        id UUID PRIMARY KEY,
+                        gender VARCHAR(10),
+                        age INTEGER,
+                        city VARCHAR(255),
+                        status VARCHAR(20),
+                        disease_id UUID,
+                        location_id UUID,
+                        severity VARCHAR(255)
+                    )
+                    """
+                )
+            else:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS pt_backend_case (
+                        id TEXT PRIMARY KEY,
+                        gender TEXT,
+                        age INTEGER,
+                        city TEXT,
+                        status TEXT,
+                        disease_id TEXT,
+                        location_id TEXT,
+                        severity TEXT
+                    )
+                    """
+                )
+
+    def setUp(self):
+        # curator via Django Group
+        grp, _ = Group.objects.get_or_create(name="CURATOR")
+        self.curator = User.objects.create_user(username="cur@example.com", password="x")
+        self.curator.groups.add(grp)
+        # seed a couple of rows
+        BackendCase.objects.create(
+            id=uuid4(), gender="female", age=25, city="Jakarta",
+            status="active", disease_id=uuid4(), location_id=uuid4(), severity="high"
+        )
+        BackendCase.objects.create(
+            id=uuid4(), gender="male", age=35, city="Bandung",
+            status="recovered", disease_id=uuid4(), location_id=uuid4(), severity="low"
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.curator)
+        self.url = reverse("curator_cases_list")
+
+    def test_search_no_match_returns_empty_list(self):
+        res = self.client.get(self.url + "?search=NonexistentCity")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data.get("data"), [])
+
+
+class DashboardDownloadEventInvalidChoicesTests(APITestCase):
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=True)
+    def test_invalid_metric_and_format_rejected(self):
+        os.environ["SECRET_API_KEY"] = "k"
+        try:
+            c = APIClient()
+            c.credentials(HTTP_X_API_KEY="k")
+            res = c.post(
+                reverse("dashboard-download-log"),
+                data={"metric": "NOT_A_METRIC", "file_format": "NOT_A_FORMAT"},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400)
+            # both fields should be flagged by serializer
+            self.assertTrue(
+                "metric" in res.data or "errors" in res.data,
+                msg=f"Unexpected response: {res.data}",
+            )
+        finally:
+            os.environ.pop("SECRET_API_KEY", None)
+            DashboardDownloadEvent.objects.all().delete()
