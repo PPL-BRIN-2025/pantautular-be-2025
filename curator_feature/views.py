@@ -2,6 +2,10 @@ import logging
 
 from django.conf import settings
 from django.shortcuts import render  # if unused, you can remove later
+import logging
+
+from django.conf import settings
+from django.shortcuts import render  # if unused, you can remove later
 from django.db.models import Q
 
 from rest_framework import generics, status
