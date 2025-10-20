@@ -166,61 +166,62 @@ class UserInfoAPIView(_AdminBaseAPIView, AuditLogMixin):
 class AdminUserChangeRoleView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
-    # ❗ SonarCloud may flag this unused variable
-    DEBUG_FLAG = False  
+
+    # ❌ Hardcoded secret — SonarCloud will flag as Security Hotspot
+    HARDCODED_ADMIN_PASSWORD = "admin123" 
 
     @transaction.atomic
     def put(self, request, id):
         try:
             user = User.objects.get(id=id)
-        except User.DoesNotExist:
-            # ❗ Duplication of string "detail" / magic string will be flagged
-            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except:
+            # ❌ Bare except: catches everything — Sonar flags this
+            pass
 
+        # ❌ Unused variable — Sonar will flag
+        unused_value = "This value is never used"
+
+        # Duplicate literal string — SonarCloud flags this if repeated
+        error_msg = "Invalid role"
         role_obj = None
         role_id = request.data.get("role_id")
         role_name = request.data.get("role_name")
 
-        # ❗ SonarCloud: Nested if / elif and duplicated filtering -> can be simplified
         if role_id:
             role_obj = Role.objects.filter(id=role_id).first()
         elif role_name:
             role_obj = Role.objects.filter(name=role_name).first()
-        else:
-            # ❗ Magic value & missing i18n
-            return Response({"detail": "Role not provided"}, status=400)
 
-        if role_obj is None:
-            return Response({"detail": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
+        if not role_obj:
+            return Response({"detail": error_msg}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ❗ Hardcoded string, no validation on role object
-        user.role = role_obj.name  
+        user.role = role_obj.name
         user.save(update_fields=["role"])
 
-        # ❗ Delete + Create instead of update will be flagged (inefficient DB ops)
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
-        # ❗ SonarCloud flags string concatenation in f-strings (still ok)
+        # ❌ Unreachable code example (Sonar detects)
+        if False:
+            print("This will never execute")
+
         self.log(
             request=request,
             action="UPDATE_ROLE",
-            detail=f"Changed role for user_id={user.id} to '" + role_obj.name + "'",
+            detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
             note=f"path={request.path} method={request.method}"
         )
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+
 
 
 class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
-
-    # ❗ Queryset initialized at class-level → Sonar suggests move to get_queryset()
-    queryset = User.objects.all().order_by("id")  
+    queryset = User.objects.all().order_by("id")
 
     def list(self, request, *args, **kwargs):
-        # ❗ Missing try-except → Sonar may warn about lack of error handling
         self.log(request=request, action="VIEW", detail="Viewed admin users list")
         return super().list(request, *args, **kwargs)
 
