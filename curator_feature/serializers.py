@@ -1,7 +1,14 @@
 from rest_framework import serializers
+from django.db import transaction
+
 
 from .models import CuratorDataLog
+
+# Chart/download models & value objects
+
 from curator_feature.models import DashboardDownloadEvent, DownloadLog
+from curator_feature.value_objects import ChartFilters
+
 
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
@@ -14,15 +21,30 @@ class CuratorDataLogSerializer(serializers.ModelSerializer):
 
 
 
+# Curator CRUD models
+from pt_backend.models import Case, Disease, Location, News
+
+
+
+class DiseaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Disease
+        fields = ["id", "name", "level_of_alertness"]
+        extra_kwargs = {
+            "level_of_alertness": {"required": False, "default": 1},
+        }
+
+
+# ---------- Shared helpers ----------
 class CaseInsensitiveChoiceField(serializers.ChoiceField):
     """Choice field that normalizes string inputs to lower-case before validation."""
-
     def to_internal_value(self, data):
         if isinstance(data, str):
             data = data.lower()
         return super().to_internal_value(data)
 
 
+# ---------- Chart / Download serializers (from code 1) ----------
 class DownloadLogRequestSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=255, trim_whitespace=True)
     chartType = serializers.CharField(max_length=255, trim_whitespace=True)
@@ -96,6 +118,12 @@ class ChartDataFiltersSerializer(serializers.Serializer):
                 seen.append(item)
         return seen
 
+    def to_filters(self):
+        if not hasattr(self, "_validated_data"):
+            raise AssertionError("`to_filters` requires validated data.")
+        chart_filters = ChartFilters.from_validated_data(self.validated_data)
+        return chart_filters.to_service_filters()
+
 
 class DashboardDownloadEventSerializer(serializers.Serializer):
     metric = CaseInsensitiveChoiceField(choices=DashboardDownloadEvent.Metric.choices)
@@ -114,4 +142,179 @@ class DashboardDownloadEventSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Source may not be blank.")
         return value
+
+
+
+# ---------- Curator CRUD serializers (from code 2) ----------
+class LocationByNameSerializer(serializers.Serializer):
+    """
+    Resolve a location by city name (optionally province).
+    - If exactly one match is found -> reuse it.
+    - If multiple cities match and 'province' not provided -> ask for province.
+    - If none found:
+        * create only if province + latitude + longitude are provided
+        * otherwise return a helpful 400 asking for the missing fields
+    """
+    city = serializers.CharField()
+    province = serializers.CharField(required=False)
+    latitude = serializers.DecimalField(max_digits=8, decimal_places=6, required=False)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False)
+
+    def resolve(self) -> Location:
+        data = self.validated_data
+        city = data["city"].strip()
+
+        qs = Location.objects.filter(city__iexact=city)
+        prov = data.get("province")
+        if prov:
+            qs = qs.filter(province__iexact=prov.strip())
+
+        count = qs.count()
+        if count == 1:
+            return qs.first()
+
+        if count > 1 and not prov:
+            raise serializers.ValidationError({
+                "location": f"Multiple locations named '{city}'. Provide 'province' to disambiguate."
+            })
+
+        # Create if at least province provided; latitude/longitude are optional
+        missing = [k for k in ("province",) if k not in data]
+        if missing:
+            raise serializers.ValidationError({
+                "location": f"Location '{city}' not found. Provide province to create it."
+            })
+
+        return Location.objects.create(
+            city=city,
+            province=str(data["province"]).strip(),
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+        )
+
+
+class NewsInlineWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+class NewsInlineReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["id", "portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+class CaseWriteSerializer(serializers.ModelSerializer):
+    """
+    Accepts:
+      - disease by NAME (field 'disease')
+      - location by CITY (and optional province; can create with lat/lon+province)
+      - inline 'news' for source/summary/etc (creates or updates latest)
+    """
+    STATUS_CHOICES = ["bahaya", "biasa", "katastropik", "minimal"]
+    SEVERITY_CHOICES = ["insiden", "hospitalisasi", "mortalitas"]
+
+    disease = serializers.CharField(write_only=True)
+    location = LocationByNameSerializer(write_only=True)
+    news = NewsInlineWriteSerializer(write_only=True)
+    status = serializers.ChoiceField(choices=STATUS_CHOICES)
+    severity = serializers.ChoiceField(choices=SEVERITY_CHOICES)
+
+    class Meta:
+        model = Case
+        fields = [
+            "id",
+            "gender", "age", "city",
+            "status", "severity",  # validated by the choice fields above
+            "disease",
+            "location",
+            "news",
+        ]
+    read_only_fields = ["id"]
+
+    def _resolve_disease_id(self, name: str):
+        try:
+            return Disease.objects.get(name__iexact=name.strip()).id
+        except Disease.DoesNotExist:
+            raise serializers.ValidationError({"disease": f"Disease '{name}' not found"})
+
+    @transaction.atomic
+    def create(self, validated_data):
+        disease_name = validated_data.pop("disease")
+        loc_data = validated_data.pop("location")
+        news_data = validated_data.pop("news")
+
+        loc_ser = LocationByNameSerializer(data=loc_data)
+        loc_ser.is_valid(raise_exception=True)
+        location = loc_ser.resolve()
+
+        case = Case.objects.create(
+            disease_id=self._resolve_disease_id(disease_name),
+            location=location,
+            **validated_data,
+        )
+        News.objects.create(case=case, **news_data)
+        return case
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # disease by name (optional)
+        if "disease" in validated_data:
+            instance.disease_id = self._resolve_disease_id(validated_data.pop("disease"))
+
+        # location resolution (optional)
+        if "location" in validated_data:
+            lser = LocationByNameSerializer(data=validated_data.pop("location"))
+            lser.is_valid(raise_exception=True)
+            instance.location = lser.resolve()
+
+        # update simple fields
+        news_data = validated_data.pop("news", None)
+        for k, v in validated_data.items():
+            setattr(instance, k, v)
+        instance.save()
+
+        # upsert "latest" news
+        if news_data:
+            latest = instance.news.order_by("date_published", "id").last()
+            if latest:
+                for k, v in news_data.items():
+                    setattr(latest, k, v)
+                latest.save()
+            else:
+                News.objects.create(case=instance, **news_data)
+        return instance
+
+
+class LocationReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+        extra_kwargs = {
+            "latitude": {"required": False, "allow_null": True},
+            "longitude": {"required": False, "allow_null": True},
+        }
+
+
+class CaseReadSerializer(serializers.ModelSerializer):
+    disease_name = serializers.CharField(source="disease.name", read_only=True)
+    location = LocationReadSerializer(read_only=True)
+    news = NewsInlineReadSerializer(many=True, read_only=True)  # all news for the case
+
+    class Meta:
+        model = Case
+        fields = [
+            "id",
+            "gender", "age", "city", "status", "severity",
+            "disease_name",
+            "location",
+            "news",
+        ]
 
