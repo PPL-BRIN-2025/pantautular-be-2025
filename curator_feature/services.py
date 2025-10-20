@@ -1,12 +1,6 @@
-
-from django.utils import timezone
-from .models import CuratorDataLog
-
-
 import copy
 import hashlib
 import json
-
 import logging
 from typing import Any, Dict, Optional
 
@@ -20,6 +14,7 @@ from curator_feature.value_objects import ClientMetadata
 from pt_backend.repositories import CaseRepository
 from pt_backend.services import CacheService, CaseService, CasesFilterService
 from pt_backend.statistics.coordinator import StatisticsCoordinator
+from .models import CuratorDataLog
 
 logger = logging.getLogger(__name__)
 
@@ -389,11 +384,8 @@ class ChartDataService:
         except (TypeError, ValueError):
             return default
 
+
 def log_curator_edit(*, user, data_id, title=None, note=None):
-    """
-    Create a CuratorDataLog row.
-    title can be severity (recommended).
-    """
     CuratorDataLog.objects.create(
         data_id=data_id,
         title=title or "N/A",

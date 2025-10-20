@@ -1,15 +1,11 @@
 from rest_framework import serializers
 from django.db import transaction
-
-
-from .models import CuratorDataLog
-
-# Chart/download models & value objects
-
-from curator_feature.models import DashboardDownloadEvent, DownloadLog
+from .models import CuratorDataLog, DashboardDownloadEvent, DownloadLog
 from curator_feature.value_objects import ChartFilters
+from pt_backend.models import Case, Disease, Location, News
 
 
+# CURATOR DATA LOG SERIALIZER 
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
     submittedBy = serializers.CharField(source="submitted_by")
@@ -19,13 +15,7 @@ class CuratorDataLogSerializer(serializers.ModelSerializer):
         fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "note")
 
 
-
-
-# Curator CRUD models
-from pt_backend.models import Case, Disease, Location, News
-
-
-
+# DISEASE SERIALIZER 
 class DiseaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Disease
@@ -35,7 +25,7 @@ class DiseaseSerializer(serializers.ModelSerializer):
         }
 
 
-# ---------- Shared helpers ----------
+# SHARED HELPERS 
 class CaseInsensitiveChoiceField(serializers.ChoiceField):
     """Choice field that normalizes string inputs to lower-case before validation."""
     def to_internal_value(self, data):
@@ -44,7 +34,7 @@ class CaseInsensitiveChoiceField(serializers.ChoiceField):
         return super().to_internal_value(data)
 
 
-# ---------- Chart / Download serializers (from code 1) ----------
+# CHART / DOWNLOAD SERIALIZERS 
 class DownloadLogRequestSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=255, trim_whitespace=True)
     chartType = serializers.CharField(max_length=255, trim_whitespace=True)
@@ -144,8 +134,6 @@ class DashboardDownloadEventSerializer(serializers.Serializer):
         return value
 
 
-
-# ---------- Curator CRUD serializers (from code 2) ----------
 class LocationByNameSerializer(serializers.Serializer):
     """
     Resolve a location by city name (optionally province).
@@ -226,7 +214,7 @@ class CaseWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "gender", "age", "city",
-            "status", "severity",  # validated by the choice fields above
+            "status", "severity",
             "disease",
             "location",
             "news",
@@ -259,23 +247,19 @@ class CaseWriteSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        # disease by name (optional)
         if "disease" in validated_data:
             instance.disease_id = self._resolve_disease_id(validated_data.pop("disease"))
 
-        # location resolution (optional)
         if "location" in validated_data:
             lser = LocationByNameSerializer(data=validated_data.pop("location"))
             lser.is_valid(raise_exception=True)
             instance.location = lser.resolve()
 
-        # update simple fields
         news_data = validated_data.pop("news", None)
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
 
-        # upsert "latest" news
         if news_data:
             latest = instance.news.order_by("date_published", "id").last()
             if latest:
@@ -306,7 +290,7 @@ class LocationSerializer(serializers.ModelSerializer):
 class CaseReadSerializer(serializers.ModelSerializer):
     disease_name = serializers.CharField(source="disease.name", read_only=True)
     location = LocationReadSerializer(read_only=True)
-    news = NewsInlineReadSerializer(many=True, read_only=True)  # all news for the case
+    news = NewsInlineReadSerializer(many=True, read_only=True)
 
     class Meta:
         model = Case
@@ -317,4 +301,3 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "location",
             "news",
         ]
-

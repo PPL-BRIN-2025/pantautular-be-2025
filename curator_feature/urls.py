@@ -1,8 +1,6 @@
 from django.urls import path
 
-from .views import CuratorDataLogListCreateAPIView
-from curator_feature.views import ChartDataAPIView, DashboardDownloadEventAPIView, DownloadLogAPIView, ChartsSimpleView, CuratorDataLogListCreateAPIView
-
+# import semua view yang dipakai
 from curator_feature.views import (
     ChartDataAPIView,
     DashboardDownloadEventAPIView,
@@ -12,8 +10,8 @@ from curator_feature.views import (
     CuratorCaseDetailView,
     DiseaseListCreateView,
     CuratorDiseaseListCreateView,
+    CuratorDataLogListCreateAPIView,  
 )
-
 
 urlpatterns = [
     # --- Chart & Download endpoints ---
@@ -22,8 +20,7 @@ urlpatterns = [
     path("downloads/log/", DashboardDownloadEventAPIView.as_view(), name="curator-dashboard-download-log"),
     path("charts", ChartsSimpleView.as_view(), name="curator-charts-simple"),
 
-    path("api/curator/audit-logs/", CuratorDataLogListCreateAPIView.as_view(), name="curator_audit_logs"),
-
+    # --- Public diseases (GET) / curator-only POST
     path("diseases/", DiseaseListCreateView.as_view(), name="curator-diseases-list"),
 
     # --- Curator Case CRUD endpoints ---
@@ -31,4 +28,6 @@ urlpatterns = [
     path("curator/cases/<uuid:id>/", CuratorCaseDetailView.as_view(), name="curator-case-detail"),
     path("curator/diseases/", CuratorDiseaseListCreateView.as_view(), name="curator-disease-list-create"),
 
+    # --- Curator audit logs endpoint ---
+    path("api/curator/audit-logs/", CuratorDataLogListCreateAPIView.as_view(), name="curator_audit_logs"),
 ]
