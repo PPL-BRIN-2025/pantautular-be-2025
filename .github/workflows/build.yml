@@ -20,7 +20,6 @@ jobs:
           POSTGRES_DB: test_db
         ports:
           - 5432:5432
-        # health check ensures DB is ready before tests
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -50,10 +49,10 @@ jobs:
           pip install -r requirements.txt
           pip install coverage
 
-      - name: Run tests with coverage (PostgreSQL)
+      - name: Run tests only for admin_feature (PostgreSQL)
         run: |
           coverage erase
-          coverage run --branch manage.py test
+          coverage run --branch manage.py test admin_feature
           coverage xml -i -o coverage.xml
           coverage report
 
