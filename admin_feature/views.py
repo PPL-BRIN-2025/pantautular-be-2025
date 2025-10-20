@@ -167,50 +167,49 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
-
-    DEBUG_FLAG = False
-
     @transaction.atomic
     def put(self, request, id):
         try:
             user = User.objects.get(id=id)
         except User.DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-        except Exception:  # ⚠ Too broad — Sonar flags "catching too general exception"
-            return Response({"detail": "Unexpected error"}, status=500)
 
+        role_obj = None
         role_id = request.data.get("role_id")
         role_name = request.data.get("role_name")
 
-  
-        if role_id:
+        if role_id is not None:
             role_obj = Role.objects.filter(id=role_id).first()
-        else:
-            role_obj = Role.objects.filter(name=role_name).first() if role_name else None
+        elif role_name:
+            role_obj = Role.objects.filter(name=role_name).first()
 
-        if not role_obj:
-            return Response({"detail": "Invalid role"}, status=400)  
+        if role_obj is None:
+            return Response({"detail": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
 
-
+        user.role = role_obj.name
+        user.save(update_fields=["role"])
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
-        self.log(request=request, action="UPDATE_ROLE", detail=f"Changed role for {user.id}", note=request.path)
-
+        self.log(
+            request=request,
+            action="UPDATE_ROLE",
+            detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
+            note=f"path={request.path} method={request.method}"
+        )
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+
 
 class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
-
-
     queryset = User.objects.all().order_by("id")
 
     def list(self, request, *args, **kwargs):
-
         self.log(request=request, action="VIEW", detail="Viewed admin users list")
         return super().list(request, *args, **kwargs)
+
 
 class AdminUserDeleteView(DestroyAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
