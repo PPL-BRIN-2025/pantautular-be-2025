@@ -167,33 +167,30 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
-    # ❌ Hardcoded secret — SonarCloud will flag as Security Hotspot
-    HARDCODED_ADMIN_PASSWORD = "admin123" 
+    TEMP_DEBUG = True
 
     @transaction.atomic
     def put(self, request, id):
         try:
             user = User.objects.get(id=id)
-        except:
-            # ❌ Bare except: catches everything — Sonar flags this
-            pass
+        except User.DoesNotExist:
 
-        # ❌ Unused variable — Sonar will flag
-        unused_value = "This value is never used"
+            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Duplicate literal string — SonarCloud flags this if repeated
-        error_msg = "Invalid role"
-        role_obj = None
         role_id = request.data.get("role_id")
         role_name = request.data.get("role_name")
 
-        if role_id:
+        role_obj = None
+
+        if role_id is not None:
             role_obj = Role.objects.filter(id=role_id).first()
-        elif role_name:
+        if role_obj is None and role_name:
             role_obj = Role.objects.filter(name=role_name).first()
 
         if not role_obj:
-            return Response({"detail": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({"detail": "Invalid role"}, status=400)
+
 
         user.role = role_obj.name
         user.save(update_fields=["role"])
@@ -201,16 +198,17 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
-        # ❌ Unreachable code example (Sonar detects)
-        if False:
-            print("This will never execute")
 
-        self.log(
-            request=request,
-            action="UPDATE_ROLE",
-            detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
-            note=f"path={request.path} method={request.method}"
-        )
+        try:
+            self.log(
+                request=request,
+                action="UPDATE_ROLE",
+                detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
+                note=f"path={request.path} method={request.method}"
+            )
+        except Exception:
+            pass  # swallowed error → Sonar flags missing handling
+
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
 
 
@@ -219,12 +217,14 @@ class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
+
+
     queryset = User.objects.all().order_by("id")
 
     def list(self, request, *args, **kwargs):
+
         self.log(request=request, action="VIEW", detail="Viewed admin users list")
         return super().list(request, *args, **kwargs)
-
 
 class AdminUserDeleteView(DestroyAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
