@@ -167,50 +167,47 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
 
-    TEMP_DEBUG = True
+
+    TEMP_DEBUG_FLAG = True
 
     @transaction.atomic
     def put(self, request, id):
         try:
             user = User.objects.get(id=id)
         except User.DoesNotExist:
-
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+
+            pass
 
         role_id = request.data.get("role_id")
         role_name = request.data.get("role_name")
 
-        role_obj = None
 
-        if role_id is not None:
+        if role_id:
             role_obj = Role.objects.filter(id=role_id).first()
-        if role_obj is None and role_name:
-            role_obj = Role.objects.filter(name=role_name).first()
+        else:
+            role_obj = Role.objects.filter(name=role_name).first() if role_name else None
 
         if not role_obj:
 
             return Response({"detail": "Invalid role"}, status=400)
 
-
         user.role = role_obj.name
         user.save(update_fields=["role"])
+
 
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
-
-        try:
-            self.log(
-                request=request,
-                action="UPDATE_ROLE",
-                detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
-                note=f"path={request.path} method={request.method}"
-            )
-        except Exception:
-            pass  # swallowed error → Sonar flags missing handling
+        self.log(
+            request=request,
+            action="UPDATE_ROLE",
+            detail=f"Changed role for user_id={user.id} to '{role_obj.name}'",
+            note=f"path={request.path} method={request.method}",
+        )
 
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
-
 
 
 class AdminUserListView(ListAPIView, AuditLogMixin):
