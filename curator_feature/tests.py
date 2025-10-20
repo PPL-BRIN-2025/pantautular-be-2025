@@ -1328,6 +1328,253 @@ class CuratorCaseAPITests(TestCase):
         self.assertEqual(res.status_code, 204)
         self.assertFalse(Case.objects.filter(id=case.id).exists())
         self.assertEqual(News.objects.filter(case_id=case.id).count(), 0)
+    
+    # NEGATIVE & EDGE CASES
+
+    def test_patch_update_news_upserts_when_absent_and_updates_when_present(self):
+        """PATCH first creates a News if none exists, then updates the latest on subsequent PATCH."""
+        case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_hb,
+            location=self.loc_palangka,
+            gender="P",
+            age=12,
+            city="Palangka Raya",
+            status="biasa",
+            severity="insiden",
+        )
+        self.as_curator()
+        payload = {
+            "news": {
+                "portal": "Portal",
+                "title": "T",
+                "type": "artikel",
+                "content": "C",
+                "url": "https://example.com/x",
+                "author": "A",
+                "date_published": "2024-02-01T00:00:00Z",
+                "img_url": "",
+            }
+        }
+        # upsert create
+        res = self.client.patch(f"{CASES_BASE}{case.id}/", payload, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(News.objects.filter(case=case).count(), 1)
+
+        # update latest
+        payload["news"]["title"] = "T2"
+        res2 = self.client.patch(f"{CASES_BASE}{case.id}/", payload, format="json")
+        self.assertEqual(res2.status_code, 200, res2.data)
+        self.assertEqual(News.objects.get(case=case).title, "T2")
+
+    def test_create_case_creates_new_location_when_not_found(self):
+        """Create succeeds and auto-creates new Location when not found (with full fields)."""
+        self.as_curator()
+        payload = {
+            "disease": "DBD",
+            "gender": "L",
+            "age": 10,
+            "city": "Kota Baru",
+            "status": "biasa",
+            "severity": "mortalitas",
+            "location": {
+                "city": "Kota Baru",
+                "province": "Kalimantan Selatan",
+                "latitude": -3.442300,
+                "longitude": 114.845500,
+            },
+            "news": {
+                "portal": "Portal",
+                "title": "Judul",
+                "type": "artikel",
+                "content": "Isi",
+                "url": "https://example.com/x",
+                "author": "Y",
+                "date_published": "2024-02-01T00:00:00Z",
+                "img_url": "",
+            },
+        }
+        res = self.client.post(CASES_BASE, payload, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        case = Case.objects.get(id=res.data["id"])
+        self.assertEqual(case.location.city, "Kota Baru")
+        self.assertTrue(
+            Location.objects.filter(
+                city__iexact="Kota Baru", province__iexact="Kalimantan Selatan"
+            ).exists()
+        )
+
+    def test_list_and_retrieve_include_read_fields(self):
+        """List and Retrieve return expanded read fields (disease_name, location, news)."""
+        case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_hb,
+            location=self.loc_palangka,
+            gender="P",
+            age=12,
+            city="Palangka Raya",
+            status="bahaya",
+            severity="insiden",
+        )
+        News.objects.create(
+            case=case,
+            portal="Kompas",
+            title="Kasus",
+            type="artikel",
+            content="x",
+            url="https://example.com/x",
+            author="y",
+            date_published=datetime(2024, 1, 23, tzinfo=timezone.utc),
+            img_url="",
+        )
+        self.as_curator()
+        res_list = self.client.get(CASES_BASE)
+        self.assertEqual(res_list.status_code, 200)
+        self.assertIn("disease_name", res_list.data[0])
+
+        res_detail = self.client.get(f"{CASES_BASE}{case.id}/")
+        self.assertEqual(res_detail.status_code, 200)
+        self.assertEqual(res_detail.data["disease_name"], "Hepatitis B")
+        self.assertEqual(len(res_detail.data["news"]), 1)
+
+    def test_create_case_ambiguous_city_needs_province(self):
+        """Ambiguous city w/o province -> 400 with helpful error."""
+        self.as_curator()
+        payload = {
+            "disease": "DBD",
+            "gender": "L",
+            "age": 9,
+            "city": "Sukabumi",
+            "status": "minimal",
+            "severity": "hospitalisasi",
+            "location": {"city": "Sukabumi"},
+            "news": {
+                "portal": "Portal",
+                "title": "A",
+                "type": "artikel",
+                "content": "B",
+                "url": "https://example.com/valid",
+                "author": "C",
+                "date_published": "2024-01-23T00:00:00Z",
+                "img_url": "",
+            },
+        }
+        res = self.client.post(CASES_BASE, payload, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("location", res.data)
+
+    def test_create_case_missing_fields_for_new_location(self):
+        """Location not found and missing province/lat/lon -> 400 with missing fields listed."""
+        self.as_curator()
+        payload = {
+            "disease": "DBD",
+            "gender": "L",
+            "age": 10,
+            "city": "Kota Fiktif",
+            "status": "katastropik",
+            "severity": "insiden",
+            "location": {"city": "Kota Fiktif"},
+            "news": {
+                "portal": "P",
+                "title": "T",
+                "type": "artikel",
+                "content": "C",
+                "url": "https://example.com/x",
+                "author": "A",
+                "date_published": "2024-02-01T00:00:00Z",
+                "img_url": "",
+            },
+        }
+        res = self.client.post(CASES_BASE, payload, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("location", res.data)
+
+    def test_create_case_disease_name_not_found(self):
+        """Disease name not found -> 400 with field error."""
+        self.as_curator()
+        payload = {
+            "disease": "NotExist",
+            "gender": "P",
+            "age": 11,
+            "city": "Palangka Raya",
+            "status": "bahaya",
+            "severity": "insiden",
+            "location": {"city": "Palangka Raya"},
+            "news": {
+                "portal": "Portal",
+                "title": "T",
+                "type": "artikel",
+                "content": "C",
+                "url": "https://example.com/x",
+                "author": "A",
+                "date_published": "2024-02-01T00:00:00Z",
+                "img_url": "",
+            },
+        }
+        res = self.client.post(CASES_BASE, payload, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("disease", res.data)
+
+    def test_create_case_invalid_status_or_severity(self):
+        """Invalid status/severity enums -> 400 with field errors."""
+        self.as_curator()
+        payload = {
+            "disease": "DBD",
+            "gender": "L",
+            "age": 10,
+            "city": "Palangka Raya",
+            "status": "wrongstatus",
+            "severity": "wrongseverity",
+            "location": {"city": "Palangka Raya"},
+            "news": {
+                "portal": "Portal",
+                "title": "T",
+                "type": "artikel",
+                "content": "C",
+                "url": "https://example.com/x",
+                "author": "A",
+                "date_published": "2024-02-01T00:00:00Z",
+                "img_url": "",
+            },
+        }
+        res = self.client.post(CASES_BASE, payload, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+        self.assertIn("severity", res.data)
+
+    def test_patch_ambiguous_city_requires_province(self):
+        """PATCH with ambiguous city and no province -> 400."""
+        case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_hb,
+            location=self.loc_palangka,
+            gender="P",
+            age=12,
+            city="Palangka Raya",
+            status="minimal",
+            severity="insiden",
+        )
+        self.as_curator()
+        res = self.client.patch(
+            f"{CASES_BASE}{case.id}/",
+            {"location": {"city": "Sukabumi"}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("location", res.data)
+
+    def test_auth_required(self):
+        """Anon access -> 401 on list."""
+        self.as_anon()
+        res = self.client.get(CASES_BASE)
+        self.assertEqual(res.status_code, 401)
+
+    def test_role_must_be_curator(self):
+        """Non-curator role -> 403 on list."""
+        self.as_other()
+        res = self.client.get(CASES_BASE)
+        self.assertEqual(res.status_code, 403)
+
 
 
 class DashboardDownloadAPIKeyAuthExtraTests(APITestCase):
