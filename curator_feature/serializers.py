@@ -9,6 +9,15 @@ from curator_feature.value_objects import ChartFilters
 from pt_backend.models import Case, Disease, Location, News
 
 
+class DiseaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Disease
+        fields = ["id", "name", "level_of_alertness"]
+        extra_kwargs = {
+            "level_of_alertness": {"required": False, "default": 1},
+        }
+
+
 # ---------- Shared helpers ----------
 class CaseInsensitiveChoiceField(serializers.ChoiceField):
     """Choice field that normalizes string inputs to lower-case before validation."""
@@ -151,18 +160,18 @@ class LocationByNameSerializer(serializers.Serializer):
                 "location": f"Multiple locations named '{city}'. Provide 'province' to disambiguate."
             })
 
-        # Create if all required fields provided
-        missing = [k for k in ("province", "latitude", "longitude") if k not in data]
+        # Create if at least province provided; latitude/longitude are optional
+        missing = [k for k in ("province",) if k not in data]
         if missing:
             raise serializers.ValidationError({
-                "location": f"Location '{city}' not found. Provide {', '.join(missing)} to create it."
+                "location": f"Location '{city}' not found. Provide province to create it."
             })
 
         return Location.objects.create(
             city=city,
             province=str(data["province"]).strip(),
-            latitude=data["latitude"],
-            longitude=data["longitude"],
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
         )
 
 
@@ -264,6 +273,16 @@ class LocationReadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Location
         fields = ["id", "city", "province", "latitude", "longitude"]
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+        extra_kwargs = {
+            "latitude": {"required": False, "allow_null": True},
+            "longitude": {"required": False, "allow_null": True},
+        }
 
 
 class CaseReadSerializer(serializers.ModelSerializer):
