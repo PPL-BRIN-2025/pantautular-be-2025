@@ -569,6 +569,23 @@ class AdminUserManagementTests(TestCase):
         self.viewer_user.refresh_from_db()
         self.assertEqual(self.viewer_user.role, "VIEWER")
 
+    def test_change_role_requires_identifier(self):
+        url = reverse("admin-user-change-role", kwargs={"id": self.viewer_user.id})
+        resp = self.client.put(url, {}, format="json", **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        data = resp.json()
+        self.assertIn("detail", data)
+
+    def test_change_role_conflicting_identifiers(self):
+        url = reverse("admin-user-change-role", kwargs={"id": self.viewer_user.id})
+        payload = {"role_id": self.editor_role.id, "role_name": self.viewer_role.name}
+        resp = self.client.put(url, payload, format="json", **self._auth_headers())
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        data = resp.json()
+        self.assertIn("detail", data)
+
 
 @override_settings(SECRET_API_KEYS=("test-key",))
 class AdminDashboardSecurityTests(TestCase):
@@ -1074,7 +1091,13 @@ class AdminUserLogsTableTests(TestCase):
         AdminUserLog.objects.all().delete()
         
         self.client = APIClient()
-        self.url = reverse("admin_user_logs")
+        try:
+            self.url = reverse("admin-user-logs")
+        except NoReverseMatch:
+            try:
+                self.url = reverse("admin_user_logs")
+            except NoReverseMatch:
+                self.url = "/admin-feature/api/admin/user-logs/"
         
         # Setup admin user
         self.admin_password = random_password("Adm1n")
@@ -1299,8 +1322,27 @@ class UserLogDetailAPITest(TestCase):
             detail="User successfully logged in",
         )
         client = APIClient()
-        url = reverse("log-detail", args=[log.id])
-        response = client.get(url)
+        try:
+            url = reverse("admin-user-log-detail", args=[log.id])
+        except NoReverseMatch:
+            try:
+                url = reverse("log-detail", args=[log.id])
+            except NoReverseMatch:
+                url = f"/admin-feature/api/admin/user-logs/{log.id}/detail/"
+        admin_role, _ = Role.objects.get_or_create(name="ADMIN")
+        admin_user = User.objects.create(
+            name="Detail Viewer",
+            email="detail@example.com",
+            password="pass",
+            role=admin_role.name,
+        )
+        UserRole.objects.create(user=admin_user, role=admin_role)
+        token = RefreshToken.for_user(admin_user)
+        headers = {
+            **TEST_API_KEY_HEADER,
+            "HTTP_AUTHORIZATION": f"Bearer {str(token.access_token)}",
+        }
+        response = client.get(url, **headers)
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
