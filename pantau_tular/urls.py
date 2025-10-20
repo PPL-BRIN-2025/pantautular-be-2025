@@ -18,6 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django_prometheus import exports
 from django.http import JsonResponse
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from curator_feature.views import DashboardDownloadEventAPIView, DiseaseListCreateView
 
@@ -38,4 +39,6 @@ urlpatterns = [
     path('health/', health),
     path("", include("admin_feature.urls")),
     path("curator-feature/", include("curator_feature.urls")),
+    path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
 ]

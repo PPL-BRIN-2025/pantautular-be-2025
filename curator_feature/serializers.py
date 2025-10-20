@@ -1,12 +1,29 @@
 from rest_framework import serializers
 from django.db import transaction
 
+
+from .models import CuratorDataLog
+
 # Chart/download models & value objects
+
 from curator_feature.models import DashboardDownloadEvent, DownloadLog
 from curator_feature.value_objects import ChartFilters
 
+
+class CuratorDataLogSerializer(serializers.ModelSerializer):
+    lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
+    submittedBy = serializers.CharField(source="submitted_by")
+
+    class Meta:
+        model = CuratorDataLog
+        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "note")
+
+
+
+
 # Curator CRUD models
 from pt_backend.models import Case, Disease, Location, News
+
 
 
 class DiseaseSerializer(serializers.ModelSerializer):
@@ -125,6 +142,7 @@ class DashboardDownloadEventSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Source may not be blank.")
         return value
+
 
 
 # ---------- Curator CRUD serializers (from code 2) ----------
@@ -299,3 +317,4 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "location",
             "news",
         ]
+
