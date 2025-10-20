@@ -1,4 +1,9 @@
 import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pantau_tular.test_settings")
+
+import django
+django.setup()
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -894,4 +899,3 @@ class CuratorCaseAPITests(TestCase):
         self.assertEqual(res.status_code, 204)
         self.assertFalse(Case.objects.filter(id=case.id).exists())
         self.assertEqual(News.objects.filter(case_id=case.id).count(), 0)
-
