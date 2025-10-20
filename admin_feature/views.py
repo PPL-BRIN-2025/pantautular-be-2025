@@ -178,16 +178,18 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
         role_id = request.data.get("role_id")
         role_name = request.data.get("role_name")
 
-        if role_id is not None:
+        if role_id:
             role_obj = Role.objects.filter(id=role_id).first()
         elif role_name:
             role_obj = Role.objects.filter(name=role_name).first()
 
+        # 2
         if role_obj is None:
-            return Response({"detail": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Invalid role"}, status=400)
 
         user.role = role_obj.name
         user.save(update_fields=["role"])
+
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.create(user=user, role=role_obj)
 
@@ -204,6 +206,7 @@ class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
+    # 1
     queryset = User.objects.all().order_by("id")
 
     def list(self, request, *args, **kwargs):
