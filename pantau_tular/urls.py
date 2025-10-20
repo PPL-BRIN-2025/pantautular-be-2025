@@ -16,10 +16,11 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
 from django_prometheus import exports
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from curator_feature.views import DashboardDownloadEventAPIView, DiseaseListCreateView
 
 def health(request):               
     return JsonResponse({"status": "ok"})
@@ -30,10 +31,14 @@ urlpatterns = [
     path('metrics/', exports.ExportToDjangoView, name='prometheus-django-metrics'),
     path('authentication/', include("authentication.urls")),
     path('admin-feature/', include('admin_feature.urls')),
+    path('api/downloads/log/', DashboardDownloadEventAPIView.as_view(), name='dashboard-download-log'),
+    path('api/logs/', include('curator_feature.urls')),
+    path('api/curator-feature/', include('curator_feature.urls')),
+    # Backwards-compatible alias to canonical location (preserve POST behavior)
+    path('api/diseases/', DiseaseListCreateView.as_view(), name='api-diseases-alias'),
     path('health/', health),
     path("", include("admin_feature.urls")),
     path("curator-feature/", include("curator_feature.urls")),
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
 ]
-

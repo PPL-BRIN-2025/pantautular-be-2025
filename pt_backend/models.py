@@ -139,8 +139,8 @@ class HealthProtocolDisease(models.Model):
 
 class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    latitude = models.DecimalField(max_digits=8, decimal_places=6)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    latitude = models.DecimalField(max_digits=8, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     city = models.CharField(max_length=255, unique=False)
     province = models.CharField(max_length=255, unique=False)
 
@@ -197,6 +197,3 @@ class News(models.Model):
     date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
-
-    def __str__(self):
-        return self.title

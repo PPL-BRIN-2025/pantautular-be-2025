@@ -3,11 +3,11 @@ from django.dispatch import receiver
 from admin_feature.audittrail import write_log
 
 @receiver(user_logged_in)
-def _on_login(sender, request, user, kwargs):
+def _on_login(sender, request, user, **kwargs):
     write_log(request=request, user=user, action="LOGIN", detail="User logged in")
 
 @receiver(user_logged_out)
-def _on_logout(sender, request, user, kwargs):
+def _on_logout(sender, request, user, **kwargs):
     write_log(request=request, user=user, action="LOGOUT", detail="User logged out")
 
 @receiver(user_login_failed)
