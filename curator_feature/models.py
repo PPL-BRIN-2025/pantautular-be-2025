@@ -11,13 +11,14 @@ class BackendCase(models.Model):
     severity = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
-        managed = False
+        managed = False 
         db_table = "pt_backend_case"
+
 
 class CuratorDataLog(models.Model):
     id = models.BigAutoField(primary_key=True)
-    data_id = models.UUIDField()             
-    title = models.CharField(max_length=255)    
+    data_id = models.UUIDField()
+    title = models.CharField(max_length=255)
     last_edited = models.DateTimeField(auto_now_add=True)
     submitted_by = models.CharField(max_length=150)
     note = models.TextField(null=True, blank=True)
