@@ -1,5 +1,5 @@
 [run]
-source = admin_feature
+source = curator_feature
 branch = True
 relative_files = True
 omit =
@@ -21,9 +21,9 @@ exclude_lines =
 
 [paths]
 source =
-    admin_feature
-    */pantautular-be-2025/admin_feature
-    */_work/*/pantautular-be-2025/admin_feature
+    curator_feature
+    */pantautular-be-2025/curator_feature
+    */_work/*/pantautular-be-2025/curator_feature
 
 [html]
 directory = htmlcov

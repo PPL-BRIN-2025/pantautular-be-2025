@@ -14,6 +14,7 @@ from curator_feature.value_objects import ClientMetadata
 from pt_backend.repositories import CaseRepository
 from pt_backend.services import CacheService, CaseService, CasesFilterService
 from pt_backend.statistics.coordinator import StatisticsCoordinator
+from .models import CuratorDataLog
 
 logger = logging.getLogger(__name__)
 
@@ -382,3 +383,13 @@ class ChartDataService:
             return int(value)
         except (TypeError, ValueError):
             return default
+
+
+def log_curator_edit(*, user, data_id, title=None, note=None):
+    CuratorDataLog.objects.create(
+        data_id=data_id,
+        title=title or "N/A",
+        submitted_by=(getattr(user, "username", "") or getattr(user, "email", ""))[:150],
+        last_edited=timezone.now(),
+        note=note or "",
+    )

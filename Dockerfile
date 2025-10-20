@@ -38,6 +38,7 @@ COPY pt_backend/ pt_backend/
 COPY hello/ hello/
 COPY authentication/ authentication/
 COPY admin_feature/ admin_feature/
+COPY curator_feature/ curator_feature/
 # COPY templates/ templates/
 # COPY staticfiles/ staticfiles/  
 

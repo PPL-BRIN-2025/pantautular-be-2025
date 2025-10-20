@@ -2,10 +2,14 @@ import logging
 
 from django.conf import settings
 from django.shortcuts import render  # if unused, you can remove later
+from django.db.models import Q
 
 from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from curator_feature.audittrail import log_curator_action
 
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
@@ -20,7 +24,10 @@ from curator_feature.serializers import (
     # curator cases
     CaseWriteSerializer,
     CaseReadSerializer,
+    # audit logs
+    CuratorDataLogSerializer,
 )
+from pt_backend.serializers import DiseaseSerializer
 from curator_feature.services import (
     ChartDataService,
     DashboardDownloadEventService,
@@ -29,6 +36,9 @@ from curator_feature.services import (
 from curator_feature.value_objects import ClientMetadata
 from pt_backend.models import Case
 from .permissions import IsCuratorRole
+
+# models for audit logs
+from .models import CuratorDataLog, BackendCase
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +182,33 @@ class DashboardDownloadEventAPIView(APIView):
         return Response({"id": event.id, "logged": True}, status=status.HTTP_201_CREATED)
 
 
+# --- Public endpoint for diseases (GET + POST) ---
+class DiseaseListCreateView(generics.ListCreateAPIView):
+    """Expose GET for everyone and allow POST only for curator users.
+
+    This view accepts POST when the request is authenticated and the user has
+    curator role (enforced by ReadOnlyOrCurator permission). Otherwise POST
+    will be denied while GET remains public.
+    """
+    serializer_class = DiseaseSerializer
+    # Accept JWT or session-based auth so both token and logged-in users can POST
+    authentication_classes = [CustomJWTAuthentication, SessionAuthentication, BasicAuthentication]
+
+    def get_permissions(self):
+        # For safe methods allow everyone; for unsafe methods enforce curator checks
+        from .permissions import ReadOnlyOrCurator
+
+        if self.request.method in SAFE_METHODS:
+            return []
+        return [ReadOnlyOrCurator()]
+
+    def get_queryset(self):
+        # Lazy import to avoid circular import issues at module import time
+        from pt_backend.models import Disease as _Disease
+
+        return _Disease.objects.all().order_by("name")
+
+
 # ===============================
 # Curator Case APIs
 # ===============================
@@ -189,7 +226,23 @@ class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
 
     def get_serializer_class(self):
         return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
-    
+
+    # === NEW: catat ke audit log saat CREATE ===
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        try:
+            log_curator_action(
+                user=self.request.user,
+                data_id=instance.id,
+                title=(instance.severity or instance.status or "Created"),
+                note="Data created by curator.",
+            )
+        except Exception:
+            # jangan ganggu flow utama kalau logging gagal
+            logger.exception("audit-log create failed for case %s", instance.id)
+
+
+
 class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIView):
     lookup_field = "id"
     queryset = (
@@ -201,3 +254,129 @@ class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIV
     def get_serializer_class(self):
         # GET returns read serializer; PATCH/PUT use write serializer
         return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+
+    # === NEW: catat ke audit log saat UPDATE ===
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        try:
+            log_curator_action(
+                user=self.request.user,
+                data_id=instance.id,
+                title=(instance.severity or instance.status or "Updated"),
+                note="Data updated by curator.",
+            )
+        except Exception:
+            logger.exception("audit-log update failed for case %s", instance.id)
+
+    # === NEW: catat ke audit log saat DELETE ===
+    def perform_destroy(self, instance):
+        try:
+            log_curator_action(
+                user=self.request.user,
+                data_id=instance.id,
+                title=(getattr(instance, "severity", None) or getattr(instance, "status", None) or "Deleted"),
+                note="Data deleted by curator.",
+            )
+        except Exception:
+            logger.exception("audit-log delete failed for case %s", instance.id)
+        # lanjut hapus data
+        super().perform_destroy(instance)
+
+
+
+class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
+    """Curator-only endpoint to list and create Disease records.
+
+    Uses the `DiseaseSerializer` defined in `curator_feature.serializers` and
+    enforces curator-level permissions via `_CuratorBaseView`.
+    """
+    serializer_class = DiseaseSerializer
+
+    def get_queryset(self):
+        # Lazy import to avoid circular import issues during module load
+        from pt_backend.models import Disease as _Disease
+
+        return _Disease.objects.all().order_by("name")
+
+
+# ===============================
+# Curator Audit Logs API
+# ===============================
+class CuratorDataLogListCreateAPIView(APIView):
+    """
+    GET /curator-feature/api/curator/audit-logs/
+      ?page=1&pageSize=10&search=&start=&end=&submitted_by=&sort=last_edited:desc
+
+    POST /curator-feature/api/curator/audit-logs/
+      { "data_id": "<uuid>", "title": "hospitalisasi", "note": "optional" }
+    """
+    permission_classes = [IsAuthenticated, IsCuratorRole]
+
+    def get(self, request):
+        # pagination
+        def _i(v, d=None):
+            try:
+                return int(v)
+            except Exception:
+                return d
+
+        page = max(1, _i(request.query_params.get("page", 1), 1))
+        page_size = max(1, min(100, _i(request.query_params.get("pageSize", 10), 10)))
+
+        # filters
+        search = (request.query_params.get("search") or "").strip()
+        submitted_by = (request.query_params.get("submitted_by") or "").strip()
+        start = request.query_params.get("start") or ""
+        end = request.query_params.get("end") or ""
+
+        # sorting
+        sort = (request.query_params.get("sort") or "last_edited:desc").lower()
+        f = sort.split(":")[0]
+        d = sort.split(":")[1] if ":" in sort else "desc"
+        allowed = {"last_edited", "title", "submitted_by", "data_id"}
+        sort_field = f if f in allowed else "last_edited"
+        order_by = f"-{sort_field}" if d == "desc" else sort_field
+
+        qs = CuratorDataLog.objects.all()
+
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search)
+                | Q(submitted_by__icontains=search)
+                | Q(data_id__icontains=search)
+            )
+        if submitted_by:
+            qs = qs.filter(submitted_by__icontains=submitted_by)
+        if start:
+            qs = qs.filter(last_edited__gte=start)
+        if end:
+            qs = qs.filter(last_edited__lte=end)
+
+        total = qs.count()
+        items = qs.order_by(order_by)[(page - 1) * page_size : page * page_size]
+        data = CuratorDataLogSerializer(items, many=True).data
+
+        return Response(
+            {"data": data, "page": page, "pageSize": page_size, "total": total},
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        # optional helper endpoint to create a log
+        payload = request.data.copy()
+        # if title not provided, try to derive from pt_backend_case.severity
+        if not payload.get("title") and payload.get("data_id"):
+            try:
+                case = BackendCase.objects.get(id=payload["data_id"])
+                payload["title"] = case.severity or "N/A"
+            except BackendCase.DoesNotExist:
+                pass
+
+        payload["submittedBy"] = getattr(request.user, "username", "") or getattr(
+            request.user, "email", ""
+        )
+        ser = CuratorDataLogSerializer(data=payload)
+        if ser.is_valid():
+            ser.save()
+            return Response(ser.data, status=status.HTTP_201_CREATED)
+        return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
