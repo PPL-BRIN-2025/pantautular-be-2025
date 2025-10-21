@@ -2,7 +2,7 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,12 +13,13 @@ from authentication.security import CustomJWTAuthentication
 from authentication.permissions import IsTokenAuthenticated
 from admin_feature.permissions import IsAdminRole
 
-from pt_backend.models import Role, User, UserRole
+from pt_backend.models import User, UserRole
 from .serializers import (
     UserSerializer,
     AdminUserLogSerializer,
     AdminUserLogDetailSerializer,
     PtBackendUserSerializer,
+    RoleAssignmentSerializer,
 )
 from .services import AdminDashboardService
 from .models import AdminUserLog, PtBackendUser
@@ -104,45 +105,45 @@ class AuditLogMixin:
             pass
 
 
-class RolesSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class RolesSummaryAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         summary = self.dashboard_service.get_roles_summary()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed roles summary")
+        self.log(request=request, action="VIEW", detail="Viewed roles summary")
         return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class FailedLoginStatsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class FailedLoginStatsAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         stats = self.dashboard_service.get_failed_login_stats()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed failed login stats")
+        self.log(request=request, action="VIEW", detail="Viewed failed login stats")
         return Response(stats.to_dict(), status=status.HTTP_200_OK)
 
 
-class FailedLoginEventsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class FailedLoginEventsAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         events = self.dashboard_service.get_failed_login_events()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed failed login events")
+        self.log(request=request, action="VIEW", detail="Viewed failed login events")
         return Response(events.to_dict(), status=status.HTTP_200_OK)
 
 
-class UsersSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class UsersSummaryAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         summary = self.dashboard_service.get_users_summary()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed users summary")
+        self.log(request=request, action="VIEW", detail="Viewed users summary")
         return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class DatasetsSummaryAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class DatasetsSummaryAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         summary = self.dashboard_service.get_datasets_summary()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed datasets summary")
+        self.log(request=request, action="VIEW", detail="Viewed datasets summary")
         return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
-class StatsAPIView(AdminDashboardServiceMixin, _AdminBaseAPIView):
+class StatsAPIView(AuditLogMixin, AdminDashboardServiceMixin, _AdminBaseAPIView):
     def get(self, request):
         summary = self.dashboard_service.get_stats()
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed dashboard stats")
+        self.log(request=request, action="VIEW", detail="Viewed dashboard stats")
         return Response(summary.to_dict(), status=status.HTTP_200_OK)
 
 
@@ -174,22 +175,16 @@ class AdminUserChangeRoleView(APIView, AuditLogMixin):
         except User.DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        role_obj = None
-        role_id = request.data.get("role_id")
-        role_name = request.data.get("role_name")
+        assignment = RoleAssignmentSerializer(data=request.data)
+        assignment.is_valid(raise_exception=True)
+        role_obj = assignment.validated_data["role"]
 
-        if role_id is not None:
-            role_obj = Role.objects.filter(id=role_id).first()
-        elif role_name:
-            role_obj = Role.objects.filter(name=role_name).first()
+        if user.role != role_obj.name:
+            user.role = role_obj.name
+            user.save(update_fields=["role"])
 
-        if role_obj is None:
-            return Response({"detail": "Invalid role"}, status=status.HTTP_400_BAD_REQUEST)
-
-        user.role = role_obj.name
-        user.save(update_fields=["role"])
-        UserRole.objects.filter(user=user).delete()
-        UserRole.objects.create(user=user, role=role_obj)
+        UserRole.objects.filter(user=user).exclude(role=role_obj).delete()
+        UserRole.objects.get_or_create(user=user, role=role_obj)
 
         self.log(
             request=request,
@@ -204,7 +199,19 @@ class AdminUserListView(ListAPIView, AuditLogMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     serializer_class = UserSerializer
-    queryset = User.objects.all().order_by("id")
+
+    def get_queryset(self):
+        return (
+            User.objects.all()
+            .prefetch_related(
+                Prefetch(
+                    "roles",
+                    queryset=UserRole.objects.select_related("role"),
+                    to_attr="_prefetched_roles",
+                )
+            )
+            .order_by("id")
+        )
 
     def list(self, request, *args, **kwargs):
         self.log(request=request, action="VIEW", detail="Viewed admin users list")
@@ -251,7 +258,6 @@ class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin,
         items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
 
         data = AdminUserLogSerializer(items, many=True).data
-        self.log(request=request, action="VIEW", detail="Viewed user-logs list")
         return Response({"data": data, "page": page, "pageSize": page_size, "total": total}, status=status.HTTP_200_OK)
 
     def post(self, request):
@@ -262,12 +268,11 @@ class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin,
         ser = AdminUserLogSerializer(data=data)
         if ser.is_valid():
             obj = ser.save()
-            self.log(request=request, action="CREATE", detail="Created AdminUserLog via API", note=f"log_id={obj.id}")
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
+class AdminUserLogDetailAPIView(AuditLogMixin, generics.RetrieveAPIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     queryset = AdminUserLog.objects.all()
@@ -275,11 +280,11 @@ class AdminUserLogDetailAPIView(generics.RetrieveAPIView):
     lookup_field = "id"
 
     def retrieve(self, request, *args, **kwargs):
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed user-log detail")
+        self.log(request=request, action="VIEW", detail="Viewed user-log detail")
         return super().retrieve(request, *args, **kwargs)
 
 
-class AdminUserLogUpdateAPIView(generics.RetrieveUpdateAPIView):
+class AdminUserLogUpdateAPIView(AuditLogMixin, generics.RetrieveUpdateAPIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
     queryset = AdminUserLog.objects.all()
@@ -287,13 +292,18 @@ class AdminUserLogUpdateAPIView(generics.RetrieveUpdateAPIView):
     lookup_field = "id"
 
     def retrieve(self, request, *args, **kwargs):
-        write_log(request=request, user=request.user, action="VIEW", detail="Viewed user-log (retrieve)")
+        self.log(request=request, action="VIEW", detail="Viewed user-log (retrieve)")
         return super().retrieve(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         resp = super().partial_update(request, *args, **kwargs)
         instance = self.get_object()
-        write_log(request=request, user=request.user, action="UPDATE", detail=f"Patched AdminUserLog id={instance.id}")
+        self.log(
+            request=request,
+            action="UPDATE",
+            detail=f"Patched AdminUserLog id={instance.id}",
+            note=f"path={request.path} method={request.method}",
+        )
         return resp
 
 
