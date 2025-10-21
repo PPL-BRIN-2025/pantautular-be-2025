@@ -307,13 +307,6 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
 # Curator Audit Logs API
 # ===============================
 class CuratorDataLogListCreateAPIView(APIView):
-    """
-    GET /curator-feature/api/curator/audit-logs/
-      ?page=1&pageSize=10&search=&start=&end=&submitted_by=&sort=last_edited:desc
-
-    POST /curator-feature/api/curator/audit-logs/
-      { "data_id": "<uuid>", "title": "hospitalisasi", "note": "optional" }
-    """
     authentication_classes = [CustomJWTAuthentication, SessionAuthentication]
     permission_classes = [IsTokenAuthenticated, IsCuratorRole]
 
