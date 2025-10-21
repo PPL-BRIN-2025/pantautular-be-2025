@@ -314,7 +314,7 @@ class CuratorDataLogListCreateAPIView(APIView):
     POST /curator-feature/api/curator/audit-logs/
       { "data_id": "<uuid>", "title": "hospitalisasi", "note": "optional" }
     """
-    authentication_classes = [CustomJWTAuthentication]  
+    authentication_classes = [CustomJWTAuthentication, SessionAuthentication]
     permission_classes = [IsTokenAuthenticated, IsCuratorRole]
 
     def get(self, request):
