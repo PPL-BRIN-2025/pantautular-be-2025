@@ -31,9 +31,20 @@ class CuratorDataLog(models.Model):
             models.Index(fields=["-last_edited"]),
         ]
         ordering = ["-last_edited"]
+        # optionally: limit Django's default perms so there's no "change"/"delete"
+        default_permissions = ("add", "view")
 
     def __str__(self):
         return f"{self.data_id} - {self.title} by {self.submitted_by}"
+
+    # --- IMMUTABILITY GUARDS (ORM layer) ---
+    def save(self, *args, **kwargs):
+        if self.pk and CuratorDataLog.objects.filter(pk=self.pk).exists():
+            raise ValueError("CuratorDataLog entries are immutable and cannot be modified.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("CuratorDataLog entries are immutable and cannot be deleted.")
 
 
 class DownloadLog(models.Model):

@@ -8,7 +8,7 @@ from pt_backend.models import Case, Disease, Location, News
 # CURATOR DATA LOG SERIALIZER 
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
-    submittedBy = serializers.CharField(source="submitted_by")
+    submittedBy = serializers.CharField(source="submitted_by", read_only=True)
 
     class Meta:
         model = CuratorDataLog

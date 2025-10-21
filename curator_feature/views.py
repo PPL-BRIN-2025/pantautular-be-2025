@@ -2,6 +2,10 @@ import logging
 
 from django.conf import settings
 from django.shortcuts import render  # if unused, you can remove later
+import logging
+
+from django.conf import settings
+from django.shortcuts import render  # if unused, you can remove later
 from django.db.models import Q
 
 from rest_framework import generics, status
@@ -303,14 +307,8 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
 # Curator Audit Logs API
 # ===============================
 class CuratorDataLogListCreateAPIView(APIView):
-    """
-    GET /curator-feature/api/curator/audit-logs/
-      ?page=1&pageSize=10&search=&start=&end=&submitted_by=&sort=last_edited:desc
-
-    POST /curator-feature/api/curator/audit-logs/
-      { "data_id": "<uuid>", "title": "hospitalisasi", "note": "optional" }
-    """
-    permission_classes = [IsAuthenticated, IsCuratorRole]
+    authentication_classes = [CustomJWTAuthentication, SessionAuthentication]
+    permission_classes = [IsTokenAuthenticated, IsCuratorRole] 
 
     def get(self, request):
         # pagination

@@ -17,17 +17,19 @@ from unittest.mock import patch
 from django.test import override_settings, SimpleTestCase, TestCase
 from django.urls import reverse
 
-from pt_backend.models import Case, Disease, Location, News, User
 from curator_feature.models import DownloadLog, DashboardDownloadEvent
 from uuid import uuid4
 from datetime import timedelta
 from django.utils import timezone
 from django.urls import reverse
-from django.contrib.auth.models import User, Group, AnonymousUser
 from django.test import override_settings
 from django.db import connection
 from rest_framework import status
 from rest_framework.test import APITestCase, APIClient, APIRequestFactory
+# app models (pt_backend)
+from pt_backend.models import Case, Disease, Location, News, User as PtUser
+# django auth
+from django.contrib.auth.models import User as DjangoUser, Group, AnonymousUser
 
 from curator_feature.permissions import IsCuratorRole
 from curator_feature.models import BackendCase, CuratorDataLog
@@ -76,6 +78,13 @@ class ChartsSimpleViewTests(SimpleTestCase):
         self.assertEqual(response.data["message"], "Failed to fetch chart data")
 
 
+from django.utils import timezone
+from django.db.utils import InternalError
+from admin_feature.models import AdminUserLog
+from admin_feature.audittrail import write_log
+from django.test import TestCase
+
+from curator_feature.models import BackendCase
 
 def _drop_case_table():
     """Drop pt_backend_case for current DB vendor."""
@@ -84,6 +93,7 @@ def _drop_case_table():
             cur.execute("DROP TABLE IF EXISTS pt_backend_case CASCADE")
         else:
             cur.execute("DROP TABLE IF EXISTS pt_backend_case")
+
 
 
 def _create_case_table_no_fk():
@@ -120,7 +130,6 @@ def _create_case_table_no_fk():
                 """
             )
 
-
 # =====================================================================
 # Tests — CuratorCasesListAPIView  (GET /curator-feature/cases/)
 # =====================================================================
@@ -136,34 +145,38 @@ class CuratorCasesAPITest(APITestCase):
         _drop_case_table()
         super().tearDownClass()
 
+
     def setUp(self):
         self.grp_curator, _ = Group.objects.get_or_create(name="CURATOR")
 
-        self.curator = User.objects.create_user(
+        self.curator = DjangoUser.objects.create_user(
             username="curator@example.com",
             password="curatorpass123",
             email="curator@example.com",
         )
         self.curator.groups.add(self.grp_curator)
 
-        self.non_curator = User.objects.create_user(
+        self.non_curator = DjangoUser.objects.create_user(
             username="user@example.com",
             password="userpass123",
             email="user@example.com",
         )
 
-        # Seed pt_backend_case via managed=False model
+        # Adding a Jakarta row used later by tests (self.case_a)
         self.case_a = BackendCase.objects.create(
             id=uuid4(), gender="female", age=25, city="Jakarta",
             status="active", disease_id=uuid4(), location_id=uuid4(), severity="high"
         )
+
         self.case_b = BackendCase.objects.create(
             id=uuid4(), gender="male", age=30, city="Bandung",
             status="recovered", disease_id=uuid4(), location_id=uuid4(), severity="low"
         )
 
-        self.client = APIClient()
-        self.list_url = reverse("curator_cases_list")
+        BackendCase.objects.create(
+            id=uuid4(), gender="female", age=22, city="Depok",
+            status="active", disease_id=uuid4(), location_id=uuid4(), severity="low"
+        )
 
     # --- helpers
     def auth_as(self, user):
@@ -175,17 +188,20 @@ class CuratorCasesAPITest(APITestCase):
     # --- tests
     def test_unauthenticated_cannot_access(self):
         self.unauth()
-        res = self.client.get(self.list_url)
+        res = self.client.get(self.url)
+        res = self.client.get(self.url)
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_non_curator_forbidden(self):
         self.auth_as(self.non_curator)
-        res = self.client.get(self.list_url)
+        res = self.client.get(self.url)
+        res = self.client.get(self.url)
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_curator_can_access_and_get_data(self):
         self.auth_as(self.curator)
-        res = self.client.get(self.list_url)
+        res = self.client.get(self.url)
+        res = self.client.get(self.url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn("data", res.data)
         self.assertIn("total", res.data)
@@ -195,24 +211,31 @@ class CuratorCasesAPITest(APITestCase):
         self.auth_as(self.curator)
 
         # pagination
-        res = self.client.get(self.list_url + "?page=1&pageSize=1")
+        res = self.client.get(self.url + "?page=1&pageSize=1")
+        # pagination
+        res = self.client.get(self.url + "?page=1&pageSize=1")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["page"], 1)
         self.assertEqual(res.data["pageSize"], 1)
 
         # search (OR across city/status/severity)
-        res = self.client.get(self.list_url + "?search=Jakarta")
+        res = self.client.get(self.url + "?search=Jakarta")
+        # search (OR across city/status/severity)
+        res = self.client.get(self.url + "?search=Jakarta")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(any("Jakarta" in c["city"] for c in res.data["data"]))
 
         # exact filters
-        res = self.client.get(self.list_url + "?gender=female&status=active&severity=high")
+        res = self.client.get(self.url + "?gender=female&status=active&severity=high")
+        # exact filters
+        res = self.client.get(self.url + "?gender=female&status=active&severity=high")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(all(c["gender"] == "female" for c in res.data["data"]))
 
     def test_age_filter_and_sorting(self):
         self.auth_as(self.curator)
-        res = self.client.get(self.list_url + "?minAge=20&maxAge=26&sort=age:desc")
+        res = self.client.get(self.url + "?minAge=20&maxAge=26&sort=age:desc")
+        res = self.client.get(self.url + "?minAge=20&maxAge=26&sort=age:desc")
         self.assertEqual(res.status_code, 200)
         ages = [c["age"] for c in res.data["data"]]
         self.assertTrue(all(20 <= a <= 26 for a in ages))
@@ -221,20 +244,21 @@ class CuratorCasesAPITest(APITestCase):
 
     def test_invalid_sort_fallback(self):
         self.auth_as(self.curator)
-        res = self.client.get(self.list_url + "?sort=unknown:asc")
+        res = self.client.get(self.url + "?sort=unknown:asc")
+        res = self.client.get(self.url + "?sort=unknown:asc")
         self.assertEqual(res.status_code, 200)
         self.assertIn("data", res.data)
 
     def test_filter_by_location_and_disease(self):
         self.auth_as(self.curator)
 
-        res = self.client.get(self.list_url + f"?location_id={self.case_a.location_id}")
+        res = self.client.get(self.url + f"?location_id={self.case_a.location_id}")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(
             all(str(c["location_id"]) == str(self.case_a.location_id) for c in res.data["data"])
         )
 
-        res = self.client.get(self.list_url + f"?disease_id={self.case_a.disease_id}")
+        res = self.client.get(self.url + f"?disease_id={self.case_a.disease_id}")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(
             all(str(c["disease_id"]) == str(self.case_a.disease_id) for c in res.data["data"])
@@ -243,14 +267,16 @@ class CuratorCasesAPITest(APITestCase):
     def test_min_only_max_only(self):
         self.auth_as(self.curator)
 
-        res = self.client.get(self.list_url + "?minAge=26")
+        res = self.client.get(self.url + "?minAge=26")
+
+        res = self.client.get(self.url + "?minAge=26")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(all(c["age"] >= 26 for c in res.data["data"]))
 
-        res = self.client.get(self.list_url + "?maxAge=26")
+        res = self.client.get(self.url + "?maxAge=26")
+        res = self.client.get(self.url + "?maxAge=26")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(all(c["age"] <= 26 for c in res.data["data"]))
-
 
 # =====================================================================
 # Tests — CuratorDataLogListCreateAPIView (GET + POST)
@@ -270,12 +296,13 @@ class CuratorAuditTrailAPITest(APITestCase):
 
     def setUp(self):
         self.grp_curator, _ = Group.objects.get_or_create(name="CURATOR")
-        self.curator = User.objects.create_user(
+
+        self.curator = DjangoUser.objects.create_user(
             username="curatora", password="pw", email="curatora@example.com"
         )
         self.curator.groups.add(self.grp_curator)
 
-        self.other_user = User.objects.create_user(
+        self.other_user = DjangoUser.objects.create_user(
             username="nonauth", password="pw", email="nonauth@example.com"
         )
 
@@ -425,25 +452,33 @@ class CuratorPermissionPolicyTest(APITestCase):
     def setUp(self):
         self.grp_curator, _ = Group.objects.get_or_create(name="CURATOR")
         # role-only user
-        self.user_role_only = User.objects.create_user(
+        self.user_role_only = DjangoUser.objects.create_user(
             username="roleonly@example.com", password="pw", email="roleonly@example.com"
         )
         setattr(self.user_role_only, "role", "CURATOR")
         self.user_role_only.save()
-        # group-only user
-        self.user_group_only = User.objects.create_user(
+
+        self.user_group_only = DjangoUser.objects.create_user(
             username="grouponly@example.com", password="pw", email="grouponly@example.com"
         )
         self.user_group_only.groups.add(self.grp_curator)
-        # plain
-        self.user_plain = User.objects.create_user(
+
+        self.user_plain = DjangoUser.objects.create_user(
             username="plain@example.com", password="pw", email="plain@example.com"
         )
-        # minimal data for GET OK
+
+        # minimal data for GET OK - Fix duplicate id and attributes
         BackendCase.objects.create(
-            id=uuid4(), gender="female", age=22, city="Depok",
-            status="active", disease_id=uuid4(), location_id=uuid4(), severity="low"
+            id=uuid4(),
+            gender="female",
+            age=22, 
+            city="Depok",
+            status="active",
+            disease_id=uuid4(),
+            location_id=uuid4(),
+            severity="low"
         )
+        
         self.client = APIClient()
         self.url = reverse("curator_cases_list")
 
@@ -494,7 +529,7 @@ class CuratorPermissionPolicyTest(APITestCase):
 class ChartDataAPIViewTests(APITestCase):
     def setUp(self):
         self.url = "/api/logs/charts/data"
-        self.user = User.objects.create(
+        self.user = PtUser.objects.create(
             name="Curator Uno",
             password="test-pass",
             role="CURATOR",
@@ -688,7 +723,7 @@ class ChartDataAPIViewTests(APITestCase):
 class DownloadLogAPIViewTests(APITestCase):
     def setUp(self):
         self.url = "/api/logs/download"
-        self.user = User.objects.create(
+        self.user = PtUser.objects.create(
             name="Curator Uno",
             password="test-pass",
             role="CURATOR",
@@ -1168,7 +1203,6 @@ import uuid
 from datetime import datetime
 from django.test import TestCase
 from rest_framework.test import APIClient
-from pt_backend.models import Case, Disease, Location, News, User
 
 
 CASES_BASE = "/curator-feature/curator/cases/"
@@ -1179,7 +1213,7 @@ class CuratorCaseAPITests(TestCase):
         self.client = APIClient()
 
         # --- Users ---
-        self.curator = User.objects.create(
+        self.curator = PtUser.objects.create(
             id=123456,
             name="Curator One",
             email="curator@example.com",
@@ -1188,7 +1222,7 @@ class CuratorCaseAPITests(TestCase):
         setattr(self.curator, "role", "CURATOR")
         self.curator.save()
 
-        self.other_user = User.objects.create(
+        self.other_user = PtUser.objects.create(
             id=789012,
             name="Viewer",
             email="viewer@example.com",
@@ -1633,7 +1667,7 @@ class DownloadLogHTTPMethodTests(APITestCase):
     def setUp(self):
         self.url = "/api/logs/download"
         # auth user with JWT
-        u = User.objects.create(
+        u = PtUser.objects.create(
             name="Curator X",
             email="cx@example.com",
             password="x",
@@ -1682,7 +1716,7 @@ class CuratorCasesSearchEmptyResults(APITestCase):
                         gender VARCHAR(10),
                         age INTEGER,
                         city VARCHAR(255),
-                        status VARCHAR(20),
+                        status TEXT,
                         disease_id UUID,
                         location_id UUID,
                         severity VARCHAR(255)
@@ -1708,7 +1742,7 @@ class CuratorCasesSearchEmptyResults(APITestCase):
     def setUp(self):
         # curator via Django Group
         grp, _ = Group.objects.get_or_create(name="CURATOR")
-        self.curator = User.objects.create_user(username="cur@example.com", password="x")
+        self.curator = DjangoUser.objects.create_user(username="cur@example.com", password="x")
         self.curator.groups.add(grp)
         # seed a couple of rows
         BackendCase.objects.create(
@@ -1750,3 +1784,86 @@ class DashboardDownloadEventInvalidChoicesTests(APITestCase):
         finally:
             os.environ.pop("SECRET_API_KEY", None)
             DashboardDownloadEvent.objects.all().delete()
+
+    def test_is_curator_role_denies_anonymous(self):
+        req = APIRequestFactory().get("/curator-feature/cases/")
+        req.user = AnonymousUser()  # no auth
+        perm = IsCuratorRole()
+        assert perm.has_permission(req, None) is False
+
+from django.db import connection
+from django.db.utils import InternalError
+from django.test import TestCase, override_settings
+from curator_feature.models import CuratorDataLog
+from django.utils import timezone
+from uuid import uuid4
+
+class CuratorDataLogImmutabilityTests(TestCase):
+    def setUp(self):
+        self.log = CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="insiden",
+            submitted_by="tester",
+            note="seed",
+            last_edited=timezone.now(),
+        )
+
+    def test_prevent_update_via_orm(self):
+        self.log.note = "changed"
+        with self.assertRaises(ValueError):
+            self.log.save()
+
+    def test_prevent_delete_via_orm(self):
+        with self.assertRaises(ValueError):
+            self.log.delete()
+
+    def test_prevent_update_via_sql(self):
+        with connection.cursor() as cur:
+            with self.assertRaises(InternalError):
+                cur.execute(
+                    "UPDATE curator_feature_datalog SET note='sql' WHERE id=%s", [self.log.id]
+                )
+
+    def test_prevent_delete_via_sql(self):
+        with connection.cursor() as cur:
+            with self.assertRaises(InternalError):
+                cur.execute(
+                    "DELETE FROM curator_feature_datalog WHERE id=%s", [self.log.id]
+                )
+
+
+class CuratorDataLogSerializerHardeningTests(TestCase):
+    def test_submitted_by_is_readonly(self):
+        # client tries to forge submitted_by
+        payload = {
+            "data_id": str(uuid4()),
+            "title": "insiden",
+            "submitted_by": "evil",
+        }
+        from curator_feature.serializers import CuratorDataLogSerializer
+        s = CuratorDataLogSerializer(data=payload)
+        self.assertTrue(s.is_valid(), s.errors)
+        # serializer should drop/ignore submitted_by (set by the view)
+        self.assertNotIn("submitted_by", s.validated_data)
+
+
+class CuratorDataLogHTTPMethodTests(APITestCase):
+    def setUp(self):
+        self.curator = PtUser.objects.create(
+            name="Curator",
+            email="c@example.com",
+            password="x",
+            role="CURATOR",
+        )
+        token = RefreshToken.for_user(self.curator).access_token
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.url = reverse("curator_audit_logs")
+
+    def test_put_patch_delete_not_allowed(self):
+        self.assertIn(self.client.put(self.url, data={}, format="json").status_code,
+                      (status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND))
+        self.assertIn(self.client.patch(self.url, data={}, format="json").status_code,
+                      (status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND))
+        self.assertIn(self.client.delete(self.url).status_code,
+                      (status.HTTP_405_METHOD_NOT_ALLOWED, status.HTTP_404_NOT_FOUND))
