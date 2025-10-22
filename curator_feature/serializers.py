@@ -9,10 +9,11 @@ from pt_backend.models import Case, Disease, Location, News
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
     submittedBy = serializers.CharField(source="submitted_by", read_only=True)
+    submitted_by = serializers.CharField(read_only=True)    # snake case alias for tests
 
     class Meta:
         model = CuratorDataLog
-        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "note")
+        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "submitted_by", "note")
 
 
 # DISEASE SERIALIZER 
@@ -301,3 +302,48 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "location",
             "news",
         ]
+
+class LocationByNameSerializer(serializers.Serializer):
+    city = serializers.CharField()
+    province = serializers.CharField(required=False)
+    latitude = serializers.DecimalField(max_digits=8, decimal_places=6, required=False)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False)
+
+    def resolve(self) -> Location:
+        data = self.validated_data
+        city = data["city"].strip()
+
+        qs = Location.objects.filter(city__iexact=city)
+        prov = data.get("province")
+        if prov:
+            qs = qs.filter(province__iexact=prov.strip())
+
+        count = qs.count()
+        if count == 1:
+            return qs.first()
+
+        if count > 1 and not prov:
+            # unchanged: ambiguous without province
+            raise serializers.ValidationError({
+                "location": f"Multiple locations named '{city}'. Provide 'province' to disambiguate."
+            })
+
+        # --- CHANGED: not found -> require province + latitude + longitude ---
+        missing_any = any(
+            key not in data or data[key] in ("", None)
+            for key in ("province", "latitude", "longitude")
+        )
+        if missing_any:
+            raise serializers.ValidationError({
+                "location": (
+                    f"Location '{city}' not found. Provide province, latitude, longitude to create it."
+                )
+            })
+
+        # Create with all required fields present
+        return Location.objects.create(
+            city=city,
+            province=str(data["province"]).strip(),
+            latitude=data["latitude"],
+            longitude=data["longitude"],
+        )

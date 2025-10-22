@@ -307,7 +307,7 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
 # Curator Audit Logs API
 # ===============================
 class CuratorDataLogListCreateAPIView(APIView):
-    authentication_classes = [CustomJWTAuthentication, SessionAuthentication]
+    authentication_classes = [CustomJWTAuthentication, SessionAuthentication, BasicAuthentication]
     permission_classes = [IsTokenAuthenticated, IsCuratorRole] 
 
     def get(self, request):

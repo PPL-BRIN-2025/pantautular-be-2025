@@ -177,6 +177,8 @@ class CuratorCasesAPITest(APITestCase):
             id=uuid4(), gender="female", age=22, city="Depok",
             status="active", disease_id=uuid4(), location_id=uuid4(), severity="low"
         )
+        
+        self.url = reverse("curator_cases_list")
 
     # --- helpers
     def auth_as(self, user):
@@ -300,6 +302,9 @@ class CuratorAuditTrailAPITest(APITestCase):
         self.curator = DjangoUser.objects.create_user(
             username="curatora", password="pw", email="curatora@example.com"
         )
+        setattr(self.curator, "role", "CURATOR")
+        self.curator.save()
+
         self.curator.groups.add(self.grp_curator)
 
         self.other_user = DjangoUser.objects.create_user(
@@ -1458,7 +1463,7 @@ class CuratorCaseAPITests(TestCase):
             content="x",
             url="https://example.com/x",
             author="y",
-            date_published=datetime(2024, 1, 23, tzinfo=timezone.utc),
+            date_published=timezone.make_aware(datetime(2024, 1, 23)),
             img_url="",
         )
         self.as_curator()
@@ -1706,38 +1711,13 @@ class CuratorCasesSearchEmptyResults(APITestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # ensure temp table for BackendCase
-        with connection.cursor() as cur:
-            if connection.vendor == "postgresql":
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pt_backend_case (
-                        id UUID PRIMARY KEY,
-                        gender VARCHAR(10),
-                        age INTEGER,
-                        city VARCHAR(255),
-                        status TEXT,
-                        disease_id UUID,
-                        location_id UUID,
-                        severity VARCHAR(255)
-                    )
-                    """
-                )
-            else:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pt_backend_case (
-                        id TEXT PRIMARY KEY,
-                        gender TEXT,
-                        age INTEGER,
-                        city TEXT,
-                        status TEXT,
-                        disease_id TEXT,
-                        location_id TEXT,
-                        severity TEXT
-                    )
-                    """
-                )
+        _drop_case_table()
+        _create_case_table_no_fk()
+
+    @classmethod
+    def tearDownClass(cls):
+        _drop_case_table()
+        super().tearDownClass()
 
     def setUp(self):
         # curator via Django Group
