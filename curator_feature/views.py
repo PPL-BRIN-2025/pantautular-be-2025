@@ -1,12 +1,8 @@
 import logging
 
 from django.conf import settings
-from django.shortcuts import render  # if unused, you can remove later
-import logging
-
-from django.conf import settings
-from django.shortcuts import render  # if unused, you can remove later
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
@@ -38,7 +34,7 @@ from curator_feature.services import (
     DownloadLogService,
 )
 from curator_feature.value_objects import ClientMetadata
-from pt_backend.models import Case
+from pt_backend.models import Case, User as PtUser
 from .permissions import IsCuratorRole
 
 # models for audit logs
@@ -227,9 +223,145 @@ class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
         .prefetch_related("news")
         .order_by("-id")
     )
+    DEFAULT_PAGE_SIZE = 25
+    MAX_PAGE_SIZE = 100
+    SORT_FIELD_MAP = {
+        "age": "age",
+        "city": "city",
+        "gender": "gender",
+        "status": "status",
+        "severity": "severity",
+        "id": "id",
+    }
 
     def get_serializer_class(self):
         return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+
+    def list(self, request, *args, **kwargs):
+        params = request.query_params
+        page = self._parse_positive_int(params.get("page"), default=1)
+        page_size = self._parse_positive_int(params.get("pageSize"), default=self.DEFAULT_PAGE_SIZE)
+        page_size = min(self.MAX_PAGE_SIZE, max(1, page_size))
+        offset = (page - 1) * page_size
+
+        user = getattr(request, "user", None)
+        prefer_case_queryset = isinstance(user, PtUser)
+        queryset = self.filter_queryset(self.get_queryset())
+        has_case_data = prefer_case_queryset and queryset.exists()
+
+        if has_case_data:
+            total = queryset.count()
+            items = queryset[offset : offset + page_size]
+            serializer = CaseReadSerializer(items, many=True, context={"request": request})
+            data = serializer.data
+        else:
+            backend_queryset = self._build_backend_case_queryset(params)
+            if backend_queryset.exists():
+                data, total = self._serialize_backend_cases(params, offset, page_size, backend_queryset)
+            else:
+                total = queryset.count()
+                items = queryset[offset : offset + page_size]
+                serializer = CaseReadSerializer(items, many=True, context={"request": request})
+                data = serializer.data
+
+        payload = {
+            "data": data,
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
+
+    def _build_backend_case_queryset(self, params):
+        queryset = BackendCase.objects.all()
+
+        search = (params.get("search") or "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(city__icontains=search)
+                | Q(status__icontains=search)
+                | Q(severity__icontains=search)
+            )
+
+        def _normalize_str(value):
+            return value.strip() if isinstance(value, str) else value
+
+        gender = _normalize_str(params.get("gender"))
+        if gender:
+            queryset = queryset.filter(gender__iexact=gender)
+
+        status_filter = _normalize_str(params.get("status"))
+        if status_filter:
+            queryset = queryset.filter(status__iexact=status_filter)
+
+        severity = _normalize_str(params.get("severity"))
+        if severity:
+            queryset = queryset.filter(severity__iexact=severity)
+
+        location_id = _normalize_str(params.get("location_id"))
+        if location_id:
+            queryset = queryset.filter(location_id=location_id)
+
+        disease_id = _normalize_str(params.get("disease_id"))
+        if disease_id:
+            queryset = queryset.filter(disease_id=disease_id)
+
+        min_age = self._parse_positive_int(params.get("minAge"))
+        if min_age is not None:
+            queryset = queryset.filter(age__gte=min_age)
+
+        max_age = self._parse_positive_int(params.get("maxAge"))
+        if max_age is not None:
+            queryset = queryset.filter(age__lte=max_age)
+
+        sort_expression = self._resolve_sort(params.get("sort"))
+        return queryset.order_by(sort_expression)
+
+    def _resolve_sort(self, raw_sort):
+        if raw_sort:
+            parts = raw_sort.split(":")
+            field = parts[0].strip().lower()
+            direction = (parts[1] if len(parts) > 1 else "asc").strip().lower()
+        else:
+            field = "id"
+            direction = "desc"
+
+        mapped_field = self.SORT_FIELD_MAP.get(field)
+        if not mapped_field:
+            mapped_field = self.SORT_FIELD_MAP["id"]
+            direction = "desc"
+
+        prefix = "-" if direction == "desc" else ""
+        return f"{prefix}{mapped_field}"
+
+    @staticmethod
+    def _parse_positive_int(value, default=None):
+        if value in (None, ""):
+            return default
+        try:
+            parsed = int(value)
+            return parsed if parsed > 0 else default
+        except (TypeError, ValueError):
+            return default
+
+    def _serialize_backend_cases(self, params, offset, page_size, queryset=None):
+        queryset = queryset or self._build_backend_case_queryset(params)
+        total = queryset.count()
+        items = queryset[offset : offset + page_size]
+        data = [
+            {
+                "id": str(item.id),
+                "gender": item.gender,
+                "age": item.age,
+                "city": item.city,
+                "status": item.status,
+                "severity": item.severity,
+                "disease_id": str(item.disease_id) if item.disease_id else None,
+                "location_id": str(item.location_id) if item.location_id else None,
+            }
+            for item in items
+        ]
+        return data, total
 
     # === NEW: catat ke audit log saat CREATE ===
     def perform_create(self, serializer):
@@ -324,8 +456,8 @@ class CuratorDataLogListCreateAPIView(APIView):
         # filters
         search = (request.query_params.get("search") or "").strip()
         submitted_by = (request.query_params.get("submitted_by") or "").strip()
-        start = request.query_params.get("start") or ""
-        end = request.query_params.get("end") or ""
+        start = self._parse_datetime_param(request.query_params.get("start"))
+        end = self._parse_datetime_param(request.query_params.get("end"))
 
         # sorting
         sort = (request.query_params.get("sort") or "last_edited:desc").lower()
@@ -345,9 +477,9 @@ class CuratorDataLogListCreateAPIView(APIView):
             )
         if submitted_by:
             qs = qs.filter(submitted_by__icontains=submitted_by)
-        if start:
+        if start is not None:
             qs = qs.filter(last_edited__gte=start)
-        if end:
+        if end is not None:
             qs = qs.filter(last_edited__lte=end)
 
         total = qs.count()
@@ -378,3 +510,10 @@ class CuratorDataLogListCreateAPIView(APIView):
             ser.save()
             return Response(ser.data, status=status.HTTP_201_CREATED)
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @staticmethod
+    def _parse_datetime_param(value):
+        if not value:
+            return None
+        parsed = parse_datetime(value)
+        return parsed

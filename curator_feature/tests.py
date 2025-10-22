@@ -79,7 +79,7 @@ class ChartsSimpleViewTests(SimpleTestCase):
 
 
 from django.utils import timezone
-from django.db.utils import InternalError
+from django.db.utils import InternalError, IntegrityError
 from admin_feature.models import AdminUserLog
 from admin_feature.audittrail import write_log
 from django.test import TestCase
@@ -1469,7 +1469,8 @@ class CuratorCaseAPITests(TestCase):
         self.as_curator()
         res_list = self.client.get(CASES_BASE)
         self.assertEqual(res_list.status_code, 200)
-        self.assertIn("disease_name", res_list.data[0])
+        self.assertGreater(res_list.data["total"], 0)
+        self.assertIn("disease_name", res_list.data["data"][0])
 
         res_detail = self.client.get(f"{CASES_BASE}{case.id}/")
         self.assertEqual(res_detail.status_code, 200)
@@ -1799,14 +1800,14 @@ class CuratorDataLogImmutabilityTests(TestCase):
 
     def test_prevent_update_via_sql(self):
         with connection.cursor() as cur:
-            with self.assertRaises(InternalError):
+            with self.assertRaises((InternalError, IntegrityError)):
                 cur.execute(
                     "UPDATE curator_feature_datalog SET note='sql' WHERE id=%s", [self.log.id]
                 )
 
     def test_prevent_delete_via_sql(self):
         with connection.cursor() as cur:
-            with self.assertRaises(InternalError):
+            with self.assertRaises((InternalError, IntegrityError)):
                 cur.execute(
                     "DELETE FROM curator_feature_datalog WHERE id=%s", [self.log.id]
                 )
