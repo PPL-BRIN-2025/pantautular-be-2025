@@ -17,6 +17,7 @@ from django.db.models import Q
 class CaseService(CaseRetrievalInterface):
     CACHE_KEY_ALL_CASES = "all_cases"
     CACHE_KEY_ALL_LOCATIONS = "all_locations"
+    CACHE_KEY_CASES_BY_YEAR_PREFIX = "cases_by_year"
     CACHE_TIMEOUT = 300 
     CACHE_KEY_STATUS_PROVINCE = "status_province"
 
@@ -39,10 +40,11 @@ class CaseService(CaseRetrievalInterface):
         return locations if locations else [] # pragma: no cover
         
     def get_cases_by_year(self, year):
-        cases = self.cache_service.get(self.CACHE_KEY_ALL_CASES)
+        cache_key = f"{self.CACHE_KEY_CASES_BY_YEAR_PREFIX}:{year}"
+        cases = self.cache_service.get(cache_key)
         if cases is None:
             cases = self.repository.get_cases_by_year(year)
-            self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
+            self.cache_service.set(cache_key, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
     
     def get_status_and_province(self):
@@ -165,7 +167,31 @@ class CasesFilterService:
     def __init__(self, case_service):
         self.case_service = case_service
 
-    def filter_cases(self, disease=None, provinces=None, cities=None, portals=None, disease_alertness=None, date_range=None, ids_only = False):
+    def filter_cases(
+        self,
+        disease=None,
+        provinces=None,
+        cities=None,
+        portals=None,
+        disease_alertness=None,
+        date_range=None,
+        ids_only=False,
+        locations=None,
+        diseases=None,
+        **extra_filters,
+    ):
+        disease = disease or diseases or extra_filters.get("diseases")
+        provinces = provinces or extra_filters.get("provinces")
+        cities = cities or extra_filters.get("cities")
+        portals = portals or extra_filters.get("portals")
+        disease_alertness = disease_alertness or extra_filters.get("disease_alertness")
+        date_range = date_range or extra_filters.get("date_range")
+        locations = locations or extra_filters.get("locations")
+
+        normalized_locations = self._normalize_locations(provinces, cities, locations)
+        provinces = normalized_locations["provinces"]
+        cities = normalized_locations["cities"]
+
         cases = self.case_service.get_all_cases()
         cases = self._filter_by_disease(cases, disease)
         cases = self._filter_by_locations(cases, provinces, cities)
@@ -174,27 +200,118 @@ class CasesFilterService:
         cases = self._filter_by_news_date_range(cases, date_range)
 
         if ids_only:
-            return cases.values('id')
+            return cases.values("id")
         return cases
-    
+
+    def _normalize_locations(self, provinces, cities, locations):
+        provinces_list = self._clean_list(provinces)
+        cities_list = self._clean_list(cities)
+
+        if locations:
+            extracted = self._extract_locations(locations)
+            provinces_list.extend(self._clean_list(extracted.get("provinces")))
+            cities_list.extend(self._clean_list(extracted.get("cities")))
+
+        provinces_list = self._dedupe(provinces_list)
+        cities_list = self._dedupe(cities_list)
+        return {"provinces": provinces_list, "cities": cities_list}
+
+    @staticmethod
+    def _dedupe(values):
+        seen = set()
+        deduped = []
+        for value in values:
+            key = value.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(value)
+        return deduped
+
+    def _clean_list(self, values):
+        cleaned = []
+        if not values:
+            return cleaned
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                value = value.get("value") or value.get("label")
+            if not isinstance(value, str):
+                value = str(value) if value is not None else ""
+            normalized = value.strip()
+            if normalized:
+                cleaned.append(normalized)
+        return cleaned
+
+    def _extract_locations(self, locations):
+        from collections.abc import Iterable, Mapping
+
+        if isinstance(locations, Mapping):
+            if "provinces" in locations or "cities" in locations:
+                return {
+                    "provinces": locations.get("provinces"),
+                    "cities": locations.get("cities"),
+                }
+            normalized = self._collect_location_values(locations)
+            return {"provinces": normalized, "cities": normalized}
+
+        if isinstance(locations, Iterable) and not isinstance(locations, (str, bytes)):
+            normalized = self._collect_location_values(locations)
+            return {"provinces": normalized, "cities": normalized}
+
+        normalized = self._collect_location_values(locations)
+        return {"provinces": normalized, "cities": normalized}
+
+    def _collect_location_values(self, value):
+        from collections.abc import Iterable, Mapping
+
+        if not value:
+            return []
+
+        if isinstance(value, str):
+            return [value]
+
+        if isinstance(value, Mapping):
+            if "value" in value:
+                return [value["value"]]
+            if "label" in value:
+                return [value["label"]]
+            items = []
+            for item in value.values():
+                items.extend(self._collect_location_values(item))
+            return items
+
+        if isinstance(value, Iterable):
+            items = []
+            for item in value:
+                items.extend(self._collect_location_values(item))
+            return items
+
+        return [value]
+
     def _filter_by_disease(self, cases, disease):
         if disease:
             return cases.filter(disease__name__in=disease)
         return cases
 
     def _filter_by_locations(self, cases, provinces, cities):
-        """Filter cases by provinces or cities."""
-        if provinces and cities:
-            # Menggunakan Q untuk OR antara provinces dan cities
-            return cases.filter(
-                Q(location__province__in=provinces) | Q(location__city__in=cities)
-            )
-        elif provinces:
-            return cases.filter(location__province__in=provinces)
-        elif cities:
-            return cases.filter(location__city__in=cities)
+        if provinces:
+            province_q = Q()
+            for province in provinces:
+                province_q |= Q(location__province__iexact=province)
+            if province_q:
+                cases = cases.filter(province_q)
+
+        if cities:
+            city_q = Q()
+            for city in cities:
+                city_q |= Q(location__city__iexact=city) | Q(city__iexact=city)
+            if city_q:
+                cases = cases.filter(city_q)
+
         return cases
-    
+
     def _filter_by_news_portals(self, cases, news_portals):
         if news_portals:
             return cases.filter(news__portal__in=news_portals)
@@ -208,24 +325,22 @@ class CasesFilterService:
     def _filter_by_news_date_range(self, cases, date_range):
         if not date_range:
             return cases
-        
+
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
         elif isinstance(date_range, dict):
             start_date = date_range.get('start')
             end_date = date_range.get('end')
+        else:
+            start_date = end_date = None
 
-        
         if start_date and end_date:
-            # Both dates provided
             return cases.filter(news__date_published__range=[start_date, end_date])
-        elif start_date:
-            # Only start date provided
+        if start_date:
             return cases.filter(news__date_published__gte=start_date)
-        elif end_date:
-            # Only end date provided
+        if end_date:
             return cases.filter(news__date_published__lte=end_date)
-        
+
         return cases
 
 class SeverityFilteringService:
