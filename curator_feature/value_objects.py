@@ -45,11 +45,20 @@ class ChartFilters:
         if self.level_of_alertness:
             filters["disease_alertness"] = self.level_of_alertness
 
+        locations_payload: Dict[str, Any] = {}
+
         if self.provinces:
-            filters["provinces"] = list(self.provinces)
+            provinces = list(self.provinces)
+            filters["provinces"] = provinces
+            locations_payload["provinces"] = provinces
 
         if self.cities:
-            filters["cities"] = list(self.cities)
+            cities = list(self.cities)
+            filters["cities"] = cities
+            locations_payload["cities"] = cities
+
+        if locations_payload:
+            filters["locations"] = locations_payload
 
         if self.start_date or self.end_date:
             filters["date_range"] = {

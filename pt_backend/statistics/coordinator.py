@@ -16,15 +16,24 @@ class StatisticsCoordinator:
         except Exception as e:
             return {"error": f"Failed to filter cases: {e}"}
 
-        date_range = filters.get('date_range', {})
-        start_date = date_range.get('start') if date_range else None
+        date_range = filters.get('date_range')
+        start_date = filters.get('start_date')
+
+        if not start_date and isinstance(date_range, dict):
+            start_date = date_range.get('start')
+
+        prevalence_kwargs = {
+            "filtered_cases": filtered,
+            "date_range": date_range,
+            "start_date": start_date,
+        }
 
         out = {}
         for name, strategy in self.strategies.items():
             try:
                 if isinstance(strategy, PrevalenceStatistics):
                     # Khusus untuk PrevalenceStatistics, kita perlu mengoper start_date
-                    out[name] = strategy.generate_report(start_date=start_date)
+                    out[name] = strategy.generate_report(**prevalence_kwargs)
                 else:
                     # Strategy diharapkan menerima arg named filtered_cases
                     out[name] = strategy.generate_report(filtered_cases=filtered)

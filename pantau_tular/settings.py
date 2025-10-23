@@ -265,3 +265,9 @@ CSRF_TRUSTED_ORIGINS = [
     "https://royal-rahel-nayaka-cbe367a7.koyeb.app",           # BE
     "https://pantautular.netlify.app",
 ]
+
+
+# sane defaults for curator role settings
+CURATOR_ROLE_NAME = "CURATOR"
+# which checks to use in IsCuratorRole: "role" attr on user, Django group membership
+CURATOR_ROLE_CHECKS = ("role", "group")

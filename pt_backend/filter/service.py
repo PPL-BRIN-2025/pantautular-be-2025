@@ -35,6 +35,6 @@ class CaseFilterService:
         return (
             base_query
             .filter(query)
-            .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province')
+            .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity')
             .distinct()
         )
