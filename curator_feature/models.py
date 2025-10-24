@@ -97,4 +97,6 @@ class DashboardDownloadEvent(models.Model):
     def __str__(self) -> str:
         created = self.created_at.isoformat() if self.created_at else "unknown"
         return f"{self.get_metric_display()} ({self.file_format}) @ {created}"
+    
+
 
