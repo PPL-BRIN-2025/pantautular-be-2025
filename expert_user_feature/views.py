@@ -1,13 +1,11 @@
-from rest_framework import generics, status
-from rest_framework.response import Response
-
-from authentication.security import CustomJWTAuthentication
-from authentication.permissions import IsTokenAuthenticated
-from .permissions import IsExpertUserRole
-from .serializers import CaseWriteSerializer
+from rest_framework import generics
+from pt_backend.models import Case
+from .views_base import ExpertBaseView
+from .serializers import CaseWriteSerializer, CaseReadSerializer
 
 
-class ExpertAddCaseRefactoredView(generics.CreateAPIView):
-    authentication_classes = [CustomJWTAuthentication]
-    permission_classes = [IsTokenAuthenticated, IsExpertUserRole]
-    serializer_class = CaseWriteSerializer
+class ExpertCaseCreateView(ExpertBaseView, generics.CreateAPIView):
+    queryset = Case.objects.all()
+
+    def get_serializer_class(self):
+        return CaseWriteSerializer if self.request.method == "POST" else CaseReadSerializer

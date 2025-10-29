@@ -28,6 +28,11 @@ class CaseWriteSerializer(serializers.Serializer):
         )
 
         case = Case.objects.create(disease=disease, location=location, **validated_data)
-
         News.objects.create(case=case, **news_data)
         return case
+
+
+class CaseReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Case
+        fields = "__all__"
