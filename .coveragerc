@@ -4,7 +4,7 @@ branch = True
 relative_files = True
 omit =
     */migrations/*
-    */tests.py
+    */tests/*
     */test_*.py
     */tests/**/*
     */__pycache__/*
