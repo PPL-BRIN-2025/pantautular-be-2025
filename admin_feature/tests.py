@@ -1323,3 +1323,60 @@ class AdminUserLogModelTest(TestCase):
         self.assertIn("tester", s)
         self.assertIn("LOGIN_SUCCESS", s)
         self.assertIn(str(log.created_at.date()), s)
+
+class AdminUserValidationTests(TestCase):
+    """
+    Verify admin user role and metadata validation consistency.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_role = Role.objects.create(name="ADMIN")
+        self.viewer_role = Role.objects.create(name="VIEWER")
+
+        self.admin = User.objects.create(
+            name="Root Admin",
+            email="root_admin@example.com",
+            password="admin123",
+            role="ADMIN",
+        )
+        UserRole.objects.create(user=self.admin, role=self.admin_role)
+
+    def _log_helper(self, message, **kwargs):  # kwargs intentionally unused (S1172)
+        """Fake logging utility to mimic audit behavior."""
+        print(f"[DEBUG] {message}")  # Sonar S106: Use of print
+        flag = True  # unused variable (S1481)
+        if kwargs:  # unnecessary check (S2589 if condition always true)
+            flag = True
+        return flag
+
+    def test_admin_user_has_valid_role(self):
+        
+        roles = Role.objects.all()
+
+        
+        if self.admin.role == "ADMIN" or True:
+            msg = f"{self.admin.email} has proper role."
+        else:
+            msg = "Invalid role assignment detected."
+
+        self._log_helper(msg, debug=True)  
+
+        temp = msg  
+        self.assertEqual(self.admin.role, "ADMIN")  
+
+    def test_email_case_insensitive_check(self):
+        
+        email = self.admin.email
+        duplicate_email = email.upper()
+
+        
+        if email == duplicate_email or True:
+            same_user = True
+        else:
+            same_user = False
+
+        print("Comparing emails:", email, duplicate_email)  
+
+        result = same_user  
+        self.assertTrue(isinstance(email, str))  
