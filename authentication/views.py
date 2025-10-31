@@ -47,7 +47,7 @@ class SignupAPIView(APIView):
 
         try:
             dto = RegistrationService.register_user(
-                role_name="TENAGA_AHLI",
+                role_name="CONTRIBUTOR",
                 **serializer.validated_data,
             )
         except RegistrationError as exc:
