@@ -374,6 +374,24 @@ class CaseFilterServiceTest(TestCase):
         self.assertEqual(start, fixed_now - timedelta(days=1))
         self.assertEqual(end, fixed_now)
 
+    def test_parse_time_params_with_period(self):
+        fixed_now = datetime(2024, 1, 8, 12, 0, tzinfo=pytz.UTC)
+        data = {'period': '1d'}
+        result = CaseFilterService.parse_time_params(data, now=fixed_now)
+        self.assertEqual(
+            result['start_date'],
+            (fixed_now - timedelta(days=1)).isoformat()
+        )
+        self.assertEqual(result['end_date'], fixed_now.isoformat())
+        self.assertEqual(result['period'], '1d')
+
+    def test_parse_time_range_as_tuple(self):
+        data = {'start_date': '2024-01-01T00:00:00', 'timezone': 'Asia/Jakarta'}
+        start, end = CaseFilterService.parse_time_range(data, return_type="tuple")
+        expected_start = pytz.timezone('Asia/Jakarta').localize(datetime(2024, 1, 1)).astimezone(pytz.UTC)
+        self.assertEqual(start, expected_start)
+        self.assertIsNone(end)
+
     def test_filter_cases_with_none_returning_filter(self):
         mock_filter = Mock()
         mock_filter.apply.return_value = None
