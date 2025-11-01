@@ -1,5 +1,5 @@
 from django.db.models import Q, QuerySet
-from typing import Dict
+from typing import Dict, Optional
 from pt_backend.models import Case
 from .disease_filter import DiseaseFilter
 from .location_filter import LocationFilter
@@ -9,12 +9,13 @@ from .date_range_filter import DateRangeFilter
 
 class CaseFilterService:
     def __init__(self):
+        self.date_range_filter = DateRangeFilter()
         self.filters = [
             DiseaseFilter(),
             LocationFilter(),
             AlertnessFilter(),
             PortalFilter(),
-            DateRangeFilter()
+            self.date_range_filter,
         ]
 
     def filter_cases(self, data: Dict) -> QuerySet:
@@ -37,4 +38,23 @@ class CaseFilterService:
             .filter(query)
             .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity')
             .distinct()
+        )
+
+    @staticmethod
+    def time_window(
+        data: Dict,
+        *,
+        field: str,
+        start_key: str = DateRangeFilter.DEFAULT_START_KEY,
+        end_key: str = DateRangeFilter.DEFAULT_END_KEY,
+        timezone=None,
+        null_guard_field: Optional[str] = None,
+    ) -> Optional[Q]:
+        return DateRangeFilter.build_time_window(
+            field=field,
+            data=data,
+            start_key=start_key,
+            end_key=end_key,
+            timezone=timezone,
+            null_guard_field=null_guard_field,
         )
