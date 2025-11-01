@@ -66,7 +66,8 @@ class AllCaseLocationsView(APIView):
             if not request.data or all(not v for v in request.data.values()):
                 cases = self.service.get_all_case_locations()
             else: 
-                cases = self.filter_service.filter_cases(request.data)
+                payload = self._prepare_filter_payload(request.data)
+                cases = self.filter_service.filter_cases(payload)
 
             if not cases:
                 return Response(
@@ -86,6 +87,27 @@ class AllCaseLocationsView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _prepare_filter_payload(self, data):
+        time_params = self.filter_service.parse_time_params(data)
+        payload = self._flatten_request_data(data)
+        if time_params:
+            payload.update(time_params)
+        return payload
+
+    @staticmethod
+    def _flatten_request_data(data):
+        if hasattr(data, "lists"):
+            flattened = {}
+            for key, values in data.lists():
+                if len(values) == 1:
+                    flattened[key] = values[0]
+                else:
+                    flattened[key] = values
+            return flattened
+        if isinstance(data, dict):
+            return {key: data[key] for key in data}
+        return dict(data)
 
 class FiltersView(APIView):
     def get(self, request):
@@ -340,14 +362,12 @@ class StatisticsView(APIView):
                 filter_params['disease_alertness'] = alertness
 
     def _add_date_range(self, request, filter_params):
-        start_date = request.data.get('start_date')
-        end_date = request.data.get('end_date')
-
-        if start_date or end_date:
-            filter_params['date_range'] = {
-                'start': start_date,
-                'end': end_date
-            }
+        time_range = CaseFilterService.parse_time_range(
+            request.data,
+            return_type="dict",
+        )
+        if time_range:
+            filter_params['date_range'] = time_range
 
     
 class SeverityFilteringStatsView(APIView):
@@ -366,19 +386,21 @@ class SeverityFilteringStatsView(APIView):
             filter_params = self._extract_filter_parameters(request.data)
             
             # Generate cache key based on filter parameters
-            # cache_key = self._generate_cache_key(filter_params)
-            
-            # Check if results are in cache
-            # cached_results = self.cache_service.get(cache_key)
-            # if cached_results:
-                # return Response(cached_results, status=status.HTTP_200_OK)
+            cached_results = self._generate_cache_key(filter_params)
+            cache_key = getattr(self, "_current_cache_key", None)
+
+            if cached_results is not None:
+                return Response(cached_results, status=status.HTTP_200_OK)
+
+            if cache_key is None:
+                raise ValueError("Unable to generate cache key")
             
             # Initialize service and get results if not in cache
             severity_filter = SeverityFilteringService()
             results = severity_filter.get_filter_stats(**filter_params)
             
             # Cache the results
-            # self.cache_service.set(cache_key, results, timeout=self.cache_timeout)
+            self.cache_service.set(cache_key, results, timeout=self.cache_timeout)
             
             return Response(results, status=status.HTTP_200_OK)
         
@@ -390,23 +412,33 @@ class SeverityFilteringStatsView(APIView):
     
     def _generate_cache_key(self, filter_params):
         try:
-            # Convert filter items to something hashable
             hashable_items = []
-            for k, v in filter_params.items():
-                if isinstance(v, list):
-                    v = tuple(v)  # Convert lists to tuples (which are hashable)
-                elif isinstance(v, dict):
-                    # Convert nested dictionaries to tuples of tuples
-                    v = tuple((k2, tuple(v2) if isinstance(v2, list) else v2) 
-                                for k2, v2 in v.items())
-                hashable_items.append((k, v))
+            for key, value in filter_params.items():
+                normalized = self._normalize_cache_value(value)
+                hashable_items.append((key, normalized))
             cache_key = f"{CACHE_KEY_PREFIX}{hash(frozenset(hashable_items))}"
-            cached_result = self.cache_service.get(cache_key)
-            if cached_result:
-                return cached_result
+            self._current_cache_key = cache_key
+            return self.cache_service.get(cache_key)
         except Exception as e:
             logger.error(f"Cache key generation error: {str(e)}")
-            return None
+            self._current_cache_key = None
+            raise
+
+    @staticmethod
+    def _normalize_cache_value(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return tuple(
+                (k, SeverityFilteringStatsView._normalize_cache_value(v))
+                for k, v in sorted(value.items())
+            )
+        if isinstance(value, (list, tuple, set)):
+            return tuple(
+                SeverityFilteringStatsView._normalize_cache_value(v)
+                for v in value
+            )
+        return value
 
     
     def _extract_filter_parameters(self, data):
@@ -424,9 +456,11 @@ class SeverityFilteringStatsView(APIView):
         if level_of_alertness:
             level_of_alertness = int(level_of_alertness)
         
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
-        date_range = (start_date, end_date) if start_date or end_date else None
+        time_window = CaseFilterService.parse_time_range(
+            data,
+            return_type="tuple",
+        )
+        date_range = time_window if time_window else None
         
         return {
             'diseases': diseases,
