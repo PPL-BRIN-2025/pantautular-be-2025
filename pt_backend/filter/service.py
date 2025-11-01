@@ -1,5 +1,7 @@
+from datetime import datetime
+from typing import Dict, Optional, Tuple
+
 from django.db.models import Q, QuerySet
-from typing import Dict, Optional
 from pt_backend.models import Case
 from .disease_filter import DiseaseFilter
 from .location_filter import LocationFilter
@@ -49,6 +51,9 @@ class CaseFilterService:
         end_key: str = DateRangeFilter.DEFAULT_END_KEY,
         timezone=None,
         null_guard_field: Optional[str] = None,
+        period_key: str = DateRangeFilter.DEFAULT_PERIOD_KEY,
+        tz_key: str = DateRangeFilter.DEFAULT_TZ_KEY,
+        now: Optional[datetime] = None,
     ) -> Optional[Q]:
         return DateRangeFilter.build_time_window(
             field=field,
@@ -57,4 +62,28 @@ class CaseFilterService:
             end_key=end_key,
             timezone=timezone,
             null_guard_field=null_guard_field,
+            period_key=period_key,
+            tz_key=tz_key,
+            now=now,
+        )
+
+    @staticmethod
+    def resolve_time_window(
+        data: Dict,
+        *,
+        start_key: str = DateRangeFilter.DEFAULT_START_KEY,
+        end_key: str = DateRangeFilter.DEFAULT_END_KEY,
+        period_key: str = DateRangeFilter.DEFAULT_PERIOD_KEY,
+        tz_key: str = DateRangeFilter.DEFAULT_TZ_KEY,
+        timezone=None,
+        now: Optional[datetime] = None,
+    ) -> Tuple[Optional[datetime], Optional[datetime]]:
+        return DateRangeFilter.resolve_time_window(
+            data,
+            start_key=start_key,
+            end_key=end_key,
+            period_key=period_key,
+            tz_key=tz_key,
+            timezone=timezone,
+            now=now,
         )
