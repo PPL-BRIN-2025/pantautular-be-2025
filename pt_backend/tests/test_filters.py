@@ -129,6 +129,20 @@ class FilterTestCase(TestCase):
         result = self.date_range_filter.apply(data)
         self.assertEqual(str(result), str(Q()))
 
+    def test_build_time_window_helper_with_null_guard(self):
+        data = {'start_date': '2024-01-01T00:00:00Z'}
+        result = DateRangeFilter.build_time_window(
+            field="news__date_published",
+            data=data,
+            null_guard_field="news",
+        )
+        expected_q = Q(news__date_published__gte=datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC)) & Q(news__isnull=False)
+        self.assertEqual(str(result), str(expected_q))
+
+    def test_build_time_window_helper_without_dates_returns_none(self):
+        result = DateRangeFilter.build_time_window(field="created_at", data={})
+        self.assertIsNone(result)
+
 
 
 class TestFilterStrategy(TestCase):
@@ -273,6 +287,29 @@ class CaseFilterServiceTest(TestCase):
         )
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
+
+    def test_time_window_helper_exposure_matches_date_range_filter(self):
+        data = {
+            'start_date': '2024-01-01T00:00:00Z',
+            'end_date': '2024-01-02T23:59:59Z',
+        }
+        result = CaseFilterService.time_window(
+            data,
+            field="news__date_published",
+            null_guard_field="news",
+        )
+        expected_q = (
+            Q(news__date_published__range=[
+                datetime(2024, 1, 1, 0, 0, tzinfo=pytz.UTC),
+                datetime(2024, 1, 2, 23, 59, 59, tzinfo=pytz.UTC),
+            ])
+            & Q(news__isnull=False)
+        )
+        self.assertEqual(str(result), str(expected_q))
+
+    def test_time_window_helper_returns_none_without_bounds(self):
+        result = CaseFilterService.time_window(data={}, field="news__date_published")
+        self.assertIsNone(result)
 
     def test_filter_cases_with_none_returning_filter(self):
         mock_filter = Mock()
