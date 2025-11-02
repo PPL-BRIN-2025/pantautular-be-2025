@@ -1,3 +1,5 @@
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import CaseInsensitiveChoiceField
@@ -31,6 +33,16 @@ class CaseWriteSerializer(serializers.Serializer):
         )
 
         case = Case.objects.create(disease=disease, location=location, **validated_data)
+
+        published = news_data.get("date_published")
+        if isinstance(published, str):
+            parsed = parse_datetime(published)
+            if parsed is None:
+                parsed = timezone.now()
+            elif timezone.is_naive(parsed):
+                parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+            news_data["date_published"] = parsed
+
         News.objects.create(case=case, **news_data)
         return case
 
