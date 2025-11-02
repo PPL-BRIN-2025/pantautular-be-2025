@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.test import APIClient, APIRequestFactory
 
 from curator_feature.models import DashboardDownloadEvent
@@ -243,6 +243,11 @@ class ExpertDownloadAPITests(TestCase):
         qs = view._filtered_cases(filters)
         self.assertIn(self.case_with_news, qs)
 
+    def test_filtered_cases_without_optional_filters(self):
+        view = ExpertDashboardCSVDownloadAPIView()
+        qs = view._filtered_cases({})
+        self.assertGreaterEqual(qs.count(), 0)
+
     def test_csv_download_rejects_non_csv_format(self):
         payload = {
             "metric": "jumlah_kasus",
@@ -323,7 +328,24 @@ class ExpertSerializerTests(TestCase):
     def setUp(self):
         self.disease = Disease.objects.create(name="Leptospirosis", level_of_alertness=2)
 
-    def test_case_write_serializer_creates_case_and_news(self):
+    def _case_payload(self, *, news=None, location=None, **overrides):
+        base_location = {
+            "city": "Semarang",
+            "province": "Jawa Tengah",
+            "latitude": -6.9667,
+            "longitude": 110.4167,
+        }
+        base_news = {
+            "portal": "Portal X",
+            "title": "Kasus Dilaporkan",
+            "type": "artikel",
+            "content": "Isi berita",
+            "url": "https://example.com/news",
+            "author": "Reporter X",
+            "date_published": "2024-01-02T00:00:00Z",
+            "img_url": "",
+        }
+
         payload = {
             "disease": self.disease.name,
             "gender": "L",
@@ -331,23 +353,24 @@ class ExpertSerializerTests(TestCase):
             "city": "Semarang",
             "status": "biasa",
             "severity": "hospitalisasi",
-            "location": {
-                "city": "Semarang",
-                "province": "Jawa Tengah",
-                "latitude": -6.9667,
-                "longitude": 110.4167,
-            },
-            "news": {
-                "portal": "Portal X",
-                "title": "Kasus Dilaporkan",
-                "type": "artikel",
-                "content": "Isi berita",
-                "url": "https://example.com/news",
-                "author": "Reporter X",
-                "date_published": timezone.now(),
-                "img_url": "",
-            },
+            "location": dict(location or base_location),
+            "news": dict(news or base_news),
         }
+
+        payload.update(overrides)
+        return payload
+
+    def test_case_write_serializer_creates_case_and_news(self):
+        payload = self._case_payload(news={
+            "portal": "Portal X",
+            "title": "Kasus Dilaporkan",
+            "type": "artikel",
+            "content": "Isi berita",
+            "url": "https://example.com/news",
+            "author": "Reporter X",
+            "date_published": timezone.now(),
+            "img_url": "",
+        })
 
         serializer = CaseWriteSerializer(data=payload)
         self.assertTrue(serializer.is_valid(), serializer.errors)
@@ -385,6 +408,49 @@ class ExpertSerializerTests(TestCase):
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(serializer.validated_data["source"], "dashboard")
+
+    def test_expert_dashboard_download_serializer_blank_source_raises(self):
+        serializer = ExpertDashboardDownloadSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            serializer.validate_source("")
+
+    def test_case_write_serializer_converts_naive_datetime(self):
+        payload = self._case_payload(news={
+            "portal": "Portal X",
+            "title": "Tanggal Naive",
+            "type": "artikel",
+            "content": "Isi",
+            "url": "https://example.com/naive",
+            "author": "Reporter",
+            "date_published": "2024-04-01T00:00:00",
+            "img_url": "",
+        })
+
+        serializer = CaseWriteSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        case = serializer.save()
+        news = case.news.first()
+        self.assertFalse(timezone.is_naive(news.date_published))
+
+    def test_case_write_serializer_fallback_on_invalid_datetime(self):
+        payload = self._case_payload(news={
+            "portal": "Portal X",
+            "title": "Tanggal Invalid",
+            "type": "artikel",
+            "content": "Isi",
+            "url": "https://example.com/invalid",
+            "author": "Reporter",
+            "date_published": "not-a-date",
+            "img_url": "",
+        })
+
+        before = timezone.now()
+        serializer = CaseWriteSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        case = serializer.save()
+        news = case.news.first()
+        self.assertGreaterEqual(news.date_published, before)
+        self.assertFalse(timezone.is_naive(news.date_published))
 
 
 class ExpertViewSmokeTests(SimpleTestCase):
