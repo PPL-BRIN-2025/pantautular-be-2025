@@ -26,10 +26,19 @@ FOR EACH ROW EXECUTE FUNCTION curator_feature_datalog_block_mod_del();
 def forwards(apps, schema_editor):
     vendor = schema_editor.connection.vendor
 
-    # ✅ Real DB (Postgres): create triggers
     if vendor == "postgresql":
         schema_editor.execute(POSTGRESQL_SQL)
         return
+
+    if vendor == "sqlite":
+        sql_block = SQLITE_SQL
+    else:
+        print(f"Skipping immutable trigger creation (not supported on {vendor})")
+        return
+
+    for stmt in sql_block.split(";"):
+        if stmt.strip():
+            schema_editor.execute(stmt)
 
     # ✅ Tests / SQLite: skip triggers entirely
     print("Skipping curator_feature_datalog immutability triggers (SQLite test environment)")
