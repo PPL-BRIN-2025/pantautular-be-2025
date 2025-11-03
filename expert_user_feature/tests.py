@@ -14,13 +14,18 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APITestCase
 
 from pt_backend.models import Case, Disease, Location, News, User as PtUser
 
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
+from django.contrib.auth import get_user_model
+from unittest.mock import patch
 
+from .models import ExpertDataset
+
+User = get_user_model()
 
 class ExpertCaseAPITests(TestCase):
     def setUp(self):
@@ -168,4 +173,46 @@ class ExpertCaseAPITests(TestCase):
         self.assertTrue(Case.objects.filter(disease__name="Hepatitis B", city="Bandung").exists())
         self.assertEqual(News.objects.count(), 2)
 
- 
+
+class ExpertDatasetAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="expert",
+            password="x",
+        )
+        setattr(self.user, "role", "EXPERT")
+        self.user.save()
+
+        now = timezone.now()
+        ExpertDataset.objects.bulk_create([
+            ExpertDataset(data_id="ID1", file_name="Report_Jakarta.xlsx",        last_edited=now,                submitted_by="EXPERTA"),
+            ExpertDataset(data_id="ID2", file_name="Survey_Bandung.csv",         last_edited=now - timezone.timedelta(days=1), submitted_by="EXPERTB"),
+            ExpertDataset(data_id="ID3", file_name="Public_Health_Analysis.xlsx",last_edited=now - timezone.timedelta(days=2), submitted_by="EXPERTD"),
+        ])
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    @patch("expert_user_feature.audit.curator_log_event")
+    def test_list_and_filter_and_audit(self, audit_mock):
+        r = self.client.get("/api/expert/datasets/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["count"], 3)
+        audit_mock.assert_called()  # list view logged
+
+        r = self.client.get("/api/expert/datasets/", {"q": "bandung"})
+        self.assertEqual(r.status_code, 200)
+        # Only the Bandung CSV should remain
+        self.assertEqual(r.data["count"], 1)
+        self.assertEqual(r.data["results"][0]["data_id"], "ID2")
+
+    @patch("expert_user_feature.audit.curator_log_event")
+    def test_detail_logs_view(self, audit_mock):
+        r = self.client.get("/api/expert/datasets/ID1/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["data_id"], "ID1")
+        audit_mock.assert_called()  # detail view logged
+
+    def test_permission_denied_for_anonymous(self):
+        anon = APIClient()
+        r = anon.get("/api/expert/datasets/")
+        self.assertIn(r.status_code, (401, 403))
