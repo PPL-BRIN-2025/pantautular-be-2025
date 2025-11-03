@@ -139,9 +139,57 @@ class FilterTestCase(TestCase):
         result = self.date_range_filter.apply(data)
         self.assertEqual(str(result), str(Q()))
 
+    def test_parse_time_params_normalizes_to_iso(self):
+        data = {'start_date': '2024-03-01T10:00:00+07:00'}
+        parsed = self.date_range_filter.parse_time_params(data)
+        self.assertIn('start_date', parsed)
+        self.assertTrue(parsed['start_date'].endswith('+00:00'))
+
+    def test_resolve_period_alias_to_delta(self):
+        now = datetime(2024, 1, 8, tzinfo=pytz.UTC)
+        resolution = self.date_range_filter.resolve_period(
+            "24h",
+            period_key=DateRangeFilter.DEFAULT_PERIOD_KEY,
+            now=now,
+            tz=pytz.UTC,
+        )
+        self.assertEqual(resolution.delta, timedelta(hours=24))
+
+    def test_validate_max_span_days(self):
+        validator = DateRangeFilter(max_span_days=1)
+        start = datetime(2024, 1, 1, tzinfo=pytz.UTC)
+        end = datetime(2024, 1, 3, tzinfo=pytz.UTC)
+        with self.assertRaises(TimeWindowError):
+            validator.validate(
+                start=start,
+                end=end,
+                start_key="start_date",
+                end_key="end_date",
+                max_span_days=validator.max_span_days,
+                now=None,
+            )
+
+    def test_normalize_outputs_utc(self):
+        tz = pytz.timezone("Asia/Jakarta")
+        local_start = tz.localize(datetime(2024, 1, 1, 12, 0))
+        start_utc, end_utc = self.date_range_filter.normalize(local_start, None, tz)
+        self.assertEqual(start_utc.tzinfo, pytz.UTC)
+        self.assertIsNone(end_utc)
+
+    def test_build_time_predicate_null_guard(self):
+        start = datetime(2024, 1, 1, tzinfo=pytz.UTC)
+        predicate = self.date_range_filter.build_time_predicate(
+            "created_at",
+            start,
+            None,
+            null_guard_field="obj",
+        )
+        expected = Q(created_at__gte=start) & Q(obj__isnull=False)
+        self.assertEqual(str(predicate), str(expected))
+
     def test_build_time_window_helper_with_null_guard(self):
         data = {'start_date': '2024-01-01T00:00:00Z'}
-        result = DateRangeFilter.build_time_window(
+        result = self.date_range_filter.build_time_window(
             field="news__date_published",
             data=data,
             null_guard_field="news",
@@ -150,7 +198,7 @@ class FilterTestCase(TestCase):
         self.assertEqual(str(result), str(expected_q))
 
     def test_build_time_window_helper_without_dates_returns_none(self):
-        result = DateRangeFilter.build_time_window(field="created_at", data={})
+        result = self.date_range_filter.build_time_window(field="created_at", data={})
         self.assertIsNone(result)
 
     def test_resolve_time_window_with_period_string(self):
@@ -327,9 +375,11 @@ class CaseFilterServiceTest(TestCase):
             'start_date': '2024-01-01T00:00:00Z',
             'end_date': '2024-01-02T23:59:59Z',
         }
-        result = CaseFilterService.time_window(
-            data,
-            field="news__date_published",
+        start_utc, end_utc = self.filter_service.time_filter.resolve_time_range(data)
+        result = self.filter_service.time_filter.build_time_predicate(
+            "news__date_published",
+            start_utc,
+            end_utc,
             null_guard_field="news",
         )
         expected_q = (
@@ -342,7 +392,7 @@ class CaseFilterServiceTest(TestCase):
         self.assertEqual(str(result), str(expected_q))
 
     def test_time_window_helper_returns_none_without_bounds(self):
-        result = CaseFilterService.time_window(data={}, field="news__date_published")
+        result = self.filter_service.time_filter.build_time_predicate("news__date_published", None, None)
         self.assertIsNone(result)
 
     def test_get_time_window_uses_cache(self):
@@ -350,23 +400,30 @@ class CaseFilterServiceTest(TestCase):
         data = {'start_date': '2024-01-01T00:00:00Z'}
         start = datetime(2024, 1, 1, tzinfo=pytz.UTC)
         with patch.object(
-            CaseFilterService,
-            'resolve_time_window',
+            service.time_filter,
+            'resolve_time_range',
             return_value=(start, None)
-        ) as mock_resolve:
+        ) as mock_resolve, patch.object(
+            service.time_filter,
+            'build_time_predicate',
+            return_value="predicate",
+        ) as mock_build:
             first = service._get_time_window_q(data)
             second = service._get_time_window_q(data)
-            self.assertEqual(mock_resolve.call_count, 1)
-            self.assertIs(second, first)
+            self.assertEqual(first, "predicate")
+            self.assertIs(second, "predicate")
+            self.assertEqual(mock_build.call_count, 1)
+            self.assertGreaterEqual(mock_resolve.call_count, 2)
 
     def test_time_window_helper_with_period(self):
         fixed_now = datetime(2024, 1, 8, 12, 0, tzinfo=pytz.UTC)
         data = {'period': '1d'}
-        result = CaseFilterService.time_window(
-            data,
-            field="news__date_published",
+        start_utc, end_utc = self.filter_service.time_filter.resolve_time_range(data, now=fixed_now)
+        result = self.filter_service.time_filter.build_time_predicate(
+            "news__date_published",
+            start_utc,
+            end_utc,
             null_guard_field="news",
-            now=fixed_now,
         )
         expected_q = (
             Q(
@@ -382,14 +439,14 @@ class CaseFilterServiceTest(TestCase):
     def test_resolve_time_window_proxy(self):
         fixed_now = datetime(2024, 1, 8, 12, 0, tzinfo=pytz.UTC)
         data = {'period': '1d'}
-        start, end = CaseFilterService.resolve_time_window(data, now=fixed_now)
+        start, end = self.filter_service.time_filter.resolve_time_range(data, now=fixed_now)
         self.assertEqual(start, fixed_now - timedelta(days=1))
         self.assertEqual(end, fixed_now)
 
     def test_parse_time_params_with_period(self):
         fixed_now = datetime(2024, 1, 8, 12, 0, tzinfo=pytz.UTC)
         data = {'period': '1d'}
-        result = CaseFilterService.parse_time_params(data, now=fixed_now)
+        result = self.filter_service.parse_time_params(data, now=fixed_now)
         self.assertEqual(
             result['start_date'],
             (fixed_now - timedelta(days=1)).isoformat()
@@ -399,21 +456,21 @@ class CaseFilterServiceTest(TestCase):
 
     def test_parse_time_range_as_tuple(self):
         data = {'start_date': '2024-01-01T00:00:00', 'timezone': 'Asia/Jakarta'}
-        start, end = CaseFilterService.parse_time_range(data, return_type="tuple")
+        start, end = self.filter_service.time_filter.resolve_time_range(data)
         expected_start = pytz.timezone('Asia/Jakarta').localize(datetime(2024, 1, 1)).astimezone(pytz.UTC)
         self.assertEqual(start, expected_start)
         self.assertIsNone(end)
 
     def test_parse_time_range_invalid_start_raises(self):
         with self.assertRaises(CaseFilterValidationError) as ctx:
-            CaseFilterService.parse_time_range({'start_date': 'invalid-date'}, return_type="dict")
+            self.filter_service.parse_time_params({'start_date': 'invalid-date'})
         payload = ctx.exception.as_payload()
         self.assertEqual(payload['error']['code'], 'invalid_time_window')
         self.assertIn('start_date', payload['error'].get('fields', {}))
 
     def test_time_window_invalid_period_raises(self):
         with self.assertRaises(CaseFilterValidationError) as ctx:
-            CaseFilterService.time_window({'period': 'bad-period'}, field='news__date_published')
+            self.filter_service.parse_time_params({'period': 'bad-period'})
         payload = ctx.exception.as_payload()
         self.assertEqual(payload['error']['code'], 'invalid_time_window')
         self.assertIn('period', payload['error'].get('fields', {}))
@@ -443,3 +500,33 @@ class CaseFilterServiceTest(TestCase):
         
         self.filter_service.filters = original_filters
 
+    def test_case_filter_service_uses_injected_time_filter(self):
+        class StubTimeFilter:
+            DEFAULT_START_KEY = DateRangeFilter.DEFAULT_START_KEY
+            DEFAULT_END_KEY = DateRangeFilter.DEFAULT_END_KEY
+            DEFAULT_PERIOD_KEY = DateRangeFilter.DEFAULT_PERIOD_KEY
+            DEFAULT_TZ_KEY = DateRangeFilter.DEFAULT_TZ_KEY
+
+            def __init__(self):
+                self.resolve_called = False
+                self.build_called = False
+
+            def apply(self, data):
+                return None
+
+            def parse_time_params(self, *args, **kwargs):
+                return {}
+
+            def resolve_time_range(self, *args, **kwargs):
+                self.resolve_called = True
+                return datetime(2024, 1, 1, tzinfo=pytz.UTC), None
+
+            def build_time_predicate(self, *args, **kwargs):
+                self.build_called = True
+                return Q()
+
+        stub_filter = StubTimeFilter()
+        service = CaseFilterService(time_filter=stub_filter)
+        service.filter_cases({})
+        self.assertTrue(stub_filter.resolve_called)
+        self.assertTrue(stub_filter.build_called)
