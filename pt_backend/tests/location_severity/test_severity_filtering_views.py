@@ -6,6 +6,8 @@ from pt_backend.authentication import APIKeyAuthentication
 from pt_backend.services import SeverityFilteringService
 from pt_backend.models import Location
 from rest_framework import status
+from datetime import datetime
+import pytz
 
 
 class SeverityFilteringStatsPostViewTests(TestCase):
@@ -160,7 +162,10 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=("2023-01-01", "2023-12-31")
+            date_range=(
+                datetime(2023, 1, 1, tzinfo=pytz.UTC),
+                datetime(2023, 12, 31, tzinfo=pytz.UTC),
+            )
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -197,7 +202,10 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=["Jakarta"],
             news_portals=["Kompas"],
             alert_levels=3,
-            date_range=("2023-01-01", "2023-12-31")
+            date_range=(
+                datetime(2023, 1, 1, tzinfo=pytz.UTC),
+                datetime(2023, 12, 31, tzinfo=pytz.UTC),
+            )
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
