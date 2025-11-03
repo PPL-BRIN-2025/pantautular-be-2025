@@ -1,19 +1,25 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
-from pt_backend.models import CaseUploadBatch
 
 from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import CaseInsensitiveChoiceField
-from pt_backend.models import Case, Disease, Location, News
+
+from pt_backend.models import Case, Disease, Location, News, CaseUploadBatch
 from .models import ExpertDataset
 
-class BatchSerializer(serializers.ModelSerializer):
-    total_cases = serializers.IntegerField(source="cases.count", read_only=True)
 
-    class Meta:
-        model = CaseUploadBatch
-        fields = ["id", "filename", "uploaded_at", "total_cases"]
+# ---------------- Case serializers ----------------
+class CaseWriteSerializer(serializers.Serializer):
+    disease = serializers.CharField()
+    gender = serializers.CharField()
+    age = serializers.IntegerField()
+    city = serializers.CharField()
+    status = serializers.CharField()
+    severity = serializers.CharField()
+    location = serializers.DictField()
+    news = serializers.DictField()
+
     def create(self, validated_data):
         location_data = validated_data.pop("location")
         news_data = validated_data.pop("news")
@@ -51,6 +57,7 @@ class CaseReadSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# ---------------- Dashboard download ----------------
 class ExpertDashboardDownloadSerializer(serializers.Serializer):
     """Serializer mirroring curator dashboard downloads but allowing CSV format."""
 
@@ -72,8 +79,19 @@ class ExpertDashboardDownloadSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Source may not be blank.")
         return value
-    
+
+
+# ---------------- Datasets ----------------
 class ExpertDatasetSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = ExpertDataset
+        model = ExpertDataset
         fields = ["data_id", "file_name", "last_edited", "submitted_by"]
+
+
+# ---------------- Batches ----------------
+class BatchSerializer(serializers.ModelSerializer):
+    total_cases = serializers.IntegerField(source="cases.count", read_only=True)
+
+    class Meta:
+        model = CaseUploadBatch
+        fields = ["id", "filename", "uploaded_at", "total_cases"]
