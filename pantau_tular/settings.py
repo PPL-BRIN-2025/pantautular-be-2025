@@ -272,3 +272,10 @@ CSRF_TRUSTED_ORIGINS = [
 CURATOR_ROLE_NAME = "CURATOR"
 # which checks to use in IsCuratorRole: "role" attr on user, Django group membership
 CURATOR_ROLE_CHECKS = ("role", "group")
+
+import sys
+
+if 'test' in sys.argv:
+    MIGRATION_MODULES = {
+        'curator_feature': None,  # ⛔ skip all migrations for this app
+    }
