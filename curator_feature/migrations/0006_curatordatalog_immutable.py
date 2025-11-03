@@ -38,13 +38,19 @@ END;
 """
 
 def forwards(apps, schema_editor):
-    engine = schema_editor.connection.vendor
-    if engine != "postgresql":
-        # Skip trigger creation for SQLite (e.g., during tests)
-        print(f"Skipping immutable trigger creation (not supported on {engine})")
+    vendor = schema_editor.connection.vendor
+
+    if vendor == "postgresql":
+        schema_editor.execute(POSTGRESQL_SQL)
         return
 
-    for stmt in SQLITE_SQL.split(";"):
+    if vendor == "sqlite":
+        sql_block = SQLITE_SQL
+    else:
+        print(f"Skipping immutable trigger creation (not supported on {vendor})")
+        return
+
+    for stmt in sql_block.split(";"):
         if stmt.strip():
             schema_editor.execute(stmt)
 

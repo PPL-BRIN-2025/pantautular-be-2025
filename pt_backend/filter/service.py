@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, Union
@@ -22,6 +23,10 @@ class CaseFilterService:
             PortalFilter(),
             self.date_range_filter,
         ]
+        self._time_window_cache: "OrderedDict[Tuple[Any, ...], Optional[Q]]" = OrderedDict()
+        self._time_window_cache_size = 32
+        self._time_field = "news__date_published"
+        self._time_null_guard = "news"
 
     def filter_cases(self, data: Dict) -> QuerySet:
         # Build base query with optimizations
@@ -31,16 +36,29 @@ class CaseFilterService:
             .prefetch_related('news_set')  # Optimize reverse relation lookups
         )
 
-        # Build filter query
+        # Prime time-window filter to leverage indexes early
+        time_window_q = self._get_time_window_q(data)
+
+        # Build filter query for remaining strategies
         query = Q()
+        has_query_filters = False
         for filter_strategy in self.filters:
+            if isinstance(filter_strategy, DateRangeFilter):
+                # Already handled via cached resolver
+                continue
             if q_object := filter_strategy.apply(data):
                 query &= q_object
+                has_query_filters = True
 
         # Apply filters and return optimized query
+        if time_window_q is not None:
+            base_query = base_query.filter(time_window_q)
+
+        if has_query_filters:
+            base_query = base_query.filter(query)
+
         return (
             base_query
-            .filter(query)
             .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity')
             .distinct()
         )
@@ -217,4 +235,74 @@ class CaseFilterService:
                 if item not in (None, ""):
                     return item
             return None
+        return value
+
+    def _get_time_window_q(self, data: Dict) -> Optional[Q]:
+        cache_key = self._make_time_cache_key(data)
+        if cache_key is None:
+            return None
+
+        if cache_key in self._time_window_cache:
+            return self._time_window_cache[cache_key]
+
+        start_dt, end_dt = self.resolve_time_window(data)
+
+        time_window_q = self._build_time_q(start_dt, end_dt)
+        self._store_time_window(cache_key, time_window_q)
+        return time_window_q
+
+    def _make_time_cache_key(self, data: Dict) -> Optional[Tuple[Any, ...]]:
+        start_raw = self._extract_param_value(data, DateRangeFilter.DEFAULT_START_KEY)
+        end_raw = self._extract_param_value(data, DateRangeFilter.DEFAULT_END_KEY)
+        period_raw = self._extract_param_value(data, DateRangeFilter.DEFAULT_PERIOD_KEY)
+        tz_raw = self._extract_param_value(data, DateRangeFilter.DEFAULT_TZ_KEY)
+
+        if all(
+            component in (None, "")
+            for component in (start_raw, end_raw, period_raw, tz_raw)
+        ):
+            return None
+
+        return (
+            start_raw,
+            end_raw,
+            self._normalize_cache_key_component(period_raw),
+            tz_raw,
+        )
+
+    def _build_time_q(
+        self,
+        start_dt: Optional[datetime],
+        end_dt: Optional[datetime],
+    ) -> Optional[Q]:
+        if not start_dt and not end_dt:
+            return None
+
+        if start_dt and end_dt:
+            time_q = Q(**{f"{self._time_field}__range": [start_dt, end_dt]})
+        elif start_dt:
+            time_q = Q(**{f"{self._time_field}__gte": start_dt})
+        elif end_dt:
+            time_q = Q(**{f"{self._time_field}__lte": end_dt})
+        else:
+            return None
+
+        if self._time_null_guard:
+            time_q &= Q(**{f"{self._time_null_guard}__isnull": False})
+        return time_q
+
+    def _store_time_window(self, key: Tuple[Any, ...], value: Optional[Q]) -> None:
+        self._time_window_cache[key] = value
+        self._time_window_cache.move_to_end(key)
+        if len(self._time_window_cache) > self._time_window_cache_size:
+            self._time_window_cache.popitem(last=False)
+
+    def _normalize_cache_key_component(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(
+                (k, self._normalize_cache_key_component(v))
+                for k, v in sorted(value.items())
+            )
+        if isinstance(value, (list, tuple, set)):
+            return tuple(self._normalize_cache_key_component(v) for v in value)
         return value
