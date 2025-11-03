@@ -7,10 +7,11 @@ from typing import Iterable, Optional, Tuple
 from django.conf import settings
 from django.http import Http404, HttpResponse
 from django.utils import timezone
-from rest_framework import generics, status
+from rest_framework import generics, status, pagination
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
+from rest_framework.request import Request
 from rest_framework.views import APIView
 
 from curator_feature.models import DashboardDownloadEvent
@@ -23,11 +24,14 @@ from .views_base import ExpertBaseView
 from .serializers import (
     CaseReadSerializer,
     CaseWriteSerializer,
+    ExpertDatasetSerializer,
     ExpertDashboardDownloadSerializer,
 )
-
+from django.db.models import Q
+from .models import ExpertDataset
+from .audittrail import log_expert_event
 logger = logging.getLogger(__name__)
-
+from .permissions import ReadOnlyOrExpert
 
 class ExpertCaseCreateView(ExpertBaseView, generics.CreateAPIView):
     queryset = Case.objects.all()
@@ -435,3 +439,103 @@ class ExpertDashboardCSVDownloadAPIView(ExpertBaseView, ExpertDownloadMixin, API
         response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
         response["X-Download-Logged"] = "true" if logged else "false"
         return response
+
+
+class SmallPageNumberPagination(pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "pageSize"
+    max_page_size = 100
+
+
+class ExpertDatasetListView(generics.ListAPIView):
+    """
+    GET /expert-feature/api/expert/datasets/
+      Query params:
+        - search=<text>   (matches data_id | file_name | submitted_by | last_edited(as string))
+        - sort=<field>:<asc|desc>   e.g. sort=last_edited:desc  (default -last_edited)
+        - page, pageSize  (handled by paginator)
+    """
+    serializer_class = ExpertDatasetSerializer
+    permission_classes = [ReadOnlyOrExpert]          # ⬅️ public read, restricted write
+    pagination_class = SmallPageNumberPagination
+
+    def get_queryset(self):
+        qs = ExpertDataset.objects.all()
+
+        # --- text search (case-insensitive) ---
+        q = (self.request.query_params.get("search") or "").strip().lower()
+        if q:
+            qs = qs.filter(
+                Q(data_id__icontains=q) |
+                Q(file_name__icontains=q) |
+                Q(submitted_by__icontains=q) |
+                Q(last_edited__icontains=q)  # ok if last_edited is CharField; if DateTime, DB will cast
+            )
+
+        # --- sort mapping (field:dir) ---
+        raw_sort = (self.request.query_params.get("sort") or "").strip()
+        ordering = "-last_edited"  # default
+        if raw_sort:
+            # accept "field:asc" | "field:desc"
+            try:
+                field, direction = raw_sort.split(":")
+                field = field.strip()
+                direction = direction.strip().lower()
+                if direction == "desc":
+                    ordering = f"-{field}"
+                else:
+                    ordering = field
+            except Exception:
+                # ignore bad sort values
+                pass
+
+        return qs.order_by(ordering)
+
+    def list(self, request: Request, *args, **kwargs):
+        # non-blocking audit
+        try:
+            log_expert_event(
+                request.user,
+                "expert_list_view",
+                {
+                    "search": request.query_params.get("search", ""),
+                    "sort": request.query_params.get("sort", ""),
+                    "page": request.query_params.get("page", ""),
+                    "pageSize": request.query_params.get("pageSize", ""),
+                },
+            )
+        except Exception:
+            pass
+
+        return super().list(request, *args, **kwargs)
+
+
+class ExpertDatasetDetailView(generics.RetrieveAPIView):
+    """
+    GET /expert-feature/api/expert/datasets/<data_id>/
+      - read is public (SAFE_METHODS)
+    """
+    lookup_field = "data_id"
+    queryset = ExpertDataset.objects.all()
+    serializer_class = ExpertDatasetSerializer
+    permission_classes = [ReadOnlyOrExpert]          # ⬅️ public read, restricted write
+
+    def retrieve(self, request: Request, *args, **kwargs):
+        resp = super().retrieve(request, *args, **kwargs)
+
+        # audit the click/view (non-blocking)
+        try:
+            instance = self.get_object()
+            log_expert_event(
+                request.user,
+                "expert_dataset_view",
+                {
+                    "data_id": instance.data_id,
+                    "file_name": instance.file_name,
+                    "submitted_by": instance.submitted_by,
+                },
+            )
+        except Exception:
+            pass
+
+        return resp

@@ -7,6 +7,8 @@ from .views import (
     ExpertCaseDetailView,
     ExpertDashboardCSVDownloadAPIView,
     ExpertDashboardDownloadLogAPIView,
+    ExpertDatasetListView, 
+    ExpertDatasetDetailView,
 )
 
 def feature_placeholder(request):
@@ -19,4 +21,6 @@ urlpatterns = [
     path("experts/cases/<uuid:pk>/", ExpertCaseDetailView.as_view(), name="expert-case-detail"),
     path("downloads/log/", ExpertDashboardDownloadLogAPIView.as_view(), name="expert-dashboard-download-log"),
     path("downloads/csv/", ExpertDashboardCSVDownloadAPIView.as_view(), name="expert-dashboard-download-csv"),
+    path("api/expert/datasets/",           ExpertDatasetListView.as_view(),   name="expert-dataset-list"),
+    path("api/expert/datasets/<str:data_id>/", ExpertDatasetDetailView.as_view(), name="expert-dataset-detail"),
 ]
