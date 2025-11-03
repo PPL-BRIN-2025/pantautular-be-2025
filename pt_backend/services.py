@@ -5,7 +5,7 @@ from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheIn
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
-from .constants import PROVINCE_TO_CODE, CLIMATE_ERROR_INVALID_FORMAT, CLIMATE_ERROR_MISSING_PROVINCE, CLIMATE_ERROR_INVALID_VALUE
+from .constants import PROVINCE_TO_CODE, PROVINCE_ALIASES, CLIMATE_ERROR_INVALID_FORMAT, CLIMATE_ERROR_MISSING_PROVINCE, CLIMATE_ERROR_INVALID_VALUE
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -405,18 +405,49 @@ class ClimateService:
         
         return None
 
+    def _normalize_province_name(self, province):
+        if province is None:
+            return None
+
+        cleaned = str(province).replace("\xa0", " ").strip()
+        if not cleaned:
+            return None
+
+        lowered = cleaned.lower()
+        province_prefixes = (
+            "provinsi ",
+            "prov. ",
+            "province of ",
+            "province ",
+        )
+        for prefix in province_prefixes:
+            if lowered.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+                lowered = cleaned.lower()
+                break
+
+        normalized = PROVINCE_ALIASES.get(lowered)
+        if normalized:
+            return normalized
+
+        if cleaned in PROVINCE_TO_CODE:
+            return cleaned
+
+        return None
+
     def _validate_province(self, province, seen_provinces):
         if not province:
-            return CLIMATE_ERROR_MISSING_PROVINCE
-        
-        if province not in PROVINCE_TO_CODE:
-            return f"Invalid province name: {province}"
-        
-        if province in seen_provinces:
-            return f"Duplicate province found: {province}"
-        
-        seen_provinces.add(province)
-        return None
+            return None, CLIMATE_ERROR_MISSING_PROVINCE
+
+        normalized_province = self._normalize_province_name(province)
+        if not normalized_province:
+            return None, f"Invalid province name: {province}"
+
+        if normalized_province in seen_provinces:
+            return None, f"Duplicate province found: {normalized_province}"
+
+        seen_provinces.add(normalized_province)
+        return normalized_province, None
 
     def _validate_value(self, value):
         if not isinstance(value, (int, float)):
@@ -434,9 +465,11 @@ class ClimateService:
             if item_error:
                 return item_error
             
-            province_error = self._validate_province(item["province"], seen_provinces)
+            normalized_province, province_error = self._validate_province(item["province"], seen_provinces)
             if province_error:
                 return province_error
+
+            item["province"] = normalized_province
             
             value_error = self._validate_value(item["value"])
             if value_error:

@@ -24,7 +24,7 @@ from .prome_metrics import (
     DB_QUERY_TIME, API_REQUEST_SIZE, API_RESPONSE_SIZE,
     CACHE_HIT_RATE, API_SUCCESS, DB_ERRORS, REQUEST_COUNT, REQUEST_LATENCY, track_active_requests, track_data_count
 )
-from .constants import CLIMATE_ERROR_INVALID_FORMAT
+from .constants import CLIMATE_ERROR_INVALID_FORMAT, PROVINCE_TO_CODE
 from datetime import datetime
 from django.db import connections
 from django.db.utils import OperationalError
@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 CACHE_TIMEOUT = 600
 CACHE_KEY_PREFIX = "stats_report_"
+
+
+def build_default_climate_response(serializer_class, default_value=0.0):
+    """
+    Construct a default climate payload covering every province so the frontend
+    can render a stable map even when no measurements are available.
+    """
+    default_payload = [
+        {"province": province, "value": default_value}
+        for province in PROVINCE_TO_CODE.keys()
+    ]
+    serializer = serializer_class(data=default_payload, many=True)
+    if not serializer.is_valid():
+        return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -522,13 +537,16 @@ class ProvinceHumidityView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvinceHumiditySerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No humidity data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvinceHumiditySerializer)
+
             serializer = ProvinceHumiditySerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
@@ -552,13 +570,16 @@ class ProvincePrecipitationView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvincePrecipitationSerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No precipitation data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvincePrecipitationSerializer)
+
             serializer = ProvincePrecipitationSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
@@ -582,13 +603,16 @@ class ProvinceTemperatureView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvinceTemperatureSerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No temperature data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvinceTemperatureSerializer)
+
             serializer = ProvinceTemperatureSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
