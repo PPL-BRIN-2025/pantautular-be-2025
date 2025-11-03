@@ -358,7 +358,7 @@ class CaseFilterServiceTest(TestCase):
             'locations': None,  
             'level_of_alertness': 'invalid',
             'portals': [],
-            'start_date': 'invalid-date'
+            'start_date': 'invalid-date' 
         }
 
         with self.assertRaises(CaseFilterValidationError):
