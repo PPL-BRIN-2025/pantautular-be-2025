@@ -7,8 +7,8 @@ from pt_backend.filter.disease_filter import DiseaseFilter
 from pt_backend.filter.location_filter import LocationFilter
 from pt_backend.filter.alertness_filter import AlertnessFilter
 from pt_backend.filter.portal_filter import PortalFilter
-from pt_backend.filter.date_range_filter import DateRangeFilter
-from pt_backend.filter.service import CaseFilterService
+from pt_backend.filter.date_range_filter import DateRangeFilter, TimeWindowError
+from pt_backend.filter.service import CaseFilterService, CaseFilterValidationError
 from pt_backend.models import Case, Disease, Location, News
 from datetime import datetime, timedelta
 import pytz
@@ -131,8 +131,8 @@ class FilterTestCase(TestCase):
 
     def test_date_range_filter_with_invalid_format(self):
         data = {'start_date': 'invalid-date', 'end_date': 'invalid-date'}
-        result = self.date_range_filter.apply(data)
-        self.assertEqual(str(result), str(Q()))
+        with self.assertRaises(TimeWindowError):
+            self.date_range_filter.apply(data)
 
     def test_date_range_filter_with_empty_data(self):
         data = {}
@@ -313,16 +313,14 @@ class CaseFilterServiceTest(TestCase):
             'start_date': 'invalid-date'
         }
 
-        result = self.filter_service.filter_cases(data)
+        with self.assertRaises(CaseFilterValidationError):
+            self.filter_service.filter_cases(data)
 
         self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
         self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
-        self.mock_queryset.filter.assert_called_once()
-        self.mock_queryset.values.assert_called_once_with(
-            'id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity'
-        )
-        self.mock_queryset.distinct.assert_called_once()
-        self.assertEqual(result, ['mocked_result'])
+        self.mock_queryset.filter.assert_not_called()
+        self.mock_queryset.values.assert_not_called()
+        self.mock_queryset.distinct.assert_not_called()
 
     def test_time_window_helper_exposure_matches_date_range_filter(self):
         data = {
@@ -405,6 +403,20 @@ class CaseFilterServiceTest(TestCase):
         expected_start = pytz.timezone('Asia/Jakarta').localize(datetime(2024, 1, 1)).astimezone(pytz.UTC)
         self.assertEqual(start, expected_start)
         self.assertIsNone(end)
+
+    def test_parse_time_range_invalid_start_raises(self):
+        with self.assertRaises(CaseFilterValidationError) as ctx:
+            CaseFilterService.parse_time_range({'start_date': 'invalid-date'}, return_type="dict")
+        payload = ctx.exception.as_payload()
+        self.assertEqual(payload['error']['code'], 'invalid_time_window')
+        self.assertIn('start_date', payload['error'].get('fields', {}))
+
+    def test_time_window_invalid_period_raises(self):
+        with self.assertRaises(CaseFilterValidationError) as ctx:
+            CaseFilterService.time_window({'period': 'bad-period'}, field='news__date_published')
+        payload = ctx.exception.as_payload()
+        self.assertEqual(payload['error']['code'], 'invalid_time_window')
+        self.assertIn('period', payload['error'].get('fields', {}))
 
     def test_filter_cases_with_none_returning_filter(self):
         mock_filter = Mock()

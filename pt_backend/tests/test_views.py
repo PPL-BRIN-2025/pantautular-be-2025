@@ -9,6 +9,7 @@ try:
     from pt_backend.models import DownloadEvent
 except ImportError:  # pragma: no cover
     DownloadEvent = None
+from pt_backend.filter.service import CaseFilterValidationError
 from pt_backend.services import CacheService
 from unittest.mock import patch, MagicMock
 from django.utils import timezone
@@ -80,6 +81,22 @@ class CaseAPITest(TestCase):
             
             self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
             self.assertIn('error', response.data)
+
+    @patch('pt_backend.views.CaseFilterService.filter_cases')
+    def test_post_invalid_time_window_returns_bad_request(self, mock_filter_cases):
+        mock_filter_cases.side_effect = CaseFilterValidationError(
+            "Invalid start date format.",
+            fields={'start_date': ["Invalid datetime format."]},
+        )
+        url = reverse('all-case-locations')
+        response = self.client.post(
+            url,
+            data={"start_date": "not-a-date"},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'invalid_time_window')
+        self.assertIn('start_date', response.data['error'].get('fields', {}))
 
     def test_get_all_case_locations_missing_api_key(self):
         self.client.credentials()
@@ -315,6 +332,16 @@ class StatisticsViewTest(TestCase):
         # Verify the response contains the expected data
         self.assertIn("prevalence_statistics", response.data)
         self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
+    
+    def test_statistics_post_with_invalid_time_window_returns_bad_request(self):
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"start_date": "invalid-date"}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'invalid_time_window')
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_not_called()
     
     def test_statistics_with_disease_filter(self):
         """Test filtering statistics by disease"""
@@ -796,6 +823,17 @@ class SeverityFilteringStatsViewTest(TestCase):
                 datetime(2023, 12, 31, tzinfo=pytz.UTC),
             )
         )
+
+    def test_post_invalid_time_window_returns_bad_request(self):
+        self.mock_cache_instance.get.return_value = None
+        response = self.client.post(
+            self.url,
+            data={"start_date": "invalid-date"},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['error']['code'], 'invalid_time_window')
+        self.mock_service_instance.get_filter_stats.assert_not_called()
     
     def test_post_with_portals_and_alertness(self):
         """Test POST with news portals and alertness level"""
