@@ -13,6 +13,7 @@ class ReadOnlyOrExpert(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        is_token_auth = IsTokenAuthenticated().has_permission(request, view)
-        is_expert = IsExpertUserRole().has_permission(request, view)
-        return bool(is_token_auth and is_expert)
+        return (
+            IsTokenAuthenticated().has_permission(request, view)
+            and IsExpertUserRole().has_permission(request, view)
+        )

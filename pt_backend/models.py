@@ -179,12 +179,44 @@ class Case(models.Model):
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="expert_uploaded_cases"
+    )
+
+    batch = models.ForeignKey(
+        "CaseUploadBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cases"
+    )
+
     @staticmethod
     def get_all_locations():
         return Case.objects.values("id", "location__longitude", "location__latitude", "city", "location__province")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
+
+class CaseUploadBatch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="case_batches"
+    )
+    filename = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-uploaded_at",)
+
+    def __str__(self):
+        return f"{self.filename} ({self.uploaded_by.email})"
 
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
