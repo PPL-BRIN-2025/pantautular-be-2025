@@ -7,6 +7,12 @@ from django.utils.dateparse import parse_datetime as django_parse_datetime
 from pytz import UnknownTimeZoneError
 
 
+class TimeWindowError(ValueError):
+    def __init__(self, message: str, *, fields: Optional[Dict[str, list]] = None):
+        super().__init__(message)
+        self.fields = fields or {}
+
+
 class DateRangeFilter:
     DEFAULT_START_KEY = "start_date"
     DEFAULT_END_KEY = "end_date"
@@ -105,6 +111,22 @@ class DateRangeFilter:
         end_date = cls.parse_datetime(end_raw, tz)
         period_delta = cls.parse_period(period_raw) if period_raw else None
 
+        if start_raw and start_date is None:
+            raise TimeWindowError(
+                "Invalid start date format.",
+                fields={start_key: ["Invalid datetime format."]},
+            )
+        if end_raw and end_date is None:
+            raise TimeWindowError(
+                "Invalid end date format.",
+                fields={end_key: ["Invalid datetime format."]},
+            )
+        if period_raw and period_delta is None:
+            raise TimeWindowError(
+                "Invalid period value.",
+                fields={period_key: ["Unsupported period format."]},
+            )
+
         if period_delta:
             start_date, end_date = cls.apply_period(
                 start_date=start_date,
@@ -118,7 +140,13 @@ class DateRangeFilter:
         end_utc = cls.normalize_to_utc(end_date) if end_date else None
 
         if start_utc and end_utc and start_utc > end_utc:
-            return None, None
+            raise TimeWindowError(
+                "Start date must be before end date.",
+                fields={
+                    start_key: ["Must be earlier than end date."],
+                    end_key: ["Must be later than start date."],
+                },
+            )
 
         return start_utc, end_utc
 

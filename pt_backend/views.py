@@ -9,7 +9,7 @@ from authentication.security import CustomJWTAuthentication
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
 from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
-from .filter.service import CaseFilterService
+from .filter.service import CaseFilterService, CaseFilterValidationError
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
 from django.http import Http404, JsonResponse
@@ -80,6 +80,8 @@ class AllCaseLocationsView(APIView):
                 serialized_data,
                 status=status.HTTP_200_OK
             )
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"Error in case filter: {str(e)}")
             API_ERRORS.labels(error_type='case_filter_error').inc()
@@ -313,6 +315,8 @@ class StatisticsView(APIView):
             
             return Response(statistics, status=status.HTTP_200_OK)
             
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(e)
             return Response(
@@ -404,6 +408,8 @@ class SeverityFilteringStatsView(APIView):
             
             return Response(results, status=status.HTTP_200_OK)
         
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response(
                 {"error": f"Error processing filter request: {str(e)}"},

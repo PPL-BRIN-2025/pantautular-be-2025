@@ -10,7 +10,31 @@ from .disease_filter import DiseaseFilter
 from .location_filter import LocationFilter
 from .alertness_filter import AlertnessFilter
 from .portal_filter import PortalFilter
-from .date_range_filter import DateRangeFilter
+from .date_range_filter import DateRangeFilter, TimeWindowError
+
+
+class CaseFilterValidationError(ValueError):
+    DEFAULT_CODE = "invalid_time_window"
+
+    def __init__(self, message: str, *, code: str = DEFAULT_CODE, fields: Optional[Dict[str, list]] = None):
+        super().__init__(message)
+        self.code = code
+        self.fields = fields or {}
+
+    def as_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "error": {
+                "code": self.code,
+                "message": str(self),
+            }
+        }
+        if self.fields:
+            payload["error"]["fields"] = self.fields
+        return payload
+
+    @classmethod
+    def from_time_error(cls, error: TimeWindowError) -> "CaseFilterValidationError":
+        return cls(str(error), fields=getattr(error, "fields", {}))
 
 
 class CaseFilterService:
@@ -76,17 +100,20 @@ class CaseFilterService:
         tz_key: str = DateRangeFilter.DEFAULT_TZ_KEY,
         now: Optional[datetime] = None,
     ) -> Optional[Q]:
-        return DateRangeFilter.build_time_window(
-            field=field,
-            data=data,
-            start_key=start_key,
-            end_key=end_key,
-            timezone=timezone,
-            null_guard_field=null_guard_field,
-            period_key=period_key,
-            tz_key=tz_key,
-            now=now,
-        )
+        try:
+            return DateRangeFilter.build_time_window(
+                field=field,
+                data=data,
+                start_key=start_key,
+                end_key=end_key,
+                timezone=timezone,
+                null_guard_field=null_guard_field,
+                period_key=period_key,
+                tz_key=tz_key,
+                now=now,
+            )
+        except TimeWindowError as error:
+            raise CaseFilterValidationError.from_time_error(error) from error
 
     @staticmethod
     def resolve_time_window(
@@ -99,15 +126,18 @@ class CaseFilterService:
         timezone=None,
         now: Optional[datetime] = None,
     ) -> Tuple[Optional[datetime], Optional[datetime]]:
-        return DateRangeFilter.resolve_time_window(
-            data,
-            start_key=start_key,
-            end_key=end_key,
-            period_key=period_key,
-            tz_key=tz_key,
-            timezone=timezone,
-            now=now,
-        )
+        try:
+            return DateRangeFilter.resolve_time_window(
+                data,
+                start_key=start_key,
+                end_key=end_key,
+                period_key=period_key,
+                tz_key=tz_key,
+                timezone=timezone,
+                now=now,
+            )
+        except TimeWindowError as error:
+            raise CaseFilterValidationError.from_time_error(error) from error
 
     @classmethod
     def parse_time_params(
