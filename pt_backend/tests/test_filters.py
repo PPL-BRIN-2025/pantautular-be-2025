@@ -267,7 +267,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
         self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
-        self.mock_queryset.filter.assert_called_once()
+        self.assertEqual(self.mock_queryset.filter.call_count, 2)
         self.mock_queryset.values.assert_called_once_with(
             'id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity'
         )
@@ -280,7 +280,7 @@ class CaseFilterServiceTest(TestCase):
 
         self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
         self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
-        self.mock_queryset.filter.assert_called_once()
+        self.mock_queryset.filter.assert_not_called()
         self.mock_queryset.values.assert_called_once_with(
             'id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity'
         )
@@ -347,6 +347,20 @@ class CaseFilterServiceTest(TestCase):
         result = CaseFilterService.time_window(data={}, field="news__date_published")
         self.assertIsNone(result)
 
+    def test_get_time_window_uses_cache(self):
+        service = CaseFilterService()
+        data = {'start_date': '2024-01-01T00:00:00Z'}
+        start = datetime(2024, 1, 1, tzinfo=pytz.UTC)
+        with patch.object(
+            CaseFilterService,
+            'resolve_time_window',
+            return_value=(start, None)
+        ) as mock_resolve:
+            first = service._get_time_window_q(data)
+            second = service._get_time_window_q(data)
+            self.assertEqual(mock_resolve.call_count, 1)
+            self.assertIs(second, first)
+
     def test_time_window_helper_with_period(self):
         fixed_now = datetime(2024, 1, 8, 12, 0, tzinfo=pytz.UTC)
         data = {'period': '1d'}
@@ -405,10 +419,10 @@ class CaseFilterServiceTest(TestCase):
         result = self.filter_service.filter_cases(data)
         
         mock_filter.apply.assert_called_once_with(data)
-        
+
         self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
         self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
-        self.mock_queryset.filter.assert_called_once()
+        self.mock_queryset.filter.assert_not_called()
         self.mock_queryset.values.assert_called_once_with(
             'id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity'
         )

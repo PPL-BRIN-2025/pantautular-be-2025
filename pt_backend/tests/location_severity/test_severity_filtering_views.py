@@ -8,12 +8,14 @@ from pt_backend.models import Location
 from rest_framework import status
 from datetime import datetime
 import pytz
+from django.core.cache import cache
 
 
 class SeverityFilteringStatsPostViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.url = reverse('severity-filtering-stats')
+        cache.clear()
         
         # Sample response data from the service
         self.mock_results = {
@@ -419,6 +421,7 @@ class SeverityFilteringStatsPostViewTests(TestCase):
         
         # Reset mock for next test
         mock_service_instance.get_filter_stats.reset_mock()
+        cache.clear()
         
         # Test with empty lists/strings
         response = self.client.post(

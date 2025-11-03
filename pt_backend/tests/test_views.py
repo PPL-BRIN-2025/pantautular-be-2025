@@ -4,7 +4,11 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 from pantau_tular.settings import CACHES
-from pt_backend.models import Case, Location, Disease, News, User, DownloadEvent
+from pt_backend.models import Case, Location, Disease, News, User
+try:
+    from pt_backend.models import DownloadEvent
+except ImportError:  # pragma: no cover
+    DownloadEvent = None
 from pt_backend.services import CacheService
 from unittest.mock import patch, MagicMock
 from django.utils import timezone
@@ -518,7 +522,8 @@ class WeightedSeverityAnalysisViewTest(TestCase):
         
     def tearDown(self):
         self.auth_patcher.stop()
-        DownloadEvent.objects.all().delete()
+        if DownloadEvent is not None:
+            DownloadEvent.objects.all().delete()
         self.case_service_patcher.stop()
         self.severity_analyzer_patcher.stop()
 
