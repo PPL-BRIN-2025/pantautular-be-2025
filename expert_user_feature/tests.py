@@ -15,6 +15,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
+from django.urls import reverse
 
 from pt_backend.models import Case, Disease, Location, News, User as PtUser
 
@@ -191,28 +192,92 @@ class ExpertDatasetAPITests(APITestCase):
         ])
         self.client = APIClient()
         self.client.force_authenticate(self.user)
+        self.list_url = reverse("expert-dataset-list")
+        self.detail_url = reverse("expert-dataset-detail", args=["ID1"])
 
-    @patch("expert_user_feature.audit.curator_log_event")
+    @patch("expert_user_feature.audittrail.curator_log_event")
     def test_list_and_filter_and_audit(self, audit_mock):
-        r = self.client.get("/api/expert/datasets/")
+        r = self.client.get(self.list_url)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["count"], 3)
         audit_mock.assert_called()  # list view logged
 
-        r = self.client.get("/api/expert/datasets/", {"q": "bandung"})
+        r = self.client.get(self.list_url, {"search": "bandung"})
         self.assertEqual(r.status_code, 200)
         # Only the Bandung CSV should remain
         self.assertEqual(r.data["count"], 1)
         self.assertEqual(r.data["results"][0]["data_id"], "ID2")
 
-    @patch("expert_user_feature.audit.curator_log_event")
+    @patch("expert_user_feature.audittrail.curator_log_event")
     def test_detail_logs_view(self, audit_mock):
-        r = self.client.get("/api/expert/datasets/ID1/")
+        r = self.client.get(self.detail_url)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["data_id"], "ID1")
         audit_mock.assert_called()  # detail view logged
 
     def test_permission_denied_for_anonymous(self):
         anon = APIClient()
-        r = anon.get("/api/expert/datasets/")
-        self.assertIn(r.status_code, (401, 403))
+        r = anon.get(self.list_url)
+        self.assertEqual(r.status_code, 200)
+
+    def test_sort_and_search_variations(self):
+        r = self.client.get(self.list_url, {"search": " ", "sort": "invalid"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["count"], 3)  # no filter applied
+
+        r = self.client.get(self.list_url, {"sort": "last_edited:asc"})
+        self.assertEqual(r.status_code, 200)
+        # first result should be oldest when ascending
+        self.assertEqual(r.data["results"][0]["data_id"], "ID3")
+
+        r = self.client.get(self.list_url, {"sort": "data_id:desc"})
+        self.assertEqual(r.status_code, 200)
+        self.assertGreater(r.data["results"][0]["data_id"], r.data["results"][-1]["data_id"])
+
+    @patch("expert_user_feature.views.log_expert_event", side_effect=RuntimeError("boom"))
+    def test_detail_view_handles_audit_failure(self, _log):
+        r = self.client.get(self.detail_url)
+        self.assertEqual(r.status_code, 200)
+
+    @patch("expert_user_feature.views.log_expert_event", side_effect=RuntimeError("boom"))
+    def test_list_view_handles_audit_failure(self, _log):
+        r = self.client.get(self.list_url, {"search": "ID"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_dataset_str_representation(self):
+        dataset = ExpertDataset.objects.create(
+            data_id="ID4",
+            file_name="Summary.pdf",
+            last_edited=timezone.now(),
+            submitted_by="EXPERTE",
+        )
+        self.assertIn("Summary.pdf", str(dataset))
+
+
+class AuditTrailTests(TestCase):
+    def setUp(self):
+        from expert_user_feature import audittrail
+        self.audit_module = audittrail
+        self.original_curator = self.audit_module.curator_log_event
+
+    def test_log_expert_event_calls_curator_when_available(self):
+        events = []
+
+        def fake_curator(**kwargs):
+            events.append(kwargs)
+
+        self.audit_module.curator_log_event = fake_curator
+        self.audit_module.log_expert_event(user="expert", action="view", meta={"k": "v"})
+        self.assertEqual(events[0]["action"], "view")
+        self.assertEqual(events[0]["meta"], {"k": "v"})
+
+    def test_log_expert_event_swallow_errors(self):
+        def faulty(**kwargs):
+            raise RuntimeError("boom")
+
+        self.audit_module.curator_log_event = faulty
+        # Should not raise
+        self.audit_module.log_expert_event(user="expert", action="view", meta={})
+
+    def tearDown(self):
+        self.audit_module.curator_log_event = self.original_curator
