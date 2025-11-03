@@ -3,12 +3,12 @@ from django.db import migrations
 
 POSTGRESQL_SQL = """
 CREATE OR REPLACE FUNCTION curator_feature_datalog_block_mod_del()
-RETURNS trigger AS $$
+RETURNS trigger AS $BODY$
 BEGIN
   RAISE EXCEPTION 'curator_feature_datalog is immutable';
   RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$BODY$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS curator_feature_datalog_block_update ON curator_feature_datalog;
 DROP TRIGGER IF EXISTS curator_feature_datalog_block_delete ON curator_feature_datalog;
@@ -22,56 +22,35 @@ BEFORE DELETE ON curator_feature_datalog
 FOR EACH ROW EXECUTE FUNCTION curator_feature_datalog_block_mod_del();
 """
 
-# SQLite (and other DBs) – use generic triggers
-SQLITE_SQL = """
-CREATE TRIGGER IF NOT EXISTS curator_feature_datalog_block_update
-BEFORE UPDATE ON curator_feature_datalog
-BEGIN
-  SELECT RAISE(FAIL, 'curator_feature_datalog is immutable');
-END;
-
-CREATE TRIGGER IF NOT EXISTS curator_feature_datalog_block_delete
-BEFORE DELETE ON curator_feature_datalog
-BEGIN
-  SELECT RAISE(FAIL, 'curator_feature_datalog is immutable');
-END;
-"""
 
 def forwards(apps, schema_editor):
-    engine = schema_editor.connection.vendor
-    if engine != "postgresql":
-        # Skip trigger creation for SQLite (e.g., during tests)
-        print(f"Skipping immutable trigger creation (not supported on {engine})")
+    vendor = schema_editor.connection.vendor
+
+    # ✅ Real DB (Postgres): create triggers
+    if vendor == "postgresql":
+        schema_editor.execute(POSTGRESQL_SQL)
         return
 
-    for stmt in SQLITE_SQL.split(";"):
-        if stmt.strip():
-            schema_editor.execute(stmt)
-
+    # ✅ Tests / SQLite: skip triggers entirely
+    print("Skipping curator_feature_datalog immutability triggers (SQLite test environment)")
 
 
 def backwards(apps, schema_editor):
     vendor = schema_editor.connection.vendor
+
     if vendor == "postgresql":
-        for stmt in [
-            "DROP TRIGGER IF EXISTS curator_feature_datalog_block_update ON curator_feature_datalog;",
-            "DROP TRIGGER IF EXISTS curator_feature_datalog_block_delete ON curator_feature_datalog;",
-            "DROP FUNCTION IF EXISTS curator_feature_datalog_block_mod_del();",
-        ]:
-            schema_editor.execute(stmt)
-    else:
-        for stmt in [
-            "DROP TRIGGER IF EXISTS curator_feature_datalog_block_update;",
-            "DROP TRIGGER IF EXISTS curator_feature_datalog_block_delete;",
-        ]:
-            schema_editor.execute(stmt)
+        schema_editor.execute("DROP TRIGGER IF EXISTS curator_feature_datalog_block_update ON curator_feature_datalog;")
+        schema_editor.execute("DROP TRIGGER IF EXISTS curator_feature_datalog_block_delete ON curator_feature_datalog;")
+        schema_editor.execute("DROP FUNCTION IF EXISTS curator_feature_datalog_block_mod_del();")
 
 
 class Migration(migrations.Migration):
     atomic = False
+
     dependencies = [
         ("curator_feature", "0005_news"),
     ]
+
     operations = [
         migrations.RunPython(forwards, backwards),
     ]
