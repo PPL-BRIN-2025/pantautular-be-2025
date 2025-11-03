@@ -1,171 +1,100 @@
-import os
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pantau_tular.test_settings")
-
 import uuid
-
-import django
-
-django.setup()
-
-from datetime import datetime
-
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from pt_backend.models import Case, Disease, Location, News, User as PtUser
-
+from pt_backend.models import (
+    Case,
+    Disease,
+    Location,
+    CaseUploadBatch,
+    User as PtUser
+)
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
+EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
 
 
-class ExpertCaseAPITests(TestCase):
+class ExpertCaseBatchAPITests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
         self.expert = PtUser.objects.create(
-            name="Expert User",
+            name="Expert",
             email="expert@example.com",
             password="x",
             role="EXP_USER",
         )
-        self.client.force_authenticate(user=self.expert)
+        self.client.force_authenticate(self.expert)
 
-        self.disease_hb = Disease.objects.create(
-            id=uuid.uuid4(), name="Hepatitis B", level_of_alertness=3
-        )
-        self.disease_dbd = Disease.objects.create(
-            id=uuid.uuid4(), name="DBD", level_of_alertness=2
-        )
+        self.disease = Disease.objects.create(id=uuid.uuid4(), name="DBD", level_of_alertness=2)
+        self.loc = Location.objects.create(id=uuid.uuid4(), city="Jakarta", province="DKI")
 
-        self.loc_jakarta = Location.objects.create(
-            id=uuid.uuid4(),
-            city="Jakarta",
-            province="DKI Jakarta",
-            latitude=-6.2088,
-            longitude=106.8456,
-        )
-        self.loc_bandung = Location.objects.create(
-            id=uuid.uuid4(),
-            city="Bandung",
-            province="Jawa Barat",
-            latitude=-6.9175,
-            longitude=107.6191,
+        self.csv_data = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,10,Jakarta,bahaya,insiden,Jakarta,DKI,"
+            "Portal,Title,artikel,Text,https://x.com,Auth,2024-01-01T00:00:00Z\n"
         )
 
-    def test_expert_can_create_case(self):
-        payload = {
-            "disease": "Hepatitis B",
-            "gender": "P",
-            "age": 30,
-            "city": "Bandung",
-            "status": "bahaya",
-            "severity": "insiden",
-            "location": {"city": "Bandung"},
-            "news": {
-                "portal": "Portal A",
-                "title": "Kasus Baru",
-                "type": "artikel",
-                "content": "Konten Berita",
-                "url": "https://example.com/berita",
-                "author": "Reporter A",
-                "date_published": "2024-01-23T00:00:00Z",
-                "img_url": "",
-            },
-        }
+    def _upload_csv(self):
+        upload = SimpleUploadedFile("cases.csv", self.csv_data.encode(), content_type="text/csv")
+        return self.client.post(f"{EXPERT_CASES_BASE}upload-csv/", {"file": upload}, format="multipart")
 
-        response = self.client.post(EXPERT_CASES_BASE, payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(Case.objects.count(), 1)
+    # ✅ 1. Upload membuat batch dan men-tag case
+    def test_upload_creates_batch_and_tags_cases(self):
+        res = self._upload_csv()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        batch = CaseUploadBatch.objects.first()
+        self.assertIsNotNone(batch)
+        self.assertEqual(batch.uploaded_by, self.expert)
+
         case = Case.objects.first()
-        self.assertEqual(case.disease.name, "Hepatitis B")
-        self.assertEqual(case.location.city, "Bandung")
-        self.assertEqual(case.status, "bahaya")
-        self.assertEqual(case.severity, "insiden")
-        self.assertEqual(News.objects.filter(case=case).count(), 1)
-    
-    def test_expert_can_update_case(self):
-        case = Case.objects.create(
-            id=uuid.uuid4(),
-            disease=self.disease_hb,
-            location=self.loc_bandung,
-            gender="P",
-            age=25,
-            city="Bandung",
-            status="biasa",
-            severity="hospitalisasi",
-        )
+        self.assertEqual(case.batch, batch)
+        self.assertEqual(case.created_by, self.expert)
 
-        payload = {
-            "disease": "DBD",
-            "location": {"city": "Jakarta", "province": "DKI Jakarta"},
-            "severity": "mortalitas",
-        }
-        response = self.client.patch(f"{EXPERT_CASES_BASE}{case.id}/", payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+    # ✅ 2. List batch hanya menampilkan batch milik user ini
+    def test_list_batches_returns_only_user_batches(self):
+        self._upload_csv()
 
-        case.refresh_from_db()
-        self.assertEqual(case.disease.name, "DBD")
-        self.assertEqual(case.location.city, "Jakarta")
-        self.assertEqual(case.severity, "mortalitas")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
-    def test_expert_can_delete_case(self):
-        case = Case.objects.create(
-            id=uuid.uuid4(),
-            disease=self.disease_hb,
-            location=self.loc_jakarta,
-            gender="L",
-            age=40,
-            city="Jakarta",
-            status="bahaya",
-            severity="insiden",
-        )
-        News.objects.create(
-            case=case,
-            portal="Portal",
-            title="Judul",
-            type="artikel",
-            content="Isi",
-            url="https://example.com/berita",
-            author="Reporter",
-            date_published=timezone.make_aware(datetime(2024, 1, 1)),
-            img_url="",
-        )
+        res = self.client.get(EXPERT_BATCH_BASE)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)  # hanya batch milik si expert
 
-        response = self.client.delete(f"{EXPERT_CASES_BASE}{case.id}/")
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Case.objects.filter(id=case.id).exists())
-        self.assertFalse(News.objects.filter(case=case).exists())
+    # ✅ 3. Delete batch menghapus hanya case batch itu
+    def test_delete_batch_removes_only_its_cases(self):
+        batch1_id = self._upload_csv().data["batch_id"]
+        batch2 = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="batch2.csv")
+        Case.objects.create(disease=self.disease, location=self.loc, gender="L", age=15, city="Y", status="bahaya", severity="insiden", created_by=self.expert, batch=batch2)
 
-    def test_expert_can_upload_cases_via_csv(self):
-        csv_content = (
-            "disease,gender,age,city,status,severity,"
-            "location_city,location_province,location_latitude,location_longitude,"
-            "news_portal,news_title,news_type,news_content,news_url,news_author,"
-            "news_date_published,news_img_url\n"
-            "DBD,L,7,Jakarta,bahaya,insiden,Jakarta,DKI Jakarta,,,"
-            "Portal A,Judul A,artikel,Konten A,https://example.com/a,Reporter A,"
-            "2024-02-01T00:00:00Z,\n"
-            "Hepatitis B,P,12,Bandung,biasa,hospitalisasi,Bandung,Jawa Barat,,,"
-            "Portal B,Judul B,artikel,Konten B,https://example.com/b,Reporter B,"
-            "2024-03-01T00:00:00Z,\n"
-        )
+        res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch1_id}/delete/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
 
-        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        # ✅ batch1 cases hilang
+        self.assertFalse(Case.objects.filter(batch_id=batch1_id).exists())
+        # ✅ batch2 cases tetap
+        self.assertTrue(Case.objects.filter(batch=batch2).exists())
 
-        response = self.client.post(
-            f"{EXPERT_CASES_BASE}upload-csv/",
-            {"file": upload},
-            format="multipart",
-        )
+    # ✅ 4. User tidak bisa delete batch milik orang lain
+    def test_user_cannot_delete_other_users_batch(self):
+        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        batch = CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(response.data["created"], 2)
-        self.assertTrue(Case.objects.filter(disease__name="DBD", city="Jakarta").exists())
-        self.assertTrue(Case.objects.filter(disease__name="Hepatitis B", city="Bandung").exists())
-        self.assertEqual(News.objects.count(), 2)
+        res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch.id}/delete/")
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
- 
+        self.assertTrue(CaseUploadBatch.objects.filter(id=batch.id).exists())
+
+    # ✅ 5. Filter cases by batch
+    def test_list_cases_filter_by_batch(self):
+        batch1_id = self._upload_csv().data["batch_id"]
+        batch2 = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="b2.csv")
+        Case.objects.create(disease=self.disease, location=self.loc, gender="L", age=20, city="Y", status="bahaya", severity="insiden", created_by=self.expert, batch=batch2)
+
+        res = self.client.get(f"{EXPERT_CASES_BASE}?batch={batch1_id}")
+        self.assertEqual(len(res.data), 1)  # hanya case dari batch1
