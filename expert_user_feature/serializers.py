@@ -4,7 +4,7 @@ from rest_framework import serializers
 from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import CaseInsensitiveChoiceField
 from pt_backend.models import Case, Disease, Location, News
-
+from .models import ExpertDataset
 
 class CaseWriteSerializer(serializers.Serializer):
     disease = serializers.CharField()
@@ -74,3 +74,8 @@ class ExpertDashboardDownloadSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Source may not be blank.")
         return value
+    
+class ExpertDatasetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ExpertDataset
+        fields = ["data_id", "file_name", "last_edited", "submitted_by"]
