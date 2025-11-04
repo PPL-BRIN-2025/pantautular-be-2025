@@ -195,10 +195,19 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             return Response({"message": "CSV file missing."}, status=400)
 
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-
-        # support UTF-8 with BOM
+        
         raw = upload.read().decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(raw))
+
+        # ✅ Validate required columns BEFORE parsing rows
+        headers = set(reader.fieldnames or [])
+        missing = self.REQUIRED_COLUMNS - headers
+        if missing:
+            batch.delete()  # cleanup batch
+            return Response(
+                {"message": f"Missing columns: {', '.join(sorted(missing))}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         created_cases = []
         with transaction.atomic():
