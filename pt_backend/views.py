@@ -356,6 +356,9 @@ class StatisticsView(APIView):
         
         # Handle date range
         self._add_date_range(request, filter_params)
+
+        # Handle dataset batch selection
+        self._add_batch(request, filter_params)
         
         return filter_params
 
@@ -387,6 +390,22 @@ class StatisticsView(APIView):
         )
         if time_range:
             filter_params['date_range'] = time_range
+
+    def _add_batch(self, request, filter_params):
+        raw = (
+            request.data.get("batch")
+            or request.data.get("batch_id")
+            or request.data.get("dataset")
+            or request.data.get("dataset_id")
+            or request.data.get("batchId")
+            or request.data.get("datasetId")
+        )
+        if isinstance(raw, dict):
+            raw = raw.get("value") or raw.get("id") or raw.get("batch") or raw.get("data_id")
+        if isinstance(raw, (list, tuple, set)):
+            raw = next((item for item in raw if item not in (None, "")), None)
+        if raw not in (None, "", [], {}, ()):
+            filter_params['batch'] = raw
 
     
 class SeverityFilteringStatsView(APIView):
@@ -482,6 +501,21 @@ class SeverityFilteringStatsView(APIView):
             return_type="tuple",
         )
         date_range = time_window if time_window else None
+
+        batch = (
+            data.get("batch")
+            or data.get("batch_id")
+            or data.get("dataset")
+            or data.get("dataset_id")
+            or data.get("batchId")
+            or data.get("datasetId")
+        )
+        if isinstance(batch, dict):
+            batch = batch.get("value") or batch.get("id") or batch.get("batch") or batch.get("data_id")
+        if isinstance(batch, (list, tuple, set)):
+            batch = next((item for item in batch if item not in (None, "")), None)
+        if batch in ([], {}, (), ""):
+            batch = None
         
         return {
             'diseases': diseases,
@@ -489,7 +523,8 @@ class SeverityFilteringStatsView(APIView):
             'cities': cities,
             'news_portals': portals,
             'alert_levels': level_of_alertness,
-            'date_range': date_range
+            'date_range': date_range,
+            'batch': batch,
         }
     
     def _process_location_data(self, locations):

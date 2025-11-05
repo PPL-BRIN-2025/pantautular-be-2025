@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
+from uuid import UUID
 
 from django.db.models import Q, QuerySet
 from django.http import QueryDict
@@ -69,6 +70,10 @@ class CaseFilterService:
             .prefetch_related('news_set')
         )
 
+        batch_id = self._extract_batch_id(data)
+        if batch_id:
+            base_query = base_query.filter(batch_id=batch_id)
+
         time_window_q = self._get_time_window_q(data)
 
         query = Q()
@@ -91,6 +96,33 @@ class CaseFilterService:
             .values('id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity')
             .distinct()
         )
+
+    def _extract_batch_id(self, data: Mapping[str, Any]) -> Optional[str]:
+        raw: Any = (
+            data.get("batch_id")
+            or data.get("batch")
+            or data.get("dataset_id")
+            or data.get("dataset")
+        )
+        if raw in (None, "", [], {}):
+            return None
+
+        if isinstance(raw, dict):
+            raw = raw.get("value") or raw.get("id") or raw.get("batch") or raw.get("data_id")
+
+        if isinstance(raw, (list, tuple, set)):
+            raw = next((item for item in raw if item not in (None, "")), None)
+            if raw is None:
+                return None
+
+        try:
+            return str(UUID(str(raw)))
+        except (ValueError, TypeError):
+            raise CaseFilterValidationError(
+                "Invalid batch identifier.",
+                code="invalid_batch",
+                fields={"batch": ["Batch identifier must be a valid UUID."]},
+            )
 
     # --- Public wrappers ------------------------------------------------
 
