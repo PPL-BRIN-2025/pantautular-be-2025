@@ -1,7 +1,9 @@
 from collections import defaultdict
 import math
 import numpy as np
+from uuid import UUID
 from .interfaces import CaseRetrievalInterface, CaseRepositoryInterface, CacheInterface
+from .filter.service import CaseFilterValidationError
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from django.core.cache import cache
 from .formatters import CaseNewsDetailFormatter, CaseHealthProtocolDetailFormatter, CaseGenderDetailFormatter
@@ -25,12 +27,18 @@ class CaseService(CaseRetrievalInterface):
         self.repository = repository
         self.cache_service = cache_service
     
-    def get_all_cases(self):
-        cases = self.cache_service.get(self.CACHE_KEY_ALL_CASES)
+    def get_all_cases(self, batch_id=None):
+        cache_key = self._build_all_cases_cache_key(batch_id)
+        cases = self.cache_service.get(cache_key)
         if cases is None:
-            cases = self.repository.get_all_cases()
-            self.cache_service.set(self.CACHE_KEY_ALL_CASES, cases, timeout=self.CACHE_TIMEOUT)
+            cases = self.repository.get_all_cases(batch_id=batch_id)
+            self.cache_service.set(cache_key, cases, timeout=self.CACHE_TIMEOUT)
         return cases if cases else []
+
+    def _build_all_cases_cache_key(self, batch_id):
+        if not batch_id:
+            return self.CACHE_KEY_ALL_CASES
+        return f"{self.CACHE_KEY_ALL_CASES}:{batch_id}"
 
     def get_all_case_locations(self):
         locations = self.cache_service.get(self.CACHE_KEY_ALL_LOCATIONS) # pragma: no cover
@@ -178,6 +186,7 @@ class CasesFilterService:
         ids_only=False,
         locations=None,
         diseases=None,
+        batch=None,
         **extra_filters,
     ):
         disease = disease or diseases or extra_filters.get("diseases")
@@ -187,12 +196,21 @@ class CasesFilterService:
         disease_alertness = disease_alertness or extra_filters.get("disease_alertness")
         date_range = date_range or extra_filters.get("date_range")
         locations = locations or extra_filters.get("locations")
+        batch = (
+            batch
+            or extra_filters.get("batch_id")
+            or extra_filters.get("batch")
+            or extra_filters.get("dataset_id")
+            or extra_filters.get("dataset")
+        )
+
+        batch_id = self._normalize_batch_id(batch)
 
         normalized_locations = self._normalize_locations(provinces, cities, locations)
         provinces = normalized_locations["provinces"]
         cities = normalized_locations["cities"]
 
-        cases = self.case_service.get_all_cases()
+        cases = self.case_service.get_all_cases(batch_id=batch_id)
         cases = self._filter_by_disease(cases, disease)
         cases = self._filter_by_locations(cases, provinces, cities)
         cases = self._filter_by_news_portals(cases, portals)
@@ -287,8 +305,28 @@ class CasesFilterService:
             for item in value:
                 items.extend(self._collect_location_values(item))
             return items
-
         return [value]
+
+    def _normalize_batch_id(self, value):
+        if value in (None, "", [], {}, ()):
+            return None
+
+        if isinstance(value, dict):
+            value = value.get("value") or value.get("id") or value.get("batch") or value.get("data_id")
+
+        if isinstance(value, (list, tuple, set)):
+            value = next((item for item in value if item not in (None, "")), None)
+            if value is None:
+                return None
+
+        try:
+            return str(UUID(str(value)))
+        except (ValueError, TypeError):
+            raise CaseFilterValidationError(
+                "Invalid batch identifier.",
+                code="invalid_batch",
+                fields={"batch": ["Batch identifier must be a valid UUID."]},
+            )
 
     def _filter_by_disease(self, cases, disease):
         if disease:
@@ -360,11 +398,12 @@ class SeverityFilteringService:
                           cities=None, 
                           news_portals=None, 
                           alert_levels=None, 
-                          date_range=None):
+                          date_range=None,
+                          batch=None):
         
         # Get filtered case IDs from filter service
         filtered_case_ids = self.filter_service.filter_cases(
-            diseases, provinces, cities, news_portals, alert_levels, date_range, ids_only=True
+            diseases, provinces, cities, news_portals, alert_levels, date_range, ids_only=True, batch=batch
         )
         
         # Get all three statistics using the same filtered case IDs
