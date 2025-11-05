@@ -2,11 +2,20 @@ from django.http import HttpResponse
 from django.urls import path
 
 from .views import (
-    ExpertCaseCSVUploadAPIView,
-    ExpertCaseCreateView,
+    # cases
+    ExpertCaseListCreateView,
     ExpertCaseDetailView,
-    ExpertDashboardCSVDownloadAPIView,
+    ExpertCaseCSVUploadView,
+    ExpertCaseBulkDeleteView,
+    # dashboard downloads
     ExpertDashboardDownloadLogAPIView,
+    ExpertDashboardCSVDownloadAPIView,
+    # datasets
+    ExpertDatasetListView,
+    ExpertDatasetDetailView,
+    # batches
+    ExpertBatchListView,
+    ExpertBatchDeleteView,
 )
 
 def feature_placeholder(request):
@@ -14,9 +23,22 @@ def feature_placeholder(request):
 
 urlpatterns = [
     path("", feature_placeholder, name="expert-feature-placeholder"),
-    path("experts/cases/", ExpertCaseCreateView.as_view(), name="expert-cases"),
-    path("experts/cases/upload-csv/", ExpertCaseCSVUploadAPIView.as_view(), name="expert-cases-upload-csv"),
-    path("experts/cases/<uuid:pk>/", ExpertCaseDetailView.as_view(), name="expert-case-detail"),
-    path("downloads/log/", ExpertDashboardDownloadLogAPIView.as_view(), name="expert-dashboard-download-log"),
-    path("downloads/csv/", ExpertDashboardCSVDownloadAPIView.as_view(), name="expert-dashboard-download-csv"),
+
+    # Cases
+    path("experts/cases/",                 ExpertCaseListCreateView.as_view(), name="expert-cases"),
+    path("experts/cases/<uuid:pk>/",       ExpertCaseDetailView.as_view(),     name="expert-case-detail"),
+    path("experts/cases/upload-csv/",      ExpertCaseCSVUploadView.as_view(),  name="expert-cases-upload-csv"),
+    path("experts/cases/delete-all/",      ExpertCaseBulkDeleteView.as_view(), name="expert-case-delete-all"),
+
+    # Download logging + CSV
+    path("downloads/log/",                 ExpertDashboardDownloadLogAPIView.as_view(),  name="expert-dashboard-download-log"),
+    path("downloads/csv/",                 ExpertDashboardCSVDownloadAPIView.as_view(),  name="expert-dashboard-download-csv"),
+
+    # Datasets (public read)
+    path("api/expert/datasets/",                 ExpertDatasetListView.as_view(),        name="expert-dataset-list"),
+    path("api/expert/datasets/<str:data_id>/",   ExpertDatasetDetailView.as_view(),      name="expert-dataset-detail"),
+
+    # Batches
+    path("experts/batches/",                     ExpertBatchListView.as_view(),          name="expert-batch-list"),
+    path("experts/batches/<uuid:batch_id>/delete/", ExpertBatchDeleteView.as_view(),     name="expert-batch-delete"),
 ]

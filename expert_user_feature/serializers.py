@@ -1,11 +1,15 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
+
 from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import CaseInsensitiveChoiceField
-from pt_backend.models import Case, Disease, Location, News
+
+from pt_backend.models import Case, Disease, Location, News, CaseUploadBatch
+from .models import ExpertDataset
 
 
+# ---------------- Case serializers ----------------
 class CaseWriteSerializer(serializers.Serializer):
     disease = serializers.CharField()
     gender = serializers.CharField()
@@ -53,6 +57,7 @@ class CaseReadSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# ---------------- Dashboard download ----------------
 class ExpertDashboardDownloadSerializer(serializers.Serializer):
     """Serializer mirroring curator dashboard downloads but allowing CSV format."""
 
@@ -74,3 +79,19 @@ class ExpertDashboardDownloadSerializer(serializers.Serializer):
         if not value:
             raise serializers.ValidationError("Source may not be blank.")
         return value
+
+
+# ---------------- Datasets ----------------
+class ExpertDatasetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExpertDataset
+        fields = ["data_id", "file_name", "last_edited", "submitted_by"]
+
+
+# ---------------- Batches ----------------
+class BatchSerializer(serializers.ModelSerializer):
+    total_cases = serializers.IntegerField(source="cases.count", read_only=True)
+
+    class Meta:
+        model = CaseUploadBatch
+        fields = ["id", "filename", "uploaded_at", "total_cases"]
