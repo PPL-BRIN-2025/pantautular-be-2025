@@ -700,7 +700,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
         self.assertEqual(response.json(), self.mock_results)
         # Verify caching occurred
@@ -791,7 +792,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,     # Should be None since city doesn't exist
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     def test_post_with_date_range(self):
@@ -821,7 +823,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             date_range=(
                 datetime(2023, 1, 1, tzinfo=pytz.UTC),
                 datetime(2023, 12, 31, tzinfo=pytz.UTC),
-            )
+            ),
+            batch=None,
         )
 
     def test_post_invalid_time_window_returns_bad_request(self):
@@ -859,7 +862,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,
             news_portals=["Kompas", "Detik"],
             alert_levels=3,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     def test_post_with_invalid_alertness_level(self):
