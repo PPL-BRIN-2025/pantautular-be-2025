@@ -6,6 +6,7 @@ from ..views import ProvinceHumidityView
 from ..services import ClimateService
 from unittest.mock import patch, MagicMock
 import os
+from ..constants import PROVINCE_TO_CODE
 from .base_climate_test import BaseHumidityRepositoryTest, BaseHumidityServiceTest, BaseHumidityViewTest
 
 class ClimateRepositoryTest(BaseHumidityRepositoryTest):
@@ -138,8 +139,13 @@ class ProvinceHumidityViewTest(BaseHumidityViewTest):
         
         response = self.view.get(self.request)
         
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data, {"error": "No humidity data available."})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(PROVINCE_TO_CODE))
+        self.assertTrue(all(item["value"] == 0.0 for item in response.data))
+        self.assertSetEqual(
+            {item["id"] for item in response.data},
+            set(PROVINCE_TO_CODE.values())
+        )
 
     def test_service_returns_error_dict(self):
         self.service.get_province_humidity.return_value = {"error": "Some error occurred"}

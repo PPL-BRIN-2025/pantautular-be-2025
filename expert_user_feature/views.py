@@ -5,52 +5,90 @@ from datetime import datetime, time
 from typing import Iterable, Optional, Tuple
 
 from django.conf import settings
+from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.utils import timezone
+from django.db.models import Q
+
 from rest_framework import generics, status, pagination
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
-from rest_framework.response import Response
 from rest_framework.request import Request
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from curator_feature.models import DashboardDownloadEvent
 from curator_feature.serializers import ChartDataFiltersSerializer, DashboardDownloadEventSerializer
 from curator_feature.services import DashboardDownloadEventService
 from curator_feature.value_objects import ClientMetadata
-from pt_backend.models import Case, Disease, Location
+
+from pt_backend.models import Case, Disease, Location, CaseUploadBatch
 
 from .views_base import ExpertBaseView
 from .serializers import (
     CaseReadSerializer,
     CaseWriteSerializer,
-    ExpertDatasetSerializer,
     ExpertDashboardDownloadSerializer,
+    ExpertDatasetSerializer,
+    BatchSerializer,
 )
-from django.db.models import Q
 from .models import ExpertDataset
 from .audittrail import log_expert_event
-logger = logging.getLogger(__name__)
 from .permissions import ReadOnlyOrExpert
 
-class ExpertCaseCreateView(ExpertBaseView, generics.CreateAPIView):
+logger = logging.getLogger(__name__)
+
+
+# -------------------------------------------------------------------
+# CASES: LIST + CREATE (single)
+# -------------------------------------------------------------------
+class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
+    """
+    GET  /expert-feature/experts/cases/          -> list cases created by current user
+         (optional ?batch=<uuid>)
+
+    POST /expert-feature/experts/cases/          -> create 1 case (body = CaseWriteSerializer)
+    """
     queryset = Case.objects.all()
-    serializer_class = CaseWriteSerializer
+    serializer_class = CaseWriteSerializer  # default; switch in get_serializer_class
 
     def get_serializer_class(self):
+        # Use write serializer for POST and read serializer for GET responses
         if self.request.method == "POST":
             return CaseWriteSerializer
         return CaseReadSerializer
 
+    def get_queryset(self):
+        qs = (
+            Case.objects
+            .filter(created_by=self.request.user)
+            .select_related("disease", "location", "batch")
+            .prefetch_related("news")
+            .order_by("-id")
+        )
+        batch = self.request.query_params.get("batch")
+        if batch:
+            qs = qs.filter(batch_id=batch)
+        return qs
+
+    def list(self, request: Request, *args, **kwargs):
+        # Return read serializer for GET
+        self.serializer_class = CaseReadSerializer
+        return super().list(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        case = serializer.save()
+        # ensure ownership is tracked for listing
+        case = serializer.save(created_by=request.user)
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
 
 
+# -------------------------------------------------------------------
+# CASE DETAIL: PATCH + DELETE
+# -------------------------------------------------------------------
 class ExpertCaseDetailView(ExpertBaseView, APIView):
     """Handle expert case update and delete operations."""
 
@@ -115,89 +153,124 @@ class ExpertCaseDetailView(ExpertBaseView, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class ExpertCaseCSVUploadAPIView(ExpertBaseView, APIView):
-    """Bulk create cases from CSV uploads."""
+# -------------------------------------------------------------------
+# CASES: BULK DELETE (only own cases)
+# -------------------------------------------------------------------
+class ExpertCaseBulkDeleteView(ExpertBaseView, APIView):
+    """
+    DELETE /expert-feature/experts/cases/delete-all/
+    EXP_USER deletes ONLY cases they uploaded.
+    """
+    def delete(self, request):
+        qs = Case.objects.filter(created_by=request.user)
+        deleted = qs.count()
+        qs.delete()
+        return Response({"deleted_cases": deleted}, status=status.HTTP_204_NO_CONTENT)
 
+
+# -------------------------------------------------------------------
+# CASES: CSV UPLOAD → creates a Batch + Cases (owned by user)
+# -------------------------------------------------------------------
+class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
+    """
+    POST /expert-feature/experts/cases/upload-csv/
+    Upload CSV → create CaseUploadBatch and Cases tagged with created_by=user.
+    """
     parser_classes = [MultiPartParser]
 
-    def post(self, request, *args, **kwargs):
+    REQUIRED_COLUMNS = {
+        "disease", "gender", "age", "city", "status", "severity",
+        "location_city", "location_province",
+        "news_portal", "news_title", "news_type", "news_content",
+        "news_url", "news_author", "news_date_published",
+    }
+
+    OPTIONAL_COLUMNS = {
+        "location_latitude", "location_longitude", "news_img_url",
+    }
+
+    def post(self, request):
         upload = request.FILES.get("file")
         if not upload:
-            return Response({"errors": {"file": ["This field is required."]}}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "CSV file missing."}, status=400)
 
-        try:
-            decoded = upload.read().decode("utf-8")
-        except UnicodeDecodeError:
+        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
+        
+        raw = upload.read().decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(raw))
+
+        # ✅ Validate required columns BEFORE parsing rows
+        headers = set(reader.fieldnames or [])
+        missing = self.REQUIRED_COLUMNS - headers
+        if missing:
+            batch.delete()  # cleanup batch
             return Response(
-                {"errors": {"file": ["Unable to decode CSV file using UTF-8."]}},
+                {"message": f"Missing columns: {', '.join(sorted(missing))}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        reader = csv.DictReader(io.StringIO(decoded))
-        if reader.fieldnames is None:
-            return Response({"errors": {"file": ["CSV file must include a header row."]}}, status=status.HTTP_400_BAD_REQUEST)
+        created_cases = []
+        with transaction.atomic():
+            for row in reader:
+                payload = self._convert(row)
+                serializer = CaseWriteSerializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                case = serializer.save(created_by=request.user, batch=batch)
+                created_cases.append(case)
 
-        created = 0
-        errors = []
-        rows = list(reader)
-        for index, row in enumerate(rows, start=1):
-            payload = self._row_to_payload(row)
-            serializer = CaseWriteSerializer(data=payload)
-            if serializer.is_valid():
-                serializer.save()
-                created += 1
-            else:
-                errors.append({"row": index, "errors": serializer.errors})
+        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=201)
 
-        if errors:
-            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+    def _convert(self, row):
+        def c(v):
+            return v.strip() if isinstance(v, str) else v
 
-        return Response({"created": created}, status=status.HTTP_201_CREATED)
+        def maybe(v):
+            v = c(v)
+            return None if v in ("", None) else v
 
-    def _row_to_payload(self, row):
-        clean = lambda value: value.strip() if isinstance(value, str) else value
+        # Ensure disease exists (create if missing)
+        disease_name = c(row.get("disease"))
+        disease_obj, _ = Disease.objects.get_or_create(
+            name=disease_name,
+            defaults={"level_of_alertness": 1},
+        )
 
-        location = {
-            "city": clean(row.get("location_city") or ""),
-            "province": clean(row.get("location_province") or ""),
-            "latitude": self._clean_decimal(row.get("location_latitude")),
-            "longitude": self._clean_decimal(row.get("location_longitude")),
+        # LOCATION
+        city = c(row.get("location_city")) or c(row.get("city"))
+        province = c(row.get("location_province"))
+        latitude = maybe(row.get("location_latitude"))
+        longitude = maybe(row.get("location_longitude"))
+
+        location_data = {"city": city, "province": province}
+        if latitude is not None:
+            location_data["latitude"] = latitude
+        if longitude is not None:
+            location_data["longitude"] = longitude
+
+        return {
+            "disease": disease_obj.name,  # CaseWriteSerializer expects name
+            "gender": c(row.get("gender")),
+            "age": c(row.get("age")),
+            "city": c(row.get("city")),
+            "status": c(row.get("status")),
+            "severity": c(row.get("severity")),
+            "location": location_data,
+            "news": {
+                "portal": c(row.get("news_portal")),
+                "title": c(row.get("news_title")),
+                "type": c(row.get("news_type")),
+                "content": c(row.get("news_content")),
+                "url": c(row.get("news_url")),
+                "author": c(row.get("news_author")),
+                "date_published": c(row.get("news_date_published")),
+                "img_url": c(row.get("news_img_url")) or "",
+            },
         }
 
-        news = {
-            "portal": clean(row.get("news_portal")),
-            "title": clean(row.get("news_title")),
-            "type": clean(row.get("news_type")),
-            "content": clean(row.get("news_content")),
-            "url": clean(row.get("news_url")),
-            "author": clean(row.get("news_author")),
-            "date_published": clean(row.get("news_date_published")),
-            "img_url": clean(row.get("news_img_url") or ""),
-        }
 
-        payload = {
-            "disease": clean(row.get("disease")),
-            "gender": clean(row.get("gender")),
-            "age": clean(row.get("age")),
-            "city": clean(row.get("city")),
-            "status": clean(row.get("status")),
-            "severity": clean(row.get("severity")),
-            "location": location,
-            "news": news,
-        }
-
-        return payload
-
-    @staticmethod
-    def _clean_decimal(value):
-        if value is None:
-            return None
-        value = value.strip() if isinstance(value, str) else value
-        if value in ("", " "):
-            return None
-        return value
-
-
+# -------------------------------------------------------------------
+# DASHBOARD DOWNLOAD MIXIN + ENDPOINTS (log + CSV)
+# -------------------------------------------------------------------
 class ExpertDownloadMixin:
     """Shared helpers for expert dashboard download related endpoints."""
 
@@ -436,11 +509,14 @@ class ExpertDashboardCSVDownloadAPIView(ExpertBaseView, ExpertDownloadMixin, API
 
         response = HttpResponse(csv_content, content_type="text/csv")
         filename = f"{payload.get('metric') or 'dashboard'}-export.csv"
-        response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
         response["X-Download-Logged"] = "true" if logged else "false"
         return response
 
 
+# -------------------------------------------------------------------
+# DATASETS (public read, restricted write)
+# -------------------------------------------------------------------
 class SmallPageNumberPagination(pagination.PageNumberPagination):
     page_size = 10
     page_size_query_param = "pageSize"
@@ -456,27 +532,26 @@ class ExpertDatasetListView(generics.ListAPIView):
         - page, pageSize  (handled by paginator)
     """
     serializer_class = ExpertDatasetSerializer
-    permission_classes = [ReadOnlyOrExpert]          # ⬅️ public read, restricted write
+    permission_classes = [ReadOnlyOrExpert]
     pagination_class = SmallPageNumberPagination
 
     def get_queryset(self):
         qs = ExpertDataset.objects.all()
 
-        # --- text search (case-insensitive) ---
+        # text search (case-insensitive)
         q = (self.request.query_params.get("search") or "").strip().lower()
         if q:
             qs = qs.filter(
                 Q(data_id__icontains=q) |
                 Q(file_name__icontains=q) |
                 Q(submitted_by__icontains=q) |
-                Q(last_edited__icontains=q)  # ok if last_edited is CharField; if DateTime, DB will cast
+                Q(last_edited__icontains=q)
             )
 
-        # --- sort mapping (field:dir) ---
+        # sort mapping (field:dir)
         raw_sort = (self.request.query_params.get("sort") or "").strip()
         ordering = "-last_edited"  # default
         if raw_sort:
-            # accept "field:asc" | "field:desc"
             try:
                 field, direction = raw_sort.split(":")
                 field = field.strip()
@@ -486,7 +561,6 @@ class ExpertDatasetListView(generics.ListAPIView):
                 else:
                     ordering = field
             except Exception:
-                # ignore bad sort values
                 pass
 
         return qs.order_by(ordering)
@@ -518,7 +592,7 @@ class ExpertDatasetDetailView(generics.RetrieveAPIView):
     lookup_field = "data_id"
     queryset = ExpertDataset.objects.all()
     serializer_class = ExpertDatasetSerializer
-    permission_classes = [ReadOnlyOrExpert]          # ⬅️ public read, restricted write
+    permission_classes = [ReadOnlyOrExpert]
 
     def retrieve(self, request: Request, *args, **kwargs):
         resp = super().retrieve(request, *args, **kwargs)
@@ -539,3 +613,25 @@ class ExpertDatasetDetailView(generics.RetrieveAPIView):
             pass
 
         return resp
+
+
+# -------------------------------------------------------------------
+# BATCH LIST + DELETE
+# -------------------------------------------------------------------
+class ExpertBatchListView(ExpertBaseView, generics.ListAPIView):
+    serializer_class = BatchSerializer
+
+    def get_queryset(self):
+        return CaseUploadBatch.objects.filter(uploaded_by=self.request.user)
+
+
+class ExpertBatchDeleteView(ExpertBaseView, APIView):
+    def delete(self, request, batch_id):
+        batch = CaseUploadBatch.objects.filter(uploaded_by=request.user, id=batch_id).first()
+        if not batch:
+            return Response({"message": "Batch not found"}, status=404)
+
+        deleted = batch.cases.count()
+        batch.cases.all().delete()
+        batch.delete()
+        return Response({"deleted_cases": deleted}, status=204)
