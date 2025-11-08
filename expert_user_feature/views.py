@@ -64,8 +64,7 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
             .filter(created_by=self.request.user)
             .select_related("disease", "location", "batch")
             .prefetch_related("news")
-            .order_by("-id")
-        )
+        )  # default ordering: newest first via model Meta for easy paging
         batch = self.request.query_params.get("batch")
         if batch:
             qs = qs.filter(batch_id=batch)
@@ -79,8 +78,20 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # ensure ownership is tracked for listing
-        case = serializer.save(created_by=request.user)
+        # optional: associate case with an existing upload batch if provided
+        batch = None
+        batch_id = request.data.get("batch") or request.data.get("batch_id")
+        if batch_id:
+            batch = CaseUploadBatch.objects.filter(id=batch_id, uploaded_by=request.user).first()
+            if batch is None:
+                return Response({"errors": {"batch": ["Unknown or unauthorized batch_id."]}}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ensure ownership is tracked; pass batch only if present
+        save_kwargs = {"created_by": request.user}
+        if batch is not None:
+            save_kwargs["batch"] = batch
+
+        case = serializer.save(**save_kwargs)
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
