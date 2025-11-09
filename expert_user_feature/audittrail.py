@@ -1,20 +1,16 @@
-from typing import Any, Dict
+from typing import Any
+from .models import ExpertDataLog
 
-try:
-    # Reuse curator's audit helper if available
-    from curator_feature.audittrail import log_event as curator_log_event
-except Exception:
-    curator_log_event = None
-
-
-def log_expert_event(user, action: str, meta: Dict[str, Any]) -> None:
-    """
-    Thin wrapper for logging audit events in expert_feature.
-    Uses curator_feature.audittrail if available.
-    """
+def log_expert_action(user, *, data_id, title: str, note: str = "") -> None:
     try:
-        if curator_log_event:
-            curator_log_event(user=user, action=action, meta=meta)
+        submitted_by = (
+            getattr(user, "email", None)
+            or getattr(user, "username", None)
+            or "unknown"
+        )[:150]
+        ExpertDataLog.objects.create(
+            data_id=data_id, title=title, submitted_by=submitted_by, note=note
+        )
     except Exception:
-        # Avoid blocking core logic if audit fails
+        # non-blocking
         pass
