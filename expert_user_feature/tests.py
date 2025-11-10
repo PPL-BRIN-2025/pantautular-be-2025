@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pantau_tular.test_settings")
 
 import uuid
+from types import SimpleNamespace
 
 import django
 
@@ -14,17 +15,20 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APIClient, APITestCase, APIRequestFactory
 from django.urls import reverse
 
-from pt_backend.models import Case, Disease, Location, News, User as PtUser
+from pt_backend.models import Case, CaseUploadBatch, Disease, Location, News, User as PtUser
 
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 from django.contrib.auth import get_user_model
 from unittest.mock import patch
 
-from .models import ExpertDataset, ExpertDatasetRow
+from .models import ExpertDataLog, ExpertDataset, ExpertDatasetRow
+from .services import build_or_refresh_dataset_from_batch
+from .serializers import ExpertDatasetRowSerializer
+from .views import ExpertCaseListCreateView
 
 User = get_user_model()
 
@@ -145,6 +149,113 @@ class ExpertCaseAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Case.objects.filter(id=case.id).exists())
         self.assertFalse(News.objects.filter(case=case).exists())
+
+    def test_case_list_filters_by_batch_param(self):
+        batch_a = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="a.csv")
+        batch_b = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="b.csv")
+        Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_hb,
+            location=self.loc_bandung,
+            gender="P",
+            age=28,
+            city="Bandung",
+            status="biasa",
+            severity="insiden",
+            created_by=self.expert,
+            batch=batch_a,
+        )
+        Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_dbd,
+            location=self.loc_jakarta,
+            gender="L",
+            age=31,
+            city="Jakarta",
+            status="bahaya",
+            severity="mortalitas",
+            created_by=self.expert,
+            batch=batch_b,
+        )
+
+        res = self.client.get(f"{EXPERT_CASES_BASE}?batch={batch_a.id}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)
+
+    def test_case_create_rejects_unknown_batch(self):
+        payload = {
+            "disease": "Hepatitis B",
+            "gender": "P",
+            "age": 30,
+            "city": "Bandung",
+            "status": "bahaya",
+            "severity": "insiden",
+            "location": {"city": "Bandung"},
+            "news": {
+                "portal": "Portal A",
+                "title": "Kasus Baru",
+                "type": "artikel",
+                "content": "Konten Berita",
+                "url": "https://example.com/berita",
+                "author": "Reporter A",
+                "date_published": "2024-01-23T00:00:00Z",
+                "img_url": "",
+            },
+            "batch": str(uuid.uuid4()),
+        }
+
+        response = self.client.post(EXPERT_CASES_BASE, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("batch", response.data.get("errors", {}))
+
+    def test_case_create_accepts_known_batch(self):
+        batch = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="cases.csv")
+        payload = {
+            "disease": "Hepatitis B",
+            "gender": "P",
+            "age": 30,
+            "city": "Bandung",
+            "status": "bahaya",
+            "severity": "insiden",
+            "location": {"city": "Bandung"},
+            "news": {
+                "portal": "Portal A",
+                "title": "Kasus Baru",
+                "type": "artikel",
+                "content": "Konten Berita",
+                "url": "https://example.com/berita",
+                "author": "Reporter A",
+                "date_published": "2024-01-23T00:00:00Z",
+                "img_url": "",
+            },
+            "batch": str(batch.id),
+        }
+
+        response = self.client.post(EXPERT_CASES_BASE, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        case = Case.objects.get(batch=batch)
+        self.assertEqual(case.created_by, self.expert)
+
+    def test_get_queryset_filters_by_batch_direct_call(self):
+        batch = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="direct.csv")
+        Case.objects.create(
+            disease=self.disease_hb,
+            location=self.loc_bandung,
+            gender="P",
+            age=20,
+            city="Bandung",
+            status="biasa",
+            severity="insiden",
+            created_by=self.expert,
+            batch=batch,
+        )
+        view = ExpertCaseListCreateView()
+        request = APIRequestFactory().get(f"{EXPERT_CASES_BASE}?batch={batch.id}")
+        request.user = self.expert
+        view.request = view.initialize_request(request)
+        view.request.user = self.expert
+        qs = view.get_queryset()
+        self.assertEqual(qs.count(), 1)
 
     def test_expert_can_upload_cases_via_csv(self):
         csv_content = (
@@ -279,8 +390,226 @@ class AuditTrailTests(TestCase):
         # Should not raise
         self.audit_module.log_expert_event(user="expert", action="view", meta={})
 
+    def test_curator_log_event_calls_underlying_impl(self):
+        calls = []
+
+        def fake_curator(**kwargs):
+            calls.append(kwargs)
+
+        with patch("expert_user_feature.audittrail._curator_log_event", side_effect=fake_curator):
+            from expert_user_feature import audittrail
+            audittrail.curator_log_event(user="expert", action="demo")
+
+        self.assertEqual(calls[0]["action"], "demo")
+
+    def test_log_expert_action_handles_persistence_failure(self):
+        from expert_user_feature import audittrail
+
+        with patch.object(ExpertDataLog.objects, "create", side_effect=RuntimeError("boom")):
+            audittrail.log_expert_action(SimpleNamespace(email="expert@example.com"), data_id=uuid.uuid4(), title="upload")
+
     def tearDown(self):
         self.audit_module.curator_log_event = self.original_curator
+
+
+class ExpertDataLogModelTests(TestCase):
+    def test_str_and_immutable_guards(self):
+        dataset = ExpertDataset.objects.create(
+            data_id="DATASET-ID",
+            file_name="file.csv",
+            last_edited=timezone.now(),
+            submitted_by="tester",
+        )
+        row = ExpertDatasetRow.objects.create(
+            dataset=dataset,
+            row_number=1,
+            data_id="ROW-ID",
+            gender="P",
+            status="biasa",
+        )
+        self.assertEqual(str(row), f"{row.dataset_id}#1")
+
+        log = ExpertDataLog.objects.create(
+            data_id=uuid.uuid4(),
+            title="upload csv",
+            submitted_by="tester",
+            note="ok",
+        )
+        self.assertIn("upload csv", str(log))
+        with self.assertRaises(ValueError):
+            log.save()
+        with self.assertRaises(ValueError):
+            log.delete()
+
+
+class ExpertDatasetRowSerializerTests(TestCase):
+    def setUp(self):
+        self.dataset = ExpertDataset.objects.create(
+            data_id="SERIALIZER",
+            file_name="serialize.csv",
+            last_edited=timezone.now(),
+            submitted_by="tester",
+        )
+        self.disease = Disease.objects.create(id=uuid.uuid4(), name="Malaria", level_of_alertness=2)
+        self.location = Location.objects.create(id=uuid.uuid4(), city="City A", province="Province A")
+        self.case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease,
+            location=self.location,
+            gender="P",
+            age=21,
+            city="City A",
+            status="biasa",
+            severity="insiden",
+        )
+        self.news = News.objects.create(
+            case=self.case,
+            portal="Portal DB",
+            title="Judul DB",
+            type="artikel",
+            content="Isi",
+            url="https://example.com/db",
+            author="Reporter",
+            date_published=timezone.make_aware(datetime(2024, 4, 1, 10, 0, 0)),
+        )
+        self.viewer = PtUser.objects.create(
+            name="Viewer",
+            email="viewer@example.com",
+            password="pwd",
+            role="EXP_USER",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.viewer)
+
+    def test_serializer_uses_flat_news_payload(self):
+        row = ExpertDatasetRow.objects.create(
+            dataset=self.dataset,
+            row_number=1,
+            data_id=str(uuid.uuid4()),
+            disease_id=str(self.disease.id),
+            location_id=str(self.location.id),
+            payload={
+                "news_portal": "Portal Flat",
+                "news_title": "Judul Flat",
+                "news_type": "artikel",
+                "news_content": "Konten",
+                "news_url": "https://flat",
+                "news_author": "Reporter Flat",
+                "news_date_published": "2024-01-01T00:00:00Z",
+                "location": {"city": "Payload City", "province": "Payload Province"},
+            },
+        )
+
+        data = ExpertDatasetRowSerializer(row).data
+        self.assertEqual(data["news_portal"], "Portal Flat")
+        self.assertEqual(data["news_date_published"], "2024-01-01T00:00:00Z")
+        self.assertEqual(data["location_name"], "Payload City")
+        self.assertEqual(data["location_province"], "Payload Province")
+
+    def test_serializer_falls_back_to_db_and_handles_missing_refs(self):
+        row = ExpertDatasetRow.objects.create(
+            dataset=self.dataset,
+            row_number=2,
+            data_id=str(self.case.id),
+            disease_id=str(uuid.uuid4()),
+            location_id=str(uuid.uuid4()),
+            city="Fallback City",
+            payload={},
+        )
+
+        data = ExpertDatasetRowSerializer(row).data
+        self.assertEqual(data["news_portal"], "Portal DB")
+        self.assertEqual(data["news_date_published"], self.news.date_published.isoformat())
+        self.assertEqual(data["disease_name"], row.disease_id)
+        self.assertEqual(data["location_name"], "Fallback City")
+        self.assertEqual(data["location_province"], "")
+
+    def test_serializer_handles_news_lookup_errors(self):
+        row = ExpertDatasetRow.objects.create(
+            dataset=self.dataset,
+            row_number=3,
+            data_id=str(self.case.id),
+            disease_id=str(self.disease.id),
+            location_id=str(self.location.id),
+            payload={},
+        )
+        with patch("expert_user_feature.serializers.News.objects") as news_manager:
+            news_manager.only.side_effect = RuntimeError("boom")
+            data = ExpertDatasetRowSerializer(row).data
+        self.assertEqual(data["news_portal"], "")
+
+    @patch("expert_user_feature.views.log_expert_event", side_effect=RuntimeError("boom"))
+    def test_dataset_rows_view_swallow_audit_failure(self, _mock):
+        ExpertDatasetRow.objects.create(
+            dataset=self.dataset,
+            row_number=4,
+            data_id=str(self.case.id),
+            disease_id=str(self.disease.id),
+            location_id=str(self.location.id),
+            payload={"news_portal": "Portal X"},
+        )
+        url = f"/expert-feature/api/expert/datasets/{self.dataset.data_id}/rows/"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_serializer_location_payload_without_values_falls_back_to_db(self):
+        row = ExpertDatasetRow.objects.create(
+            dataset=self.dataset,
+            row_number=5,
+            data_id=str(self.case.id),
+            disease_id=str(self.disease.id),
+            location_id=str(self.location.id),
+            payload={"location": {}},
+        )
+        data = ExpertDatasetRowSerializer(row).data
+        self.assertEqual(data["location_name"], self.location.city)
+        self.assertEqual(data["location_province"], self.location.province)
+
+
+class ExpertDatasetServiceTests(TestCase):
+    def test_build_dataset_handles_empty_batch(self):
+        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password="x", role="EXP_USER")
+        batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
+
+        dataset = build_or_refresh_dataset_from_batch(batch)
+        self.assertEqual(dataset.file_name, "empty.csv")
+        self.assertEqual(ExpertDatasetRow.objects.filter(dataset=dataset).count(), 0)
+
+
+class ExpertDataLogViewTests(TestCase):
+    def setUp(self):
+        self.user = PtUser.objects.create(
+            name="Auditor",
+            email="audit@example.com",
+            password="pwd",
+            role="EXP_USER",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.url = "/expert-feature/api/expert/audit-logs/"
+        self.log_a = ExpertDataLog.objects.create(
+            data_id=uuid.uuid4(),
+            title="upload csv",
+            submitted_by="auditor",
+            note="a",
+        )
+        self.log_b = ExpertDataLog.objects.create(
+            data_id=uuid.uuid4(),
+            title="delete batch",
+            submitted_by="auditor",
+            note="b",
+        )
+
+    def test_audit_logs_view_allows_search_and_sort(self):
+        response = self.client.get(self.url, {"search": "upload", "sort": "title:asc"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item["title"] for item in response.data["results"]]
+        self.assertIn("upload csv", titles)
+
+    def test_audit_logs_view_handles_invalid_sort(self):
+        response = self.client.get(self.url, {"sort": "invalid"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data["count"], 2)
         
 import uuid
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -382,6 +711,40 @@ class ExpertCaseBatchAPITests(TestCase):
 
         res = self.client.get(f"{EXPERT_CASES_BASE}?batch={batch1_id}")
         self.assertEqual(len(res.data), 1)  # hanya case dari batch1
+
+    def test_bulk_delete_removes_only_user_cases(self):
+        Case.objects.create(
+            disease=self.disease,
+            location=self.loc,
+            gender="P",
+            age=33,
+            city="Jakarta",
+            status="biasa",
+            severity="insiden",
+            created_by=self.expert,
+        )
+        other = PtUser.objects.create(name="Other", email="other@example.com", password="x", role="EXP_USER")
+        Case.objects.create(
+            disease=self.disease,
+            location=self.loc,
+            gender="L",
+            age=40,
+            city="Bandung",
+            status="bahaya",
+            severity="mortalitas",
+            created_by=other,
+        )
+
+        res = self.client.delete(f"{EXPERT_CASES_BASE}delete-all/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(res.data["deleted_cases"], 1)
+        self.assertFalse(Case.objects.filter(created_by=self.expert).exists())
+
+    @patch("expert_user_feature.views.log_expert_action", side_effect=RuntimeError("boom"))
+    def test_batch_delete_swallow_audit_failure(self, _mock):
+        batch_id = self._upload_csv().data["batch_id"]
+        res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch_id}/delete/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
 
 
 EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"

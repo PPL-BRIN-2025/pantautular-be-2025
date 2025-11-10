@@ -35,6 +35,33 @@ def build_or_refresh_dataset_from_batch(batch: CaseUploadBatch) -> ExpertDataset
 
     bulk = []
     for idx, c in enumerate(cases, start=1):
+        disease = getattr(c, "disease", None)
+        location = getattr(c, "location", None)
+        news = (
+            c.news.only("portal", "title", "type", "content", "url", "author", "date_published", "img_url")
+            .order_by("-date_published", "-id")
+            .first()
+        )
+        payload = {
+            "disease_name": getattr(disease, "name", "") or "",
+            "location": {
+                "city": getattr(location, "city", "") or "",
+                "province": getattr(location, "province", "") or "",
+            },
+            "news": {
+                "portal": getattr(news, "portal", "") or "",
+                "title": getattr(news, "title", "") or "",
+                "type": getattr(news, "type", "") or "",
+                "content": getattr(news, "content", "") or "",
+                "url": getattr(news, "url", "") or "",
+                "author": getattr(news, "author", "") or "",
+                "date_published": (
+                    news.date_published.isoformat() if getattr(news, "date_published", None) else ""
+                ),
+                "img_url": getattr(news, "img_url", "") or "",
+            },
+        }
+
         bulk.append(
             ExpertDatasetRow(
                 dataset=ds,
@@ -47,7 +74,7 @@ def build_or_refresh_dataset_from_batch(batch: CaseUploadBatch) -> ExpertDataset
                 disease_id=str(getattr(c.disease, "id", "") or ""),
                 location_id=str(getattr(c, "location_id", "") or ""),
                 severity=c.severity or "",
-                payload=None,
+                payload=payload,
             )
         )
     if bulk:
