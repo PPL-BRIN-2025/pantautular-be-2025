@@ -24,7 +24,7 @@ EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 from django.contrib.auth import get_user_model
 from unittest.mock import patch
 
-from .models import ExpertDataset
+from .models import ExpertDataset, ExpertDatasetRow
 
 User = get_user_model()
 
@@ -382,3 +382,108 @@ class ExpertCaseBatchAPITests(TestCase):
 
         res = self.client.get(f"{EXPERT_CASES_BASE}?batch={batch1_id}")
         self.assertEqual(len(res.data), 1)  # hanya case dari batch1
+
+
+EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
+DATASET_ROWS_BASE = "/expert-feature/api/expert/datasets/{data_id}/rows/"
+
+class ExpertDatasetMirrorTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+        # EXP user
+        self.expert = PtUser.objects.create(
+            name="Expert Mirror",
+            email="expert.mirror@example.com",
+            password="x",
+            role="EXP_USER",
+        )
+        self.client.force_authenticate(self.expert)
+
+        self.dbd = Disease.objects.create(id=uuid.uuid4(), name="DBD", level_of_alertness=2)
+        self.hbv = Disease.objects.create(id=uuid.uuid4(), name="Hepatitis B", level_of_alertness=3)
+        self.loc_jkt = Location.objects.create(id=uuid.uuid4(), city="Jakarta", province="DKI Jakarta")
+        self.loc_bdg = Location.objects.create(id=uuid.uuid4(), city="Bandung", province="Jawa Barat")
+
+        self.csv_full = (
+            "disease,gender,age,city,status,severity,"
+            "location_city,location_province,location_latitude,location_longitude,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published,news_img_url\n"
+            "DBD,L,45,Jakarta,katastropik,mortalitas,Jakarta,DKI Jakarta,,,Detik,Lonjakan DBD,artikel,Isi A,https://detik/a,Rep A,2025-02-12T10:00:00Z,https://img/a.jpg\n"
+            "Hepatitis B,P,8,Bandung,biasa,insiden,Bandung,Jawa Barat,,,Antara,HBV Turun,artikel,Isi B,https://antara/b,Rep B,2025-03-05T14:30:00Z,\n"
+        ).encode("utf-8")
+
+    def _upload(self, content: bytes):
+        upload = SimpleUploadedFile("cases.csv", content, content_type="text/csv")
+        return self.client.post(f"{EXPERT_CASES_BASE}upload-csv/", {"file": upload}, format="multipart")
+
+    @patch("expert_user_feature.views.log_expert_action")  # biar ga failure
+    def test_upload_builds_dataset_and_rows_with_names_and_news_payload(self, audit_mock):
+        res = self._upload(self.csv_full)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        batch_id = res.data["batch_id"]
+
+        # Mirror dataset shaped
+        ds = ExpertDataset.objects.filter(data_id=str(batch_id)).first()
+        self.assertIsNotNone(ds, "ExpertDataset tidak dibuat")
+        self.assertEqual(ds.file_name, "cases.csv")
+
+        # Rows forned
+        rows = ExpertDatasetRow.objects.filter(dataset=ds).order_by("row_number")
+        self.assertEqual(rows.count(), 2)
+
+        # Cek serializer fields 
+        from expert_user_feature.serializers import ExpertDatasetRowSerializer
+        s0 = ExpertDatasetRowSerializer(rows[0]).data
+        s1 = ExpertDatasetRowSerializer(rows[1]).data
+
+        # disease_name readable
+        self.assertEqual(s0["disease_name"], "DBD")
+        self.assertEqual(s1["disease_name"], "Hepatitis B")
+
+        # location split kota & provinsi
+        self.assertEqual(s0["location_name"], "Jakarta")
+        self.assertEqual(s0["location_province"], "DKI Jakarta")
+        self.assertEqual(s1["location_name"], "Bandung")
+        self.assertEqual(s1["location_province"], "Jawa Barat")
+
+        # payload.news 
+        for sd in (s0, s1):
+            news = (sd.get("payload") or {}).get("news") or {}
+            for key in ["portal", "title", "type", "content", "url", "author", "date_published"]:
+                self.assertIn(key, news, f"payload.news.{key} harus ada")
+
+        # Endpoint rows (paginated) return same
+        api = self.client.get(DATASET_ROWS_BASE.format(data_id=str(batch_id)) + "?page=1&pageSize=1")
+        self.assertEqual(api.status_code, 200)
+        self.assertEqual(api.data["count"], 2)
+        self.assertEqual(len(api.data["results"]), 1)
+        self.assertIn("disease_name", api.data["results"][0])
+        audit_mock.assert_called()  # upload noted
+
+    @patch("expert_user_feature.views.log_expert_action")
+    def test_delete_batch_cleans_only_its_dataset_mirror(self, audit_mock):
+        # upload batch A
+        a = self._upload(self.csv_full).data["batch_id"]
+        # upload batch B 
+        csv2 = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,10,Bandung,biasa,insiden,Bandung,Jawa Barat,Portal,Judul,artikel,Teks,https://x,Auth,2025-01-01T00:00:00Z\n"
+        ).encode()
+        b = self._upload(csv2).data["batch_id"]
+
+        # sanity mirror 2
+        self.assertTrue(ExpertDataset.objects.filter(data_id=str(a)).exists())
+        self.assertTrue(ExpertDataset.objects.filter(data_id=str(b)).exists())
+
+        # delete batch A
+        r = self.client.delete(f"{EXPERT_BATCH_BASE}{a}/delete/")
+        self.assertEqual(r.status_code, status.HTTP_204_NO_CONTENT)
+
+
+        self.assertFalse(ExpertDataset.objects.filter(data_id=str(a)).exists())
+        self.assertFalse(ExpertDatasetRow.objects.filter(dataset__data_id=str(a)).exists())
+        self.assertTrue(ExpertDataset.objects.filter(data_id=str(b)).exists())
+        self.assertTrue(ExpertDatasetRow.objects.filter(dataset__data_id=str(b)).exists())
+        audit_mock.assert_called() 
