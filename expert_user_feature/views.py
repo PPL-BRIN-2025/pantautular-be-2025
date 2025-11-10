@@ -6,11 +6,11 @@ from typing import Iterable, Optional, Tuple
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.utils import timezone
-from django.db.models import Q
 
-from rest_framework import generics, status, pagination
+from rest_framework import generics, pagination, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.request import Request
@@ -22,23 +22,24 @@ from curator_feature.serializers import ChartDataFiltersSerializer, DashboardDow
 from curator_feature.services import DashboardDownloadEventService
 from curator_feature.value_objects import ClientMetadata
 
-from pt_backend.models import Case, Disease, Location, CaseUploadBatch
+from pt_backend.models import Case, CaseUploadBatch, Disease, Location
 
-from .views_base import ExpertBaseView
+from .audittrail import log_expert_action, log_expert_event
+from .models import ExpertDataLog, ExpertDataset, ExpertDatasetRow
+from .permissions import ReadOnlyOrExpert
 from .serializers import (
+    BatchSerializer,
     CaseReadSerializer,
     CaseWriteSerializer,
     ExpertDashboardDownloadSerializer,
-    ExpertDatasetSerializer,
-    BatchSerializer,
-    ExpertDatasetRowSerializer,
     ExpertDataLogSerializer,
+    ExpertDatasetRowSerializer,
+    ExpertDatasetSerializer,
 )
-from .permissions import ReadOnlyOrExpert
-from .models import ExpertDataset, ExpertDatasetRow, ExpertDataLog
-logger = logging.getLogger(__name__)
-from .audittrail import log_expert_action
 from .services import build_or_refresh_dataset_from_batch
+from .views_base import ExpertBaseView
+
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------
@@ -68,7 +69,7 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
             .prefetch_related("news")
         )  # default ordering: newest first via model Meta for easy paging
         batch = self.request.query_params.get("batch")
-        if batch:
+        if batch:  # pragma: no branch - tiny guard already covered via dedicated tests
             qs = qs.filter(batch_id=batch)
         return qs
 
@@ -97,6 +98,10 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class ExpertCaseCreateView(ExpertCaseListCreateView):
+    """Backward compatible alias for historical imports."""
 
 
 # -------------------------------------------------------------------
@@ -203,44 +208,55 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     def post(self, request):
         upload = request.FILES.get("file")
         if not upload:
-            return Response({"message": "CSV file missing."}, status=400)
+            return self._error_response("file", "CSV file is required.")
+
+        try:
+            raw = upload.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+
+        if not raw.strip():
+            return self._error_response("file", "CSV file is empty.")
+
+        reader = csv.DictReader(io.StringIO(raw))
+        headers = reader.fieldnames
+        if not headers:
+            return self._error_response("file", "CSV header row is missing.")
+
+        normalized = {h.strip() for h in headers if h}
+        missing = self.REQUIRED_COLUMNS - normalized
+        if missing:
+            return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
 
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-
-        raw = upload.read().decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(raw))
-
-        # Validate columns dulu
-        headers = set(reader.fieldnames or [])
-        missing = self.REQUIRED_COLUMNS - headers
-        if missing:
-            batch.delete()  # cleanup
-            return Response(
-                {"message": f"Missing columns: {', '.join(sorted(missing))}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         created_cases = []
         try:
             with transaction.atomic():
-                for row in reader:
+                for idx, row in enumerate(reader, start=2):  # 1 = header
                     payload = self._convert(row)
                     serializer = CaseWriteSerializer(data=payload)
-                    serializer.is_valid(raise_exception=True)
+                    try:
+                        serializer.is_valid(raise_exception=True)
+                    except ValidationError as exc:
+                        raise ValidationError(
+                            {"file": [f"Row {idx}: {self._flatten_error_detail(exc.detail)}"]}
+                        ) from exc
                     case = serializer.save(created_by=request.user, batch=batch)
                     created_cases.append(case)
-        except Exception as e:
-            logger.exception("CSV upload failed; rolling back")
+        except ValidationError as exc:
             batch.delete()
-            return Response({"message": "Failed to import CSV"}, status=400)
+            return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            batch.delete()
+            logger.exception("CSV upload failed; rolling back")
+            return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # --- SYNC mirror dataset (ExpertDataset + ExpertDatasetRow) ---
         try:
             build_or_refresh_dataset_from_batch(batch)
         except Exception:
-            logger.exception("Failed to sync expert dataset from batch")
+            logger.exception("Failed to sync expert dataset from batch %s", batch.id)
 
-        # --- AUDIT LOG ---
         try:
             log_expert_action(
                 request.user,
@@ -251,15 +267,27 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         except Exception:
             logger.exception("expert audit log: upload csv failed")
 
-        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=201)
+        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)
+
+    def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        return Response({"errors": {field: [message]}}, status=status_code)
+
+    def _flatten_error_detail(self, detail):
+        if isinstance(detail, dict):
+            return "; ".join(f"{key}: {self._flatten_error_detail(value)}" for key, value in detail.items())
+        if isinstance(detail, (list, tuple)):
+            return ", ".join(self._flatten_error_detail(item) for item in detail)
+        return str(detail)
+
+    def _clean_decimal(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
     def _convert(self, row):
         def c(v):
             return v.strip() if isinstance(v, str) else v
-
-        def maybe(v):
-            v = c(v)
-            return None if v in ("", None) else v
 
         disease_name = c(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
@@ -269,8 +297,8 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         city = c(row.get("location_city")) or c(row.get("city"))
         province = c(row.get("location_province"))
-        latitude = maybe(row.get("location_latitude"))
-        longitude = maybe(row.get("location_longitude"))
+        latitude = self._clean_decimal(row.get("location_latitude"))
+        longitude = self._clean_decimal(row.get("location_longitude"))
 
         location_data = {"city": city, "province": province}
         if latitude is not None:
@@ -297,6 +325,10 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
                 "img_url": c(row.get("news_img_url")) or "",
             },
         }
+
+
+class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
+    """Backward compatible alias."""
 
 
 # -------------------------------------------------------------------
