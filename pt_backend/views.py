@@ -9,7 +9,7 @@ from authentication.security import CustomJWTAuthentication
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
 from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
-from .filter.service import CaseFilterService
+from .filter.service import CaseFilterService, CaseFilterValidationError
 from .repositories import CaseRepository, DiseaseRepository, LocationRepository, NewsRepository, ClimateRepository
 from .authentication import APIKeyAuthentication
 from django.http import Http404, JsonResponse
@@ -24,7 +24,7 @@ from .prome_metrics import (
     DB_QUERY_TIME, API_REQUEST_SIZE, API_RESPONSE_SIZE,
     CACHE_HIT_RATE, API_SUCCESS, DB_ERRORS, REQUEST_COUNT, REQUEST_LATENCY, track_active_requests, track_data_count
 )
-from .constants import CLIMATE_ERROR_INVALID_FORMAT
+from .constants import CLIMATE_ERROR_INVALID_FORMAT, PROVINCE_TO_CODE
 from datetime import datetime
 from django.db import connections
 from django.db.utils import OperationalError
@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
 CACHE_TIMEOUT = 600
 CACHE_KEY_PREFIX = "stats_report_"
+
+
+def build_default_climate_response(serializer_class, default_value=0.0):
+    """
+    Construct a default climate payload covering every province so the frontend
+    can render a stable map even when no measurements are available.
+    """
+    default_payload = [
+        {"province": province, "value": default_value}
+        for province in PROVINCE_TO_CODE.keys()
+    ]
+    serializer = serializer_class(data=default_payload, many=True)
+    if not serializer.is_valid():
+        return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 class AllCaseLocationsView(APIView):
     authentication_classes = [APIKeyAuthentication]
@@ -80,6 +95,8 @@ class AllCaseLocationsView(APIView):
                 serialized_data,
                 status=status.HTTP_200_OK
             )
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"Error in case filter: {str(e)}")
             API_ERRORS.labels(error_type='case_filter_error').inc()
@@ -313,6 +330,8 @@ class StatisticsView(APIView):
             
             return Response(statistics, status=status.HTTP_200_OK)
             
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(e)
             return Response(
@@ -337,6 +356,9 @@ class StatisticsView(APIView):
         
         # Handle date range
         self._add_date_range(request, filter_params)
+
+        # Handle dataset batch selection
+        self._add_batch(request, filter_params)
         
         return filter_params
 
@@ -368,6 +390,22 @@ class StatisticsView(APIView):
         )
         if time_range:
             filter_params['date_range'] = time_range
+
+    def _add_batch(self, request, filter_params):
+        raw = (
+            request.data.get("batch")
+            or request.data.get("batch_id")
+            or request.data.get("dataset")
+            or request.data.get("dataset_id")
+            or request.data.get("batchId")
+            or request.data.get("datasetId")
+        )
+        if isinstance(raw, dict):
+            raw = raw.get("value") or raw.get("id") or raw.get("batch") or raw.get("data_id")
+        if isinstance(raw, (list, tuple, set)):
+            raw = next((item for item in raw if item not in (None, "")), None)
+        if raw not in (None, "", [], {}, ()):
+            filter_params['batch'] = raw
 
     
 class SeverityFilteringStatsView(APIView):
@@ -404,6 +442,8 @@ class SeverityFilteringStatsView(APIView):
             
             return Response(results, status=status.HTTP_200_OK)
         
+        except CaseFilterValidationError as err:
+            return Response(err.as_payload(), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response(
                 {"error": f"Error processing filter request: {str(e)}"},
@@ -461,6 +501,21 @@ class SeverityFilteringStatsView(APIView):
             return_type="tuple",
         )
         date_range = time_window if time_window else None
+
+        batch = (
+            data.get("batch")
+            or data.get("batch_id")
+            or data.get("dataset")
+            or data.get("dataset_id")
+            or data.get("batchId")
+            or data.get("datasetId")
+        )
+        if isinstance(batch, dict):
+            batch = batch.get("value") or batch.get("id") or batch.get("batch") or batch.get("data_id")
+        if isinstance(batch, (list, tuple, set)):
+            batch = next((item for item in batch if item not in (None, "")), None)
+        if batch in ([], {}, (), ""):
+            batch = None
         
         return {
             'diseases': diseases,
@@ -468,7 +523,8 @@ class SeverityFilteringStatsView(APIView):
             'cities': cities,
             'news_portals': portals,
             'alert_levels': level_of_alertness,
-            'date_range': date_range
+            'date_range': date_range,
+            'batch': batch,
         }
     
     def _process_location_data(self, locations):
@@ -516,13 +572,16 @@ class ProvinceHumidityView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvinceHumiditySerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No humidity data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvinceHumiditySerializer)
+
             serializer = ProvinceHumiditySerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
@@ -546,13 +605,16 @@ class ProvincePrecipitationView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvincePrecipitationSerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No precipitation data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvincePrecipitationSerializer)
+
             serializer = ProvincePrecipitationSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)
@@ -576,13 +638,16 @@ class ProvinceTemperatureView(APIView):
             
             if isinstance(data, dict) and "error" in data:
                 error_msg = data["error"]
-                if any(msg in error_msg for msg in ["Invalid", "No", "Duplicate"]):
+                lower_msg = error_msg.lower()
+                if any(term in lower_msg for term in ("invalid", "duplicate")):
                     return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                if "no" in lower_msg and "available" in lower_msg:
+                    return build_default_climate_response(ProvinceTemperatureSerializer)
                 return Response({"error": error_msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
+
             if not data:
-                return Response({"error": "No temperature data available."}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return build_default_climate_response(ProvinceTemperatureSerializer)
+
             serializer = ProvinceTemperatureSerializer(data=data, many=True)
             if not serializer.is_valid():
                 return Response({"error": CLIMATE_ERROR_INVALID_FORMAT}, status=status.HTTP_400_BAD_REQUEST)

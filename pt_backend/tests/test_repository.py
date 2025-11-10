@@ -1,5 +1,5 @@
 from django.test import TestCase
-from pt_backend.models import Case, Disease, Location, News
+from pt_backend.models import Case, Disease, Location, News, CaseUploadBatch, User
 from pt_backend.repositories import DiseaseRepository, LocationRepository, NewsRepository, CaseRepository
 from django.core.exceptions import ObjectDoesNotExist
 import uuid
@@ -183,7 +183,26 @@ class CaseRepositoryTestCase(BaseTestCase):
     def test_get_all_cases(self):
         cases = self.repository.get_all_cases()
         self.assertEqual(cases.count(), 2)
-    
+
+    def test_get_all_cases_filters_by_batch(self):
+        uploader = User.objects.create(
+            name="expert",
+            password="secret",
+            role="EXPERT",
+            email="expert@example.com",
+        )
+        batch_one = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="batch-one.csv")
+        batch_two = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="batch-two.csv")
+
+        self.case1.batch = batch_one
+        self.case1.save(update_fields=["batch"])
+        self.case2.batch = batch_two
+        self.case2.save(update_fields=["batch"])
+
+        cases = self.repository.get_all_cases(batch_id=str(batch_one.id))
+        case_ids = {row["id"] for row in cases}
+        self.assertEqual(case_ids, {self.case1.id})
+
     def test_get_all_cases_empty(self):
         # Clear all cases first
         News.objects.all().delete()

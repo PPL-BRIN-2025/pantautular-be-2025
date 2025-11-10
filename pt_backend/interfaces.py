@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 class CaseRetrievalInterface(ABC):
     @abstractmethod
-    def get_all_cases(self):
+    def get_all_cases(self, batch_id=None):
         pass # pragma: no cover
     @abstractmethod
     def get_all_case_locations(self):
@@ -13,7 +13,7 @@ class CaseRetrievalInterface(ABC):
     
 class CaseRepositoryInterface(ABC):
     @abstractmethod
-    def get_all_cases(self):
+    def get_all_cases(self, batch_id=None):
         pass # pragma: no cover
     
     @abstractmethod
