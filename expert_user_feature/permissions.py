@@ -6,7 +6,7 @@ class IsExpertUserRole(BasePermission):
     def has_permission(self, request, view):
         user = getattr(request, "user", None)
         role = getattr(user, "role", None)
-        return bool(user and role and str(role).upper() == "EXP_USER")
+        return bool(user and role and str(role).upper() in {"EXP_USER", "ADMIN"})
 
 
 class ReadOnlyOrExpert(BasePermission):
