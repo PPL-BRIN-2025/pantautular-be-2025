@@ -290,7 +290,7 @@ class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
-            password="x",
+            password=make_password("test-password"),
         )
         setattr(self.user, "role", "EXPERT")
         self.user.save()
@@ -568,7 +568,7 @@ class TestExpertDatasetRowSerializer(TestCase):
 
 class TestExpertDatasetService(TestCase):
     def test_build_dataset_handles_empty_batch(self):
-        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password="x", role="EXP_USER")
+        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password=make_password("test-password"), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
 
         dataset = build_or_refresh_dataset_from_batch(batch)
@@ -636,7 +636,7 @@ class TestExpertCaseBatchAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert",
             email="expert@example.com",
-            password="x",
+            password=make_password("test-password"),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
