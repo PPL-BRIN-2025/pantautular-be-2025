@@ -19,7 +19,7 @@ from rest_framework.test import APIClient, APITestCase, APIRequestFactory
 from django.urls import reverse
 
 from pt_backend.models import Case, CaseUploadBatch, Disease, Location, News, User as PtUser
-
+import uuid
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 from django.contrib.auth import get_user_model
@@ -39,7 +39,7 @@ class TestExpertCaseAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert User",
             email="expert@example.com",
-            password=make_password("test-password"),
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(user=self.expert)
@@ -290,7 +290,7 @@ class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
-            password=make_password("test-password"),
+            password=make_password(str(uuid.uuid4())),
         )
         setattr(self.user, "role", "EXPERT")
         self.user.save()
@@ -568,7 +568,7 @@ class TestExpertDatasetRowSerializer(TestCase):
 
 class TestExpertDatasetService(TestCase):
     def test_build_dataset_handles_empty_batch(self):
-        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password=make_password("test-password"), role="EXP_USER")
+        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
 
         dataset = build_or_refresh_dataset_from_batch(batch)
