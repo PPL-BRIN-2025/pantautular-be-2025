@@ -32,7 +32,7 @@ from .views import ExpertCaseListCreateView
 
 User = get_user_model()
 
-class ExpertCaseAPITests(TestCase):
+class TestExpertCaseAPI(TestCase):
     def setUp(self):
         self.client = APIClient()
 
@@ -286,7 +286,7 @@ class ExpertCaseAPITests(TestCase):
         self.assertEqual(News.objects.count(), 2)
 
 
-class ExpertDatasetAPITests(APITestCase):
+class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
@@ -365,7 +365,7 @@ class ExpertDatasetAPITests(APITestCase):
         self.assertIn("Summary.pdf", str(dataset))
 
 
-class AuditTrailTests(TestCase):
+class TestAuditTrail(TestCase):
     def setUp(self):
         from expert_user_feature import audittrail
         self.audit_module = audittrail
@@ -412,7 +412,7 @@ class AuditTrailTests(TestCase):
         self.audit_module.curator_log_event = self.original_curator
 
 
-class ExpertDataLogModelTests(TestCase):
+class TestExpertDataLogModel(TestCase):
     def test_str_and_immutable_guards(self):
         dataset = ExpertDataset.objects.create(
             data_id="DATASET-ID",
@@ -442,7 +442,7 @@ class ExpertDataLogModelTests(TestCase):
             log.delete()
 
 
-class ExpertDatasetRowSerializerTests(TestCase):
+class TestExpertDatasetRowSerializer(TestCase):
     def setUp(self):
         self.dataset = ExpertDataset.objects.create(
             data_id="SERIALIZER",
@@ -566,7 +566,7 @@ class ExpertDatasetRowSerializerTests(TestCase):
         self.assertEqual(data["location_province"], self.location.province)
 
 
-class ExpertDatasetServiceTests(TestCase):
+class TestExpertDatasetService(TestCase):
     def test_build_dataset_handles_empty_batch(self):
         uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password="x", role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
@@ -576,7 +576,7 @@ class ExpertDatasetServiceTests(TestCase):
         self.assertEqual(ExpertDatasetRow.objects.filter(dataset=dataset).count(), 0)
 
 
-class ExpertDataLogViewTests(TestCase):
+class TestExpertDataLogView(TestCase):
     def setUp(self):
         self.user = PtUser.objects.create(
             name="Auditor",
@@ -629,7 +629,7 @@ EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
 
 
-class ExpertCaseBatchAPITests(TestCase):
+class TestExpertCaseBatchAPI(TestCase):
     def setUp(self):
         self.client = APIClient()
 
@@ -750,7 +750,7 @@ class ExpertCaseBatchAPITests(TestCase):
 EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
 DATASET_ROWS_BASE = "/expert-feature/api/expert/datasets/{data_id}/rows/"
 
-class ExpertDatasetMirrorTests(TestCase):
+class TestExpertDatasetMirror(TestCase):
     def setUp(self):
         self.client = APIClient()
 

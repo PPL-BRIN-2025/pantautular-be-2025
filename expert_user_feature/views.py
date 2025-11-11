@@ -234,18 +234,17 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         if missing:
             return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
 
-        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-
-        serializers_list = []
+        rows = list(reader)
+        validated_serializers = []
         row_errors = []
-        for row_number, row in enumerate(reader, start=2):
+        for row_number, row in enumerate(rows, start=2):
             serializer = CaseWriteSerializer(data=self._convert(row))
             try:
                 serializer.is_valid(raise_exception=True)
             except ValidationError as exc:
                 row_errors.append({"row": row_number, "errors": exc.detail})
                 continue
-            serializers_list.append(serializer)
+            validated_serializers.append(serializer)
 
         if row_errors:
             return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -254,15 +253,7 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         created_cases = []
         try:
             with transaction.atomic():
-                for idx, row in enumerate(reader, start=2):  # 1 = header
-                    payload = self._convert(row)
-                    serializer = CaseWriteSerializer(data=payload)
-                    try:
-                        serializer.is_valid(raise_exception=True)
-                    except ValidationError as exc:
-                        raise ValidationError(
-                            {"file": [f"Row {idx}: {self._flatten_error_detail(exc.detail)}"]}
-                        ) from exc
+                for serializer in validated_serializers:
                     case = serializer.save(created_by=request.user, batch=batch)
                     created_cases.append(case)
         except ValidationError as exc:
@@ -274,7 +265,7 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            build_or_refresh_dataset_from_batch(batch)
+            build_or_refresh_dataset_from_batch(batch, created_cases)
         except Exception:
             logger.exception("Failed to sync expert dataset from batch %s", batch.id)
 
@@ -300,12 +291,6 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             return ", ".join(self._flatten_error_detail(item) for item in detail)
         return str(detail)
 
-    def _clean_decimal(self, value):
-        if value is None:
-            return None
-        value = str(value).strip()
-        return value or None
-
     @staticmethod
     def _clean_decimal(value):
         if value is None:
@@ -315,20 +300,24 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             return None
         return cleaned
 
-    def _file_error(self, message, field="file"):
-        return Response(
-            {"errors": {field: [message]}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    def _convert(self, row):
+        def clean(value: str | None) -> str:
+            if value is None:
+                return ""
+            return str(value).strip()
 
-        disease_name = c(row.get("disease"))
+        def optional(value: str | None):
+            cleaned = clean(value)
+            return cleaned or None
+
+        disease_name = clean(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
             name=disease_name,
             defaults={"level_of_alertness": 1},
         )
 
-        city = c(row.get("location_city")) or c(row.get("city"))
-        province = c(row.get("location_province"))
+        city = clean(row.get("location_city")) or clean(row.get("city"))
+        province = optional(row.get("location_province"))
         latitude = self._clean_decimal(row.get("location_latitude"))
         longitude = self._clean_decimal(row.get("location_longitude"))
 
@@ -340,11 +329,11 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         return {
             "disease": disease_obj.name,
-            "gender": c(row.get("gender")),
-            "age": c(row.get("age")),
-            "city": c(row.get("city")),
-            "status": c(row.get("status")),
-            "severity": c(row.get("severity")),
+            "gender": clean(row.get("gender")),
+            "age": clean(row.get("age")),
+            "city": clean(row.get("city")),
+            "status": clean(row.get("status")),
+            "severity": clean(row.get("severity")),
             "location": location_data,
             "news": {
                 "portal": clean(row.get("news_portal")),

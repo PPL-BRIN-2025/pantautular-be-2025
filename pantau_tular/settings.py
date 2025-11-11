@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
@@ -138,6 +139,21 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Force lightweight SQLite DB when executing automated tests (manage.py test / pytest)
+RUNNING_TESTS = (
+    os.environ.get("PYTEST_CURRENT_TEST")
+    or os.environ.get("DJANGO_TEST", "").lower() in {"1", "true"}
+    or any(arg in {"test", "testserver", "pytest"} for arg in sys.argv)
+)
+
+if RUNNING_TESTS:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
 
@@ -272,8 +288,6 @@ CSRF_TRUSTED_ORIGINS = [
 CURATOR_ROLE_NAME = "CURATOR"
 # which checks to use in IsCuratorRole: "role" attr on user, Django group membership
 CURATOR_ROLE_CHECKS = ("role", "group")
-
-import sys
 
 if 'test' in sys.argv:
     MIGRATION_MODULES = {

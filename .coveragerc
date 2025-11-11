@@ -11,6 +11,7 @@ omit =
     */tests.py
     */test_*.py
     */__pycache__/*
+    expert_user_feature/conftest.py
 
 [report]
 show_missing = True

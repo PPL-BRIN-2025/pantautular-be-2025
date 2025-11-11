@@ -11,12 +11,13 @@ django.setup()
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from expert_user_feature.views import ExpertCaseCSVUploadAPIView
 
-from pt_backend.models import Case, Disease, Location, User as PtUser
+from pt_backend.models import Case, CaseUploadBatch, Disease, Location, User as PtUser
 
 
 CASE_BASE = "/expert-feature/experts/cases/"
@@ -158,6 +159,13 @@ class ExpertCaseErrorAPITests(TestCase):
         self.assertIsNone(view._clean_decimal(" "))
         self.assertEqual(view._clean_decimal(" 1.23 "), "1.23")
 
+    def test_flatten_error_detail_handles_nested_structures(self):
+        view = ExpertCaseCSVUploadAPIView()
+        nested = {"file": ["Missing header", {"news": ["invalid"]}]}
+        flattened = view._flatten_error_detail(nested)
+        self.assertIn("file:", flattened)
+        self.assertIn("news:", flattened)
+
     def test_csv_upload_handles_missing_header_row(self):
         upload = SimpleUploadedFile("cases.csv", b"disease,gender\n", content_type="text/csv")
         dummy_reader = type("R", (), {"fieldnames": None})()
@@ -184,6 +192,19 @@ class ExpertCaseErrorAPITests(TestCase):
             response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["message"], "Failed to import CSV")
+
+    def test_csv_upload_handles_validation_error_during_save(self):
+        csv_content = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,9,City,biasa,insiden,City,Province,Portal,Title,artikel,Content,https://example.com,Author,2024-01-01T00:00:00Z\n"
+        )
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        with patch("expert_user_feature.views.CaseWriteSerializer.save", side_effect=ValidationError({"file": ["invalid"]})):
+            response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("errors", response.data)
+        self.assertEqual(CaseUploadBatch.objects.count(), 0)
 
     @patch("expert_user_feature.views.log_expert_action", side_effect=RuntimeError("audit fail"))
     @patch("expert_user_feature.views.build_or_refresh_dataset_from_batch", side_effect=RuntimeError("sync fail"))
