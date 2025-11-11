@@ -31,7 +31,9 @@ source =
     */pantautular-be-2025/admin_feature
     */pantautular-be-2025/curator_feature
     */pantautular-be-2025/expert_user_feature
-    */_work/*/pantautular-be-2025/*
+    */_work/*/pantautular-be-2025/admin_feature
+    */_work/*/pantautular-be-2025/curator_feature
+    */_work/*/pantautular-be-2025/expert_user_feature
 
 [html]
 directory = htmlcov
