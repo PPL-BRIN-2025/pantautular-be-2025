@@ -39,9 +39,10 @@ class TestExpertCaseAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert User",
             email="expert@example.com",
-            password="x",
             role="EXP_USER",
         )
+        self.expert.set_password("test-password")
+        self.expert.save()
         self.client.force_authenticate(user=self.expert)
 
         self.disease_hb = Disease.objects.create(
