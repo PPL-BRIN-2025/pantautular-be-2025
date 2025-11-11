@@ -8,6 +8,7 @@ omit =
     */test_*.py
     */tests/**/*
     */__pycache__/*
+    expert_user_feature/conftest.py
 
 [report]
 show_missing = True
