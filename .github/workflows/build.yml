@@ -2,7 +2,7 @@ name: Build & SonarCloud Analysis
 
 on:
   push:
-    branches: [staging, main]
+    branches: [main, staging]
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -31,10 +31,9 @@ jobs:
       DJANGO_SETTINGS_MODULE: pantau_tular.settings
       PYTHONPATH: ${{ github.workspace }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: https://sonarcloud.io
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -51,18 +50,35 @@ jobs:
           pip install coverage
 
       - name: Run tests with coverage
-        # run from repo root so coverage writes repo-relative paths
         run: |
           coverage erase
           coverage run --branch manage.py test admin_feature curator_feature expert_user_feature
           coverage xml -i -o coverage.xml
           coverage report -m
 
-      # IMPORTANT: Do NOT rewrite paths; coverage.xml already uses repo-relative paths.
-      # The previous sed "normalize paths" step is removed because it corrupts mappings.
+      # --- Sonar Scanner CLI instead of Docker (prevents UnknownHostException) ---
+      - name: Set up Java (for SonarScanner CLI)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
+      - name: Download SonarScanner CLI
+        run: |
+          SCANNER_VERSION=5.0.1.3006
+          curl -sSL -o sonar-scanner.zip \
+            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SCANNER_VERSION-linux.zip
+          unzip -q sonar-scanner.zip
+          echo "$PWD/sonar-scanner-$SCANNER_VERSION-linux/bin" >> $GITHUB_PATH
+
+      - name: SonarCloud Scan (with retry)
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          for attempt in 1 2 3; do
+            sonar-scanner \
+              -Dsonar.host.url=https://sonarcloud.io \
+              -Dsonar.projectBaseDir=. \
+              -Dsonar.login=$SONAR_TOKEN && break || \
+              (echo "Retrying in 10s..." && sleep 10)
+          done
