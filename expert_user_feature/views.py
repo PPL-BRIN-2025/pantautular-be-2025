@@ -1,8 +1,7 @@
 import csv
 import io
 import logging
-from datetime import datetime, time
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Tuple
 
 from django.conf import settings
 from django.db import transaction
@@ -36,6 +35,10 @@ from .serializers import (
     ExpertDatasetRowSerializer,
     ExpertDatasetSerializer,
 )
+from .models import ExpertDataset
+from .audittrail import log_expert_event
+from .permissions import ReadOnlyOrExpert
+from .filtering import ExpertCaseFilterSet
 from .services import build_or_refresh_dataset_from_batch
 from .views_base import ExpertBaseView
 
@@ -101,6 +104,7 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
 
 
 class ExpertCaseCreateView(ExpertCaseListCreateView):
+    """Legacy alias kept for older dashboards/tests."""
     """Backward compatible alias for historical imports."""
 
 
@@ -189,9 +193,11 @@ class ExpertCaseBulkDeleteView(ExpertBaseView, APIView):
 # -------------------------------------------------------------------
 # CASES: CSV UPLOAD → creates a Batch + Cases (owned by user)
 # -------------------------------------------------------------------
+
 class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     """
     POST /expert-feature/experts/cases/upload-csv/
+    Upload CSV to create CaseUploadBatch entries and cases owned by the user.
     Upload CSV → create CaseUploadBatch and Cases tagged with created_by=user.
     Sekalian: sync mirror ExpertDataset & rows + catat audit log.
     """
@@ -230,6 +236,21 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
 
+        serializers_list = []
+        row_errors = []
+        for row_number, row in enumerate(reader, start=2):
+            serializer = CaseWriteSerializer(data=self._convert(row))
+            try:
+                serializer.is_valid(raise_exception=True)
+            except ValidationError as exc:
+                row_errors.append({"row": row_number, "errors": exc.detail})
+                continue
+            serializers_list.append(serializer)
+
+        if row_errors:
+            return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
         created_cases = []
         try:
             with transaction.atomic():
@@ -285,9 +306,20 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         value = str(value).strip()
         return value or None
 
-    def _convert(self, row):
-        def c(v):
-            return v.strip() if isinstance(v, str) else v
+    @staticmethod
+    def _clean_decimal(value):
+        if value is None:
+            return None
+        cleaned = value.strip() if isinstance(value, str) else value
+        if cleaned in ("", None):
+            return None
+        return cleaned
+
+    def _file_error(self, message, field="file"):
+        return Response(
+            {"errors": {field: [message]}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
         disease_name = c(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
@@ -315,19 +347,20 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             "severity": c(row.get("severity")),
             "location": location_data,
             "news": {
-                "portal": c(row.get("news_portal")),
-                "title": c(row.get("news_title")),
-                "type": c(row.get("news_type")),
-                "content": c(row.get("news_content")),
-                "url": c(row.get("news_url")),
-                "author": c(row.get("news_author")),
-                "date_published": c(row.get("news_date_published")),
-                "img_url": c(row.get("news_img_url")) or "",
+                "portal": clean(row.get("news_portal")),
+                "title": clean(row.get("news_title")),
+                "type": clean(row.get("news_type")),
+                "content": clean(row.get("news_content")),
+                "url": clean(row.get("news_url")),
+                "author": clean(row.get("news_author")),
+                "date_published": clean(row.get("news_date_published")),
+                "img_url": clean(row.get("news_img_url")) or "",
             },
         }
 
 
 class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
+    """Legacy alias kept for compatibility with older imports."""
     """Backward compatible alias."""
 
 
@@ -340,10 +373,12 @@ class ExpertDownloadMixin:
     filters_serializer_class = ChartDataFiltersSerializer
     event_service_class = DashboardDownloadEventService
     default_serializer_class = DashboardDownloadEventSerializer
+    case_filter_set_class = ExpertCaseFilterSet
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.event_service = self.event_service_class()
+        self.case_filters = self.case_filter_set_class()
 
     def _should_log(self) -> bool:
         return bool(getattr(settings, "ENABLE_DOWNLOAD_LOGGING", False))
@@ -393,53 +428,12 @@ class ExpertDownloadMixin:
 
         return True, event
 
-    def _date_range_bounds(self, filters: dict) -> Tuple[Optional[datetime], Optional[datetime]]:
-        start = filters.get("start_date")
-        end = filters.get("end_date")
-        tz = timezone.get_current_timezone()
-
-        start_bound = None
-        if start:
-            start_bound = timezone.make_aware(datetime.combine(start, time.min), timezone=tz)
-
-        end_bound = None
-        if end:
-            end_bound = timezone.make_aware(datetime.combine(end, time.max), timezone=tz)
-
-        return start_bound, end_bound
-
     def _filtered_cases(self, filters: dict) -> Iterable[Case]:
-        qs = Case.objects.select_related("disease", "location").prefetch_related("news")
-
-        diseases = filters.get("diseases")
-        if diseases:
-            qs = qs.filter(disease__name__in=diseases)
-
-        portals = filters.get("portals")
-        if portals:
-            qs = qs.filter(news__portal__in=portals)
-
-        alertness = filters.get("level_of_alertness")
-        if alertness:
-            qs = qs.filter(disease__level_of_alertness=alertness)
-
-        locations = filters.get("locations") or {}
-
-        provinces = locations.get("provinces")
-        if provinces:
-            qs = qs.filter(location__province__in=provinces)
-
-        cities = locations.get("cities")
-        if cities:
-            qs = qs.filter(location__city__in=cities)
-
-        start_bound, end_bound = self._date_range_bounds(filters)
-        if start_bound:
-            qs = qs.filter(news__date_published__gte=start_bound)
-        if end_bound:
-            qs = qs.filter(news__date_published__lte=end_bound)
-
-        return qs.distinct()
+        base_queryset = (
+            Case.objects.select_related("disease", "location")
+            .prefetch_related("news")
+        )
+        return self.case_filters.apply(filters, base_queryset)
 
     def _render_cases_csv(self, cases: Iterable[Case]) -> str:
         header = [
