@@ -1,12 +1,15 @@
 [run]
-source = curator_feature
+source =
+    admin_feature
+    curator_feature
+    expert_user_feature
 branch = True
 relative_files = True
 omit =
     */migrations/*
+    */tests/*
     */tests.py
     */test_*.py
-    */tests/**/*
     */__pycache__/*
 
 [report]
@@ -21,9 +24,13 @@ exclude_lines =
 
 [paths]
 source =
+    admin_feature
     curator_feature
+    expert_user_feature
+    */pantautular-be-2025/admin_feature
     */pantautular-be-2025/curator_feature
-    */_work/*/pantautular-be-2025/curator_feature
+    */pantautular-be-2025/expert_user_feature
+    */_work/*/pantautular-be-2025/*
 
 [html]
 directory = htmlcov
