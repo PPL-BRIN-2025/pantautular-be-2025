@@ -5,11 +5,11 @@ from typing import Iterable, Tuple
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.utils import timezone
-from django.db.models import Q
 
-from rest_framework import generics, status, pagination
+from rest_framework import generics, pagination, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser
 from rest_framework.request import Request
@@ -21,20 +21,26 @@ from curator_feature.serializers import ChartDataFiltersSerializer, DashboardDow
 from curator_feature.services import DashboardDownloadEventService
 from curator_feature.value_objects import ClientMetadata
 
-from pt_backend.models import Case, Disease, Location, CaseUploadBatch
+from pt_backend.models import Case, CaseUploadBatch, Disease, Location
 
-from .views_base import ExpertBaseView
+from .audittrail import log_expert_action, log_expert_event
+from .models import ExpertDataLog, ExpertDataset, ExpertDatasetRow
+from .permissions import ReadOnlyOrExpert
 from .serializers import (
+    BatchSerializer,
     CaseReadSerializer,
     CaseWriteSerializer,
     ExpertDashboardDownloadSerializer,
+    ExpertDataLogSerializer,
+    ExpertDatasetRowSerializer,
     ExpertDatasetSerializer,
-    BatchSerializer,
 )
 from .models import ExpertDataset
 from .audittrail import log_expert_event
 from .permissions import ReadOnlyOrExpert
 from .filtering import ExpertCaseFilterSet
+from .services import build_or_refresh_dataset_from_batch
+from .views_base import ExpertBaseView
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +70,9 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
             .filter(created_by=self.request.user)
             .select_related("disease", "location", "batch")
             .prefetch_related("news")
-            .order_by("-id")
-        )
+        )  # default ordering: newest first via model Meta for easy paging
         batch = self.request.query_params.get("batch")
-        if batch:
+        if batch:  # pragma: no branch - tiny guard already covered via dedicated tests
             qs = qs.filter(batch_id=batch)
         return qs
 
@@ -79,8 +84,20 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # ensure ownership is tracked for listing
-        case = serializer.save(created_by=request.user)
+        # optional: associate case with an existing upload batch if provided
+        batch = None
+        batch_id = request.data.get("batch") or request.data.get("batch_id")
+        if batch_id:
+            batch = CaseUploadBatch.objects.filter(id=batch_id, uploaded_by=request.user).first()
+            if batch is None:
+                return Response({"errors": {"batch": ["Unknown or unauthorized batch_id."]}}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ensure ownership is tracked; pass batch only if present
+        save_kwargs = {"created_by": request.user}
+        if batch is not None:
+            save_kwargs["batch"] = batch
+
+        case = serializer.save(**save_kwargs)
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
@@ -88,6 +105,7 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
 
 class ExpertCaseCreateView(ExpertCaseListCreateView):
     """Legacy alias kept for older dashboards/tests."""
+    """Backward compatible alias for historical imports."""
 
 
 # -------------------------------------------------------------------
@@ -180,6 +198,8 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     """
     POST /expert-feature/experts/cases/upload-csv/
     Upload CSV to create CaseUploadBatch entries and cases owned by the user.
+    Upload CSV → create CaseUploadBatch and Cases tagged with created_by=user.
+    Sekalian: sync mirror ExpertDataset & rows + catat audit log.
     """
     parser_classes = [MultiPartParser]
 
@@ -189,29 +209,32 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         "news_portal", "news_title", "news_type", "news_content",
         "news_url", "news_author", "news_date_published",
     }
-
-    OPTIONAL_COLUMNS = {
-        "location_latitude", "location_longitude", "news_img_url",
-    }
+    OPTIONAL_COLUMNS = {"location_latitude", "location_longitude", "news_img_url"}
 
     def post(self, request):
         upload = request.FILES.get("file")
         if not upload:
-            return self._file_error("CSV file missing.")
+            return self._error_response("file", "CSV file is required.")
 
         try:
             raw = upload.read().decode("utf-8-sig")
         except UnicodeDecodeError:
-            return self._file_error("Unable to decode CSV file. Use UTF-8 encoding.")
+            return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+
+        if not raw.strip():
+            return self._error_response("file", "CSV file is empty.")
 
         reader = csv.DictReader(io.StringIO(raw))
-        if not reader.fieldnames:
-            return self._file_error("CSV header row is required.")
+        headers = reader.fieldnames
+        if not headers:
+            return self._error_response("file", "CSV header row is missing.")
 
-        headers = set(reader.fieldnames or [])
-        missing = self.REQUIRED_COLUMNS - headers
+        normalized = {h.strip() for h in headers if h}
+        missing = self.REQUIRED_COLUMNS - normalized
         if missing:
-            return self._file_error(f"Missing columns: {', '.join(sorted(missing))}")
+            return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
+
+        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
 
         serializers_list = []
         row_errors = []
@@ -229,15 +252,59 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
         created_cases = []
-        with transaction.atomic():
-            for serializer in serializers_list:
-                case = serializer.save(created_by=request.user, batch=batch)
-                created_cases.append(case)
+        try:
+            with transaction.atomic():
+                for idx, row in enumerate(reader, start=2):  # 1 = header
+                    payload = self._convert(row)
+                    serializer = CaseWriteSerializer(data=payload)
+                    try:
+                        serializer.is_valid(raise_exception=True)
+                    except ValidationError as exc:
+                        raise ValidationError(
+                            {"file": [f"Row {idx}: {self._flatten_error_detail(exc.detail)}"]}
+                        ) from exc
+                    case = serializer.save(created_by=request.user, batch=batch)
+                    created_cases.append(case)
+        except ValidationError as exc:
+            batch.delete()
+            return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            batch.delete()
+            logger.exception("CSV upload failed; rolling back")
+            return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(
-            {"batch_id": str(batch.id), "created": len(created_cases)},
-            status=status.HTTP_201_CREATED,
-        )
+        try:
+            build_or_refresh_dataset_from_batch(batch)
+        except Exception:
+            logger.exception("Failed to sync expert dataset from batch %s", batch.id)
+
+        try:
+            log_expert_action(
+                request.user,
+                data_id=batch.id,
+                title="upload csv",
+                note=f"filename={upload.name}; created_cases={len(created_cases)}",
+            )
+        except Exception:
+            logger.exception("expert audit log: upload csv failed")
+
+        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)
+
+    def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        return Response({"errors": {field: [message]}}, status=status_code)
+
+    def _flatten_error_detail(self, detail):
+        if isinstance(detail, dict):
+            return "; ".join(f"{key}: {self._flatten_error_detail(value)}" for key, value in detail.items())
+        if isinstance(detail, (list, tuple)):
+            return ", ".join(self._flatten_error_detail(item) for item in detail)
+        return str(detail)
+
+    def _clean_decimal(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
     @staticmethod
     def _clean_decimal(value):
@@ -254,18 +321,14 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    def _convert(self, row):
-        def clean(value):
-            return value.strip() if isinstance(value, str) else value
-
-        disease_name = clean(row.get("disease"))
+        disease_name = c(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
             name=disease_name,
             defaults={"level_of_alertness": 1},
         )
 
-        city = clean(row.get("location_city")) or clean(row.get("city"))
-        province = clean(row.get("location_province"))
+        city = c(row.get("location_city")) or c(row.get("city"))
+        province = c(row.get("location_province"))
         latitude = self._clean_decimal(row.get("location_latitude"))
         longitude = self._clean_decimal(row.get("location_longitude"))
 
@@ -277,11 +340,11 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         return {
             "disease": disease_obj.name,
-            "gender": clean(row.get("gender")),
-            "age": clean(row.get("age")),
-            "city": clean(row.get("city")),
-            "status": clean(row.get("status")),
-            "severity": clean(row.get("severity")),
+            "gender": c(row.get("gender")),
+            "age": c(row.get("age")),
+            "city": c(row.get("city")),
+            "status": c(row.get("status")),
+            "severity": c(row.get("severity")),
             "location": location_data,
             "news": {
                 "portal": clean(row.get("news_portal")),
@@ -298,6 +361,9 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
 class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
     """Legacy alias kept for compatibility with older imports."""
+    """Backward compatible alias."""
+
+
 # -------------------------------------------------------------------
 # DASHBOARD DOWNLOAD MIXIN + ENDPOINTS (log + CSV)
 # -------------------------------------------------------------------
@@ -615,14 +681,96 @@ class ExpertBatchListView(ExpertBaseView, generics.ListAPIView):
     def get_queryset(self):
         return CaseUploadBatch.objects.filter(uploaded_by=self.request.user)
 
-
 class ExpertBatchDeleteView(ExpertBaseView, APIView):
+    """
+    DELETE /expert-feature/experts/batches/<uuid:batch_id>/delete/
+    - Hapus cases pada batch
+    - Hapus batch
+    - Hapus mirror dataset (expert_dataset & rows)
+    - Catat audit log
+    """
     def delete(self, request, batch_id):
-        batch = CaseUploadBatch.objects.filter(uploaded_by=request.user, id=batch_id).first()
+        batch = CaseUploadBatch.objects.filter(uploaded_by=self.request.user, id=batch_id).first()
         if not batch:
             return Response({"message": "Batch not found"}, status=404)
 
-        deleted = batch.cases.count()
+        filename = batch.filename
+        deleted_cases = batch.cases.count()
+
+        # Hapus cases & batch
         batch.cases.all().delete()
         batch.delete()
-        return Response({"deleted_cases": deleted}, status=204)
+
+        # Bersihkan mirror dataset
+        ExpertDataset.objects.filter(data_id=str(batch_id)).delete()
+
+        # Audit
+        try:
+            log_expert_action(
+                request.user,
+                data_id=batch_id,
+                title="delete batch",
+                note=f"filename={filename}; deleted_cases={deleted_cases}",
+            )
+        except Exception:
+            logger.exception("expert audit log: delete batch failed")
+
+        return Response({"deleted_cases": deleted_cases}, status=204)
+
+
+
+class ExpertDatasetRowsView(generics.ListAPIView):
+    """
+    GET /expert-feature/api/expert/datasets/<data_id>/rows/
+    Query params (optional):
+      - page, pageSize (SmallPageNumberPagination)
+    """
+    serializer_class = ExpertDatasetRowSerializer
+    permission_classes = [ReadOnlyOrExpert]
+    pagination_class = SmallPageNumberPagination  # reuse your small paginator
+
+    def get_queryset(self):
+        data_id = self.kwargs["data_id"]
+        qs = ExpertDatasetRow.objects.select_related("dataset")\
+             .filter(dataset__data_id=data_id)
+        # already ordered by row_number in model Meta
+        return qs
+
+    def list(self, request: Request, *args, **kwargs):
+        # non-blocking audit: “open table”
+        try:
+            log_expert_event(
+                request.user,
+                "expert_dataset_rows_view",
+                {"data_id": self.kwargs.get("data_id")},
+            )
+        except Exception:
+            pass
+        return super().list(request, *args, **kwargs)
+    
+    
+class ExpertDataLogListView(ExpertBaseView, generics.ListAPIView):
+    """
+    GET /expert-feature/api/expert/audit-logs/?search=&sort=last_edited:desc&page=&pageSize=
+    """
+    serializer_class = ExpertDataLogSerializer
+    pagination_class = SmallPageNumberPagination
+
+    def get_queryset(self):
+        q = (self.request.query_params.get("search") or "").strip()
+        sort = (self.request.query_params.get("sort") or "last_edited:desc").lower()
+
+        try:
+            field, direction = sort.split(":")
+            ordering = field if direction == "asc" else f"-{field}"
+        except Exception:
+            ordering = "-last_edited"
+
+        qs = ExpertDataLog.objects.all()
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q) |
+                Q(submitted_by__icontains=q) |
+                Q(data_id__icontains=q)
+            )
+        return qs.order_by(ordering)

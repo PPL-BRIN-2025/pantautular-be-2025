@@ -13,9 +13,12 @@ from .views import (
     # datasets
     ExpertDatasetListView,
     ExpertDatasetDetailView,
+    ExpertDatasetRowsView,
     # batches
     ExpertBatchListView,
     ExpertBatchDeleteView,
+    # audit logs (opsional)
+    ExpertDataLogListView,
 )
 
 def feature_placeholder(request):
@@ -35,10 +38,14 @@ urlpatterns = [
     path("downloads/csv/",                 ExpertDashboardCSVDownloadAPIView.as_view(),  name="expert-dashboard-download-csv"),
 
     # Datasets (public read)
-    path("api/expert/datasets/",                 ExpertDatasetListView.as_view(),        name="expert-dataset-list"),
-    path("api/expert/datasets/<str:data_id>/",   ExpertDatasetDetailView.as_view(),      name="expert-dataset-detail"),
+    path("api/expert/datasets/",                 ExpertDatasetListView.as_view(),       name="expert-dataset-list"),
+    path("api/expert/datasets/<str:data_id>/",   ExpertDatasetDetailView.as_view(),     name="expert-dataset-detail"),
+    path("api/expert/datasets/<str:data_id>/rows/", ExpertDatasetRowsView.as_view(),   name="expert-dataset-rows"),
 
     # Batches
     path("experts/batches/",                     ExpertBatchListView.as_view(),          name="expert-batch-list"),
     path("experts/batches/<uuid:batch_id>/delete/", ExpertBatchDeleteView.as_view(),     name="expert-batch-delete"),
+
+    # Audit log (opsional)
+    path("api/expert/audit-logs/",               ExpertDataLogListView.as_view(),        name="expert-audit-logs"),
 ]
