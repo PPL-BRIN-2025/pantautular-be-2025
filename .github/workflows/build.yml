@@ -52,11 +52,14 @@ jobs:
       - name: Run tests with coverage
         run: |
           coverage erase
-          coverage run --branch manage.py test admin_feature curator_feature expert_user_feature
+          # include ALL Django apps that can appear in "new code" (add more if needed)
+          coverage run --branch manage.py test admin_feature curator_feature expert_user_feature pt_backend
           coverage xml -i -o coverage.xml
           coverage report -m
+          echo "---- coverage.xml head ----"
+          head -n 30 coverage.xml || true
 
-      # --- Sonar Scanner CLI instead of Docker (prevents UnknownHostException) ---
+      # SonarScanner CLI (host, not docker) + PR decoration + verbose logs
       - name: Set up Java (for SonarScanner CLI)
         uses: actions/setup-java@v4
         with:
@@ -71,14 +74,17 @@ jobs:
           unzip -q sonar-scanner.zip
           echo "$PWD/sonar-scanner-$SCANNER_VERSION-linux/bin" >> $GITHUB_PATH
 
-      - name: SonarCloud Scan (with retry)
+      - name: SonarCloud Scan (with PR decoration + retry)
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
+          ARGS="-Dsonar.host.url=https://sonarcloud.io -Dsonar.login=$SONAR_TOKEN -Dsonar.verbose=true"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARGS="$ARGS -Dsonar.pullrequest.key=${{ github.event.number }} \
+                       -Dsonar.pullrequest.branch=${{ github.head_ref }} \
+                       -Dsonar.pullrequest.base=${{ github.base_ref }}"
+          fi
+          # retry in case SonarCloud is briefly unavailable
           for attempt in 1 2 3; do
-            sonar-scanner \
-              -Dsonar.host.url=https://sonarcloud.io \
-              -Dsonar.projectBaseDir=. \
-              -Dsonar.login=$SONAR_TOKEN && break || \
-              (echo "Retrying in 10s..." && sleep 10)
+            sonar-scanner $ARGS && break || { echo "Retrying in 10s..."; sleep 10; }
           done

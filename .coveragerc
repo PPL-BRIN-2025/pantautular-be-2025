@@ -5,6 +5,7 @@ source =
     admin_feature
     curator_feature
     expert_user_feature
+    pt_backend
 omit =
     */migrations/*
     */tests/*
@@ -22,5 +23,3 @@ exclude_lines =
     ^\s*if __name__ == ['"]__main__['"]:\s*$
     ^\s*@abstractmethod
     ^\s*raise NotImplementedError
-
-# Remove [paths]; relative_files=True already yields repo-relative paths that Sonar maps correctly.
