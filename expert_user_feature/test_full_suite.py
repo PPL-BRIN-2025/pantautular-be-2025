@@ -636,7 +636,7 @@ class TestExpertCaseBatchAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert",
             email="expert@example.com",
-            password=make_password("test-password"),
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
@@ -672,7 +672,7 @@ class TestExpertCaseBatchAPI(TestCase):
     def test_list_batches_returns_only_user_batches(self):
         self._upload_csv()
 
-        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password("test-password"), role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.get(EXPERT_BATCH_BASE)
@@ -695,7 +695,7 @@ class TestExpertCaseBatchAPI(TestCase):
 
     # ✅ 4. User tidak bisa delete batch milik orang lain
     def test_user_cannot_delete_other_users_batch(self):
-        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password("test-password"), role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch.id}/delete/")
