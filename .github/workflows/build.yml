@@ -52,14 +52,14 @@ jobs:
       - name: Run tests with coverage
         run: |
           coverage erase
-          # include ALL Django apps that can appear in "new code" (add more if needed)
-          coverage run --branch manage.py test admin_feature curator_feature expert_user_feature pt_backend
+          coverage run --branch manage.py test -v 2 \
+            admin_feature curator_feature expert_user_feature pt_backend
           coverage xml -i -o coverage.xml
           coverage report -m
           echo "---- coverage.xml head ----"
           head -n 30 coverage.xml || true
 
-      # SonarScanner CLI (host, not docker) + PR decoration + verbose logs
+      # SonarScanner CLI (no Docker) + PR decoration + verbose logs
       - name: Set up Java (for SonarScanner CLI)
         uses: actions/setup-java@v4
         with:
@@ -84,7 +84,8 @@ jobs:
                        -Dsonar.pullrequest.branch=${{ github.head_ref }} \
                        -Dsonar.pullrequest.base=${{ github.base_ref }}"
           fi
-          # retry in case SonarCloud is briefly unavailable
           for attempt in 1 2 3; do
-            sonar-scanner $ARGS && break || { echo "Retrying in 10s..."; sleep 10; }
+            sonar-scanner $ARGS | tee sonar.log && break || { echo "Retrying in 10s..."; sleep 10; }
           done
+          echo "---- Sonar coverage import lines ----"
+          grep -E "Importing coverage report|Coverage report successfully processed|No coverage information" sonar.log || true
