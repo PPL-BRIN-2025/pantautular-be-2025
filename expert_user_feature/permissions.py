@@ -17,3 +17,4 @@ class ReadOnlyOrExpert(BasePermission):
             IsTokenAuthenticated().has_permission(request, view)
             and IsExpertUserRole().has_permission(request, view)
         )
+    
