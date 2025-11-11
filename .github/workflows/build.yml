@@ -2,7 +2,7 @@ name: Build & SonarCloud Analysis
 
 on:
   push:
-    branches: [staging]
+    branches: [staging, main]
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -20,7 +20,6 @@ jobs:
           POSTGRES_DB: test_db
         ports:
           - 5432:5432
-        # health check ensures DB is ready before tests
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -29,12 +28,13 @@ jobs:
 
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
-      PYTHONPATH: ${{ github.workspace }}
       DJANGO_SETTINGS_MODULE: pantau_tular.settings
+      PYTHONPATH: ${{ github.workspace }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: https://sonarcloud.io
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -50,19 +50,19 @@ jobs:
           pip install -r requirements.txt
           pip install coverage
 
-      - name: Run tests with coverage (PostgreSQL)
+      - name: Run tests with coverage
+        # run from repo root so coverage writes repo-relative paths
         run: |
           coverage erase
           coverage run --branch manage.py test admin_feature curator_feature expert_user_feature
           coverage xml -i -o coverage.xml
-          coverage report
+          coverage report -m
 
-      - name: Normalize coverage paths
-        run: |
-          echo "Normalizing coverage.xml paths for SonarCloud..."
-          sed -i 's#/home/runner/work/[^/]*/[^/]*#.#g' coverage.xml || true
+      # IMPORTANT: Do NOT rewrite paths; coverage.xml already uses repo-relative paths.
+      # The previous sed "normalize paths" step is removed because it corrupts mappings.
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5.3.1
+        uses: SonarSource/sonarcloud-github-action@v2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io

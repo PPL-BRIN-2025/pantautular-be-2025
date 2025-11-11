@@ -1,10 +1,10 @@
 [run]
+branch = True
+relative_files = True
 source =
     admin_feature
     curator_feature
     expert_user_feature
-branch = True
-relative_files = True
 omit =
     */migrations/*
     */tests/*
@@ -23,17 +23,4 @@ exclude_lines =
     ^\s*@abstractmethod
     ^\s*raise NotImplementedError
 
-[paths]
-source =
-    admin_feature
-    curator_feature
-    expert_user_feature
-    */pantautular-be-2025/admin_feature
-    */pantautular-be-2025/curator_feature
-    */pantautular-be-2025/expert_user_feature
-    */_work/*/pantautular-be-2025/admin_feature
-    */_work/*/pantautular-be-2025/curator_feature
-    */_work/*/pantautular-be-2025/expert_user_feature
-
-[html]
-directory = htmlcov
+# Remove [paths]; relative_files=True already yields repo-relative paths that Sonar maps correctly.
