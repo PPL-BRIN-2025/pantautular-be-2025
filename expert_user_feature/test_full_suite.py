@@ -723,7 +723,7 @@ class TestExpertCaseBatchAPI(TestCase):
             severity="insiden",
             created_by=self.expert,
         )
-        other = PtUser.objects.create(name="Other", email="other@example.com", password=make_password("test-password"), role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="other@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         Case.objects.create(
             disease=self.disease,
             location=self.loc,
@@ -758,7 +758,7 @@ class TestExpertDatasetMirror(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert Mirror",
             email="expert.mirror@example.com",
-            password=make_password("test-password"),
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
