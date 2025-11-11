@@ -1,8 +1,7 @@
 import csv
 import io
 import logging
-from datetime import datetime, time
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Tuple
 
 from django.conf import settings
 from django.db import transaction
@@ -35,6 +34,7 @@ from .serializers import (
 from .models import ExpertDataset
 from .audittrail import log_expert_event
 from .permissions import ReadOnlyOrExpert
+from .filtering import ExpertCaseFilterSet
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,10 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class ExpertCaseCreateView(ExpertCaseListCreateView):
+    """Legacy alias kept for older dashboards/tests."""
 
 
 # -------------------------------------------------------------------
@@ -171,10 +175,11 @@ class ExpertCaseBulkDeleteView(ExpertBaseView, APIView):
 # -------------------------------------------------------------------
 # CASES: CSV UPLOAD → creates a Batch + Cases (owned by user)
 # -------------------------------------------------------------------
+
 class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     """
     POST /expert-feature/experts/cases/upload-csv/
-    Upload CSV → create CaseUploadBatch and Cases tagged with created_by=user.
+    Upload CSV to create CaseUploadBatch entries and cases owned by the user.
     """
     parser_classes = [MultiPartParser]
 
@@ -192,54 +197,77 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     def post(self, request):
         upload = request.FILES.get("file")
         if not upload:
-            return Response({"message": "CSV file missing."}, status=400)
+            return self._file_error("CSV file missing.")
 
-        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-        
-        raw = upload.read().decode("utf-8-sig")
+        try:
+            raw = upload.read().decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return self._file_error("Unable to decode CSV file. Use UTF-8 encoding.")
+
         reader = csv.DictReader(io.StringIO(raw))
+        if not reader.fieldnames:
+            return self._file_error("CSV header row is required.")
 
-        # ✅ Validate required columns BEFORE parsing rows
         headers = set(reader.fieldnames or [])
         missing = self.REQUIRED_COLUMNS - headers
         if missing:
-            batch.delete()  # cleanup batch
-            return Response(
-                {"message": f"Missing columns: {', '.join(sorted(missing))}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return self._file_error(f"Missing columns: {', '.join(sorted(missing))}")
 
+        serializers_list = []
+        row_errors = []
+        for row_number, row in enumerate(reader, start=2):
+            serializer = CaseWriteSerializer(data=self._convert(row))
+            try:
+                serializer.is_valid(raise_exception=True)
+            except ValidationError as exc:
+                row_errors.append({"row": row_number, "errors": exc.detail})
+                continue
+            serializers_list.append(serializer)
+
+        if row_errors:
+            return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
         created_cases = []
         with transaction.atomic():
-            for row in reader:
-                payload = self._convert(row)
-                serializer = CaseWriteSerializer(data=payload)
-                serializer.is_valid(raise_exception=True)
+            for serializer in serializers_list:
                 case = serializer.save(created_by=request.user, batch=batch)
                 created_cases.append(case)
 
-        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=201)
+        return Response(
+            {"batch_id": str(batch.id), "created": len(created_cases)},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @staticmethod
+    def _clean_decimal(value):
+        if value is None:
+            return None
+        cleaned = value.strip() if isinstance(value, str) else value
+        if cleaned in ("", None):
+            return None
+        return cleaned
+
+    def _file_error(self, message, field="file"):
+        return Response(
+            {"errors": {field: [message]}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     def _convert(self, row):
-        def c(v):
-            return v.strip() if isinstance(v, str) else v
+        def clean(value):
+            return value.strip() if isinstance(value, str) else value
 
-        def maybe(v):
-            v = c(v)
-            return None if v in ("", None) else v
-
-        # Ensure disease exists (create if missing)
-        disease_name = c(row.get("disease"))
+        disease_name = clean(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
             name=disease_name,
             defaults={"level_of_alertness": 1},
         )
 
-        # LOCATION
-        city = c(row.get("location_city")) or c(row.get("city"))
-        province = c(row.get("location_province"))
-        latitude = maybe(row.get("location_latitude"))
-        longitude = maybe(row.get("location_longitude"))
+        city = clean(row.get("location_city")) or clean(row.get("city"))
+        province = clean(row.get("location_province"))
+        latitude = self._clean_decimal(row.get("location_latitude"))
+        longitude = self._clean_decimal(row.get("location_longitude"))
 
         location_data = {"city": city, "province": province}
         if latitude is not None:
@@ -248,26 +276,28 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             location_data["longitude"] = longitude
 
         return {
-            "disease": disease_obj.name,  # CaseWriteSerializer expects name
-            "gender": c(row.get("gender")),
-            "age": c(row.get("age")),
-            "city": c(row.get("city")),
-            "status": c(row.get("status")),
-            "severity": c(row.get("severity")),
+            "disease": disease_obj.name,
+            "gender": clean(row.get("gender")),
+            "age": clean(row.get("age")),
+            "city": clean(row.get("city")),
+            "status": clean(row.get("status")),
+            "severity": clean(row.get("severity")),
             "location": location_data,
             "news": {
-                "portal": c(row.get("news_portal")),
-                "title": c(row.get("news_title")),
-                "type": c(row.get("news_type")),
-                "content": c(row.get("news_content")),
-                "url": c(row.get("news_url")),
-                "author": c(row.get("news_author")),
-                "date_published": c(row.get("news_date_published")),
-                "img_url": c(row.get("news_img_url")) or "",
+                "portal": clean(row.get("news_portal")),
+                "title": clean(row.get("news_title")),
+                "type": clean(row.get("news_type")),
+                "content": clean(row.get("news_content")),
+                "url": clean(row.get("news_url")),
+                "author": clean(row.get("news_author")),
+                "date_published": clean(row.get("news_date_published")),
+                "img_url": clean(row.get("news_img_url")) or "",
             },
         }
 
 
+class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
+    """Legacy alias kept for compatibility with older imports."""
 # -------------------------------------------------------------------
 # DASHBOARD DOWNLOAD MIXIN + ENDPOINTS (log + CSV)
 # -------------------------------------------------------------------
@@ -277,10 +307,12 @@ class ExpertDownloadMixin:
     filters_serializer_class = ChartDataFiltersSerializer
     event_service_class = DashboardDownloadEventService
     default_serializer_class = DashboardDownloadEventSerializer
+    case_filter_set_class = ExpertCaseFilterSet
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.event_service = self.event_service_class()
+        self.case_filters = self.case_filter_set_class()
 
     def _should_log(self) -> bool:
         return bool(getattr(settings, "ENABLE_DOWNLOAD_LOGGING", False))
@@ -330,53 +362,12 @@ class ExpertDownloadMixin:
 
         return True, event
 
-    def _date_range_bounds(self, filters: dict) -> Tuple[Optional[datetime], Optional[datetime]]:
-        start = filters.get("start_date")
-        end = filters.get("end_date")
-        tz = timezone.get_current_timezone()
-
-        start_bound = None
-        if start:
-            start_bound = timezone.make_aware(datetime.combine(start, time.min), timezone=tz)
-
-        end_bound = None
-        if end:
-            end_bound = timezone.make_aware(datetime.combine(end, time.max), timezone=tz)
-
-        return start_bound, end_bound
-
     def _filtered_cases(self, filters: dict) -> Iterable[Case]:
-        qs = Case.objects.select_related("disease", "location").prefetch_related("news")
-
-        diseases = filters.get("diseases")
-        if diseases:
-            qs = qs.filter(disease__name__in=diseases)
-
-        portals = filters.get("portals")
-        if portals:
-            qs = qs.filter(news__portal__in=portals)
-
-        alertness = filters.get("level_of_alertness")
-        if alertness:
-            qs = qs.filter(disease__level_of_alertness=alertness)
-
-        locations = filters.get("locations") or {}
-
-        provinces = locations.get("provinces")
-        if provinces:
-            qs = qs.filter(location__province__in=provinces)
-
-        cities = locations.get("cities")
-        if cities:
-            qs = qs.filter(location__city__in=cities)
-
-        start_bound, end_bound = self._date_range_bounds(filters)
-        if start_bound:
-            qs = qs.filter(news__date_published__gte=start_bound)
-        if end_bound:
-            qs = qs.filter(news__date_published__lte=end_bound)
-
-        return qs.distinct()
+        base_queryset = (
+            Case.objects.select_related("disease", "location")
+            .prefetch_related("news")
+        )
+        return self.case_filters.apply(filters, base_queryset)
 
     def _render_cases_csv(self, cases: Iterable[Case]) -> str:
         header = [
