@@ -672,7 +672,7 @@ class TestExpertCaseBatchAPI(TestCase):
     def test_list_batches_returns_only_user_batches(self):
         self._upload_csv()
 
-        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password("test-password"), role="EXP_USER")
         CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.get(EXPERT_BATCH_BASE)
