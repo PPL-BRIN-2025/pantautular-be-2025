@@ -10,7 +10,7 @@ import django
 django.setup()
 
 from datetime import datetime
-
+from django.contrib.auth.hashers import make_password
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
@@ -39,10 +39,9 @@ class TestExpertCaseAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert User",
             email="expert@example.com",
+            password=make_password("test-password"),
             role="EXP_USER",
         )
-        self.expert.set_password("test-password")
-        self.expert.save()
         self.client.force_authenticate(user=self.expert)
 
         self.disease_hb = Disease.objects.create(
