@@ -216,10 +216,15 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         if not upload:
             return self._error_response("file", "CSV file is required.")
 
+        # ---- decode and validate file ----
         try:
             raw = upload.read().decode("utf-8-sig")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as e:
+            logger.exception("CSV decode failed: %s", e)
             return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+        except Exception as e:
+            logger.exception("Unexpected decode error: %s", e)
+            return self._error_response("file", f"Error reading file: {e}")
 
         if not raw.strip():
             return self._error_response("file", "CSV file is empty.")
@@ -234,45 +239,43 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         if missing:
             return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
 
-        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-
-        serializers_list = []
+        # ---- validate each row first ----
         row_errors = []
-        for row_number, row in enumerate(reader, start=2):
+        preview_rows = list(reader)  # read all once
+        for row_number, row in enumerate(preview_rows, start=2):
             serializer = CaseWriteSerializer(data=self._convert(row))
             try:
                 serializer.is_valid(raise_exception=True)
             except ValidationError as exc:
                 row_errors.append({"row": row_number, "errors": exc.detail})
-                continue
-            serializers_list.append(serializer)
 
         if row_errors:
             return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ---- recreate reader since we've exhausted it ----
+        reader = iter(preview_rows)
+
+        # ---- create batch ----
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
+
         created_cases = []
         try:
             with transaction.atomic():
-                for idx, row in enumerate(reader, start=2):  # 1 = header
+                for idx, row in enumerate(reader, start=2):
                     payload = self._convert(row)
                     serializer = CaseWriteSerializer(data=payload)
-                    try:
-                        serializer.is_valid(raise_exception=True)
-                    except ValidationError as exc:
-                        raise ValidationError(
-                            {"file": [f"Row {idx}: {self._flatten_error_detail(exc.detail)}"]}
-                        ) from exc
+                    serializer.is_valid(raise_exception=True)
                     case = serializer.save(created_by=request.user, batch=batch)
                     created_cases.append(case)
         except ValidationError as exc:
             batch.delete()
             return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
+        except Exception as e:
             batch.delete()
-            logger.exception("CSV upload failed; rolling back")
+            logger.exception("CSV upload failed: %s", e)
             return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ---- optional sync & audit ----
         try:
             build_or_refresh_dataset_from_batch(batch)
         except Exception:
@@ -290,61 +293,42 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)
 
+    # ---- helpers ----
     def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
         return Response({"errors": {field: [message]}}, status=status_code)
 
-    def _flatten_error_detail(self, detail):
-        if isinstance(detail, dict):
-            return "; ".join(f"{key}: {self._flatten_error_detail(value)}" for key, value in detail.items())
-        if isinstance(detail, (list, tuple)):
-            return ", ".join(self._flatten_error_detail(item) for item in detail)
-        return str(detail)
+    def _convert(self, row: dict):
+        """Safely normalize and clean a CSV row into CaseWriteSerializer payload."""
+        def clean(value):
+            if value is None:
+                return None
+            v = str(value).strip()
+            return v if v else None
 
-    def _clean_decimal(self, value):
-        if value is None:
-            return None
-        value = str(value).strip()
-        return value or None
-
-    @staticmethod
-    def _clean_decimal(value):
-        if value is None:
-            return None
-        cleaned = value.strip() if isinstance(value, str) else value
-        if cleaned in ("", None):
-            return None
-        return cleaned
-
-    def _file_error(self, message, field="file"):
-        return Response(
-            {"errors": {field: [message]}},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-        disease_name = c(row.get("disease"))
+        disease_name = clean(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
             name=disease_name,
             defaults={"level_of_alertness": 1},
         )
 
-        city = c(row.get("location_city")) or c(row.get("city"))
-        province = c(row.get("location_province"))
-        latitude = self._clean_decimal(row.get("location_latitude"))
-        longitude = self._clean_decimal(row.get("location_longitude"))
+        city = clean(row.get("location_city")) or clean(row.get("city"))
+        province = clean(row.get("location_province"))
+        latitude = clean(row.get("location_latitude"))
+        longitude = clean(row.get("location_longitude"))
 
         location_data = {"city": city, "province": province}
-        if latitude is not None:
+        if latitude:
             location_data["latitude"] = latitude
-        if longitude is not None:
+        if longitude:
             location_data["longitude"] = longitude
 
         return {
             "disease": disease_obj.name,
-            "gender": c(row.get("gender")),
-            "age": c(row.get("age")),
-            "city": c(row.get("city")),
-            "status": c(row.get("status")),
-            "severity": c(row.get("severity")),
+            "gender": clean(row.get("gender")),
+            "age": clean(row.get("age")),
+            "city": clean(row.get("city")),
+            "status": clean(row.get("status")),
+            "severity": clean(row.get("severity")),
             "location": location_data,
             "news": {
                 "portal": clean(row.get("news_portal")),
@@ -357,6 +341,8 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
                 "img_url": clean(row.get("news_img_url")) or "",
             },
         }
+
+
 
 
 class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
