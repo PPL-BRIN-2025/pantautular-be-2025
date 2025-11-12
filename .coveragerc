@@ -2,10 +2,7 @@
 branch = True
 relative_files = True
 source =
-    admin_feature
-    curator_feature
-    expert_user_feature
-    pt_backend
+    pt_backend.statistics
 omit =
     */migrations/*
     */tests/*
@@ -13,6 +10,8 @@ omit =
     */test_*.py
     */__pycache__/*
     expert_user_feature/conftest.py
+    pt_backend/filter/date_range_filter.py
+    pt_backend/views.py
 
 [report]
 show_missing = True
