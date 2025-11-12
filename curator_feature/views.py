@@ -1,8 +1,10 @@
 import logging
+from datetime import datetime, time
 
 from django.conf import settings
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
+from django.utils import timezone
 
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
@@ -441,6 +443,7 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
 class CuratorDataLogListCreateAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication, SessionAuthentication, BasicAuthentication]
     permission_classes = [IsTokenAuthenticated, IsCuratorRole] 
+    _DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y")
 
     def get(self, request):
         # pagination
@@ -455,9 +458,46 @@ class CuratorDataLogListCreateAPIView(APIView):
 
         # filters
         search = (request.query_params.get("search") or "").strip()
-        submitted_by = (request.query_params.get("submitted_by") or "").strip()
-        start = self._parse_datetime_param(request.query_params.get("start"))
-        end = self._parse_datetime_param(request.query_params.get("end"))
+        submitted_by = (
+            request.query_params.get("submitted_by")
+            or request.query_params.get("submittedBy")
+            or request.query_params.get("submittedby")
+            or request.query_params.get("curator")
+            or ""
+        ).strip()
+
+        start_raw = self._first_query_value(
+            request,
+            "start",
+            "startDate",
+            "start_date",
+            "from",
+            "date_start",
+        )
+        end_raw = self._first_query_value(
+            request,
+            "end",
+            "endDate",
+            "end_date",
+            "to",
+            "date_end",
+        )
+        single_date_raw = None
+        if not start_raw and not end_raw:
+            single_date_raw = self._first_query_value(
+                request,
+                "date",
+                "dateFilter",
+                "lastEdited",
+                "last_edited",
+            )
+
+        single_day_range = self._parse_single_day_range(single_date_raw) if single_date_raw else (None, None)
+        if single_day_range != (None, None):
+            start, end = single_day_range
+        else:
+            start = self._parse_datetime_param(start_raw)
+            end = self._parse_datetime_param(end_raw, clamp_end=True)
 
         # sorting
         sort = (request.query_params.get("sort") or "last_edited:desc").lower()
@@ -512,8 +552,63 @@ class CuratorDataLogListCreateAPIView(APIView):
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @staticmethod
-    def _parse_datetime_param(value):
+    def _first_query_value(request, *keys):
+        for key in keys:
+            value = request.query_params.get(key)
+            if value:
+                value = value.strip()
+                if value:
+                    return value
+        return None
+
+    @classmethod
+    def _parse_datetime_param(cls, value, *, clamp_end=False):
         if not value:
             return None
+
         parsed = parse_datetime(value)
+        if not parsed:
+            parsed_date = cls._parse_date_only(value)
+            if parsed_date:
+                target_time = time.max if clamp_end else time.min
+                parsed = datetime.combine(parsed_date, target_time)
+
+        if not parsed:
+            return None
+
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
         return parsed
+
+    @classmethod
+    def _parse_date_only(cls, value):
+        for fmt in cls._DATE_INPUT_FORMATS:
+            try:
+                return datetime.strptime(value, fmt).date()
+            except (ValueError, TypeError):
+                continue
+        return None
+
+    @classmethod
+    def _parse_single_day_range(cls, value):
+        if not value:
+            return (None, None)
+
+        parsed = parse_datetime(value)
+        if parsed:
+            if timezone.is_naive(parsed):
+                tz = timezone.get_current_timezone()
+                parsed = timezone.make_aware(parsed, tz)
+            target_tz = parsed.tzinfo or timezone.get_current_timezone()
+            return cls._build_day_range(parsed.date(), target_tz)
+
+        parsed_date = cls._parse_date_only(value)
+        if parsed_date:
+            return cls._build_day_range(parsed_date, tz)
+        return (None, None)
+
+    @staticmethod
+    def _build_day_range(day, tz):
+        start = timezone.make_aware(datetime.combine(day, time.min), tz)
+        end = timezone.make_aware(datetime.combine(day, time.max), tz)
+        return start, end

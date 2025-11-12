@@ -8,6 +8,9 @@ media
 
 # Backup files
 *.bak
+.env.db
+backups
+csv
 
 # If you are using PyCharm
 # User-specific stuff
