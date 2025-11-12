@@ -4,7 +4,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pantau_tular.test_settings")
 
 import django
 django.setup()
-from datetime import date, datetime
+from datetime import date, datetime, timezone as datetime_timezone
 from decimal import Decimal
 
 from django.core.cache import cache
@@ -219,6 +219,47 @@ class CuratorCasesAPITest(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["page"], 1)
         self.assertEqual(res.data["pageSize"], 1)
+
+    def test_get_accepts_camel_case_filters_and_single_date(self):
+        self.auth_as(self.curator)
+        CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="khusus",
+            submitted_by="CamelUser",
+            note="target",
+            last_edited=timezone.make_aware(datetime(2025, 11, 12, 10, 0)),
+        )
+        CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="khusus",
+            submitted_by="OtherUser",
+            note="other",
+            last_edited=timezone.make_aware(datetime(2025, 11, 10, 10, 0)),
+        )
+
+        res = self.client.get(
+            self.url + "?search=khusus&submittedBy=camel&date=11/12/2025"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data["data"]), 1)
+        self.assertEqual(res.data["data"][0]["submitted_by"], "CamelUser")
+
+        iso_midnight = timezone.make_aware(
+            datetime(2025, 11, 12, 0, 0), timezone.get_current_timezone()
+        ).astimezone(timezone.utc).isoformat()
+        res = self.client.get(
+            self.url + f"?search=khusus&submittedBy=camel&date={iso_midnight}"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data["data"]), 1)
+
+        utc_plus_seven = datetime_timezone(timedelta(hours=7))
+        iso_with_offset = datetime(2025, 11, 12, 0, 0, tzinfo=utc_plus_seven).isoformat()
+        res = self.client.get(
+            self.url + f"?search=khusus&submittedBy=camel&date={iso_with_offset}"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data["data"]), 1)
 
         # search (OR across city/status/severity)
         res = self.client.get(self.url + "?search=Jakarta")
