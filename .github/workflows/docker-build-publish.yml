@@ -17,6 +17,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Add these permissions for SARIF upload:
       security-events: write
       actions: read
 
@@ -49,20 +50,13 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
 
-      # --- ADDITION: force all tags to lowercase for GHCR ---
-      - name: Normalize tags to lowercase
-        run: echo "TAGS=$(echo '${{ steps.meta.outputs.tags }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-      - name: Show tags
-        run: echo "${TAGS}"
-      # ------------------------------------------------------
-
       - name: Build and push Docker image
         id: build-push
         uses: docker/build-push-action@v4
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.TAGS }}  # <-- use normalized tags
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -82,7 +76,7 @@ jobs:
         if: github.event_name != 'pull_request'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v3  # Updated to v3
         with:
           sarif_file: 'trivy-results.sarif'
         if: github.event_name != 'pull_request'
