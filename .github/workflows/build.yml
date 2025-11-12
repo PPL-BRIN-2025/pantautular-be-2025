@@ -69,9 +69,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=pantautular-be-2025
-            -Dsonar.organization=<your-org-on-sonarcloud>
             -Dsonar.python.version=3.11
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.scm.provider=git
             -Dsonar.verbose=false
+
