@@ -1142,9 +1142,21 @@ class SeverityFilteringStatsViewTests(SimpleTestCase):
         self.assertIsNone(params["batch"])
 
     def test_extract_filter_parameters_handles_empty_string_batch(self):
-        data = {"locations": {}, "batch": ""}
+        # datasetId is evaluated last in the chain so an empty string survives until the drop step
+        data = {"locations": {}, "datasetId": ""}
         params = self.view._extract_filter_parameters(data)
         self.assertIsNone(params["batch"])
+
+    def test_get_severity_service_reuses_existing_instance(self):
+        existing_service = mock.Mock(name="existing_service")
+        self.view._severity_service = existing_service
+        # sanity check that a fresh call does not try to instantiate a new service
+        self.view.severity_service_factory = mock.Mock(side_effect=AssertionError("factory should not run"))
+
+        returned = self.view._get_severity_service()
+
+        self.assertIs(returned, existing_service)
+        self.view.severity_service_factory.assert_not_called()
 
     def test_post_returns_cached_payload(self):
         api_request = self.factory.post("/filters", {})

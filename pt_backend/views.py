@@ -327,7 +327,7 @@ class CaseDetailView(APIView):
     def get(self, request, case_id):
         case_data = self.case_service.get_case_detail(case_id)
         if not case_data:
-            raise Http404("Case not found")
+            raise Http404()
         return Response(case_data)
 
 class StatisticsView(APIView):
