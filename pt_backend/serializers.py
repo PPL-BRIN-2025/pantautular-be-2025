@@ -66,3 +66,14 @@ ProvinceTemperatureSerializer = ProvinceClimateSerializer
 ProvincePrecipitationSerializer = ProvinceClimateSerializer
 
 
+# Shared serializer for Disease model used across the project
+from pt_backend.models import Disease
+
+
+class DiseaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Disease
+        fields = ["id", "name", "level_of_alertness"]
+        extra_kwargs = {
+            "level_of_alertness": {"required": False, "default": 1}
+        }

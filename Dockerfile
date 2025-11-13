@@ -37,8 +37,11 @@ COPY pantau_tular/ pantau_tular/
 COPY pt_backend/ pt_backend/
 COPY hello/ hello/
 COPY authentication/ authentication/
+COPY admin_feature/ admin_feature/
+COPY curator_feature/ curator_feature/
+COPY expert_user_feature/ expert_user_feature/
 # COPY templates/ templates/
-# COPY staticfiles/ staticfiles/
+# COPY staticfiles/ staticfiles/  
 
 # Create staticfiles directory and set proper ownership
 RUN mkdir -p staticfiles && chown -R appuser:appuser /app

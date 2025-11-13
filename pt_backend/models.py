@@ -139,8 +139,8 @@ class HealthProtocolDisease(models.Model):
 
 class Location(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    latitude = models.DecimalField(max_digits=8, decimal_places=6)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    latitude = models.DecimalField(max_digits=8, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     city = models.CharField(max_length=255, unique=False)
     province = models.CharField(max_length=255, unique=False)
 
@@ -179,12 +179,52 @@ class Case(models.Model):
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="expert_uploaded_cases"
+    )
+
+    # Keep batch optional for now to avoid destructive cascades in production.
+    # When ready, switch to CASCADE and make non-null via a migration.
+    batch = models.ForeignKey(
+        "CaseUploadBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cases",
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
     @staticmethod
     def get_all_locations():
         return Case.objects.values("id", "location__longitude", "location__latitude", "city", "location__province")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
+
+    class Meta:
+        ordering = ("-created_at", "id")
+
+class CaseUploadBatch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="case_batches"
+    )
+    filename = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-uploaded_at",)
+
+    def __str__(self):
+        return f"{self.filename} ({self.uploaded_by.email})"
 
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

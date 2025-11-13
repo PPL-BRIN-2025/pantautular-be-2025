@@ -198,8 +198,12 @@ class NewsRepository:
             return {"error": str(e)}
 
 class CaseRepository(CaseRepositoryInterface):
-    def get_all_cases(self):
-        return Case.objects.all().values(
+    def get_all_cases(self, batch_id=None):
+        queryset = Case.objects.all()
+        if batch_id:
+            queryset = queryset.filter(batch_id=batch_id)
+
+        return queryset.values(
             "id",
             "location__province",
             "location__city",
@@ -212,6 +216,7 @@ class CaseRepository(CaseRepositoryInterface):
             "disease__name",
             "disease__level_of_alertness",
             "news__type",
+            "batch_id",
         )
         
     def get_all_locations(self):
@@ -242,6 +247,9 @@ class CaseRepository(CaseRepositoryInterface):
     def get_status_and_province(self):
         return Case.objects.select_related('location').values('status', 'location__province')
 
+    # New: efficient aggregate count for cases (datasets)
+    def count_cases(self):
+        return Case.objects.count()
     
 
 class ClimateRepository:

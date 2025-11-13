@@ -1,0 +1,36 @@
+[run]
+branch = True
+# Let coverage track the whole repo
+source =
+    .
+# Don’t exclude production code you care about.
+# Keep tests, migrations, and virtualenv noise out.
+omit =
+    */migrations/*
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    .venv/*
+    venv/*
+    */site-packages/*
+    manage.py
+
+[paths]
+# Normalize paths so coverage.xml matches files in GitHub Actions and on Windows dev
+source =
+    .
+    */work/*/*         # /home/runner/work/<repo>/<repo>
+    C:\Kuliah\PPL      # your Windows workspace root (adjust if different)
+
+[report]
+show_missing = True
+skip_covered = False
+fail_under = 0
+exclude_lines =
+    pragma: no cover
+    ^\s*if __name__ == ['"]__main__['"]:\s*$
+    ^\s*@abstractmethod
+    ^\s*raise NotImplementedError
+
+[xml]
+output = coverage.xml

@@ -2,6 +2,7 @@ from django.test import TestCase
 from unittest.mock import MagicMock, Mock
 
 from pt_backend.statistics.coordinator import StatisticsCoordinator
+from pt_backend.statistics.reports.prevalence import PrevalenceStatistics
 
 
 class TestStatisticsCoordinator(TestCase):
@@ -66,3 +67,21 @@ class TestStatisticsCoordinator(TestCase):
         self.assertIn("age_statistics", out)
         self.assertEqual(captured, [[]])
         self.assertEqual(out["age_statistics"], {"ok": True})
+
+    def test_date_range_dict_sets_start_date(self):
+        """Pastikan date_range dict mengisi start_date untuk prevalence strategy."""
+        captured_kwargs = {}
+
+        class DummyPrevalence(PrevalenceStatistics):
+            def generate_report(self, **kwargs):
+                captured_kwargs.update(kwargs)
+                return {"ok": True}
+
+        coord = StatisticsCoordinator(case_filter_service=self.mock_filter)
+        coord.strategies["prevalence_statistics"] = DummyPrevalence(repository=MagicMock())
+
+        filters = {"date_range": {"start": "2023-04-01"}}
+        result = coord.generate_comprehensive_report(**filters)
+
+        self.assertEqual(result["prevalence_statistics"], {"ok": True})
+        self.assertEqual(captured_kwargs["start_date"], "2023-04-01")

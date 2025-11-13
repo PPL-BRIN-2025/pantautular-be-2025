@@ -1,55 +1,26 @@
-from .settings import (
-    BASE_DIR,
-    SECRET_KEY,
-    DEBUG,
-    ALLOWED_HOSTS,
-    INSTALLED_APPS,
-    MIDDLEWARE,
-    ROOT_URLCONF,
-    TEMPLATES,
-    WSGI_APPLICATION,
-    DATABASES,
-    AUTH_PASSWORD_VALIDATORS,
-    LANGUAGE_CODE,
-    TIME_ZONE,
-    USE_I18N,
-    USE_TZ,
-    STATIC_URL
-)
+import os
 
-# Use in-memory SQLite database for testing
+from .settings import *  # noqa: F401,F403
+
+DEBUG = True
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "test_db.sqlite3",
     }
 }
+PASSWORD_RESET_BASE_URL = "http://testserver/reset"
 
-# Disable password hashing to speed up tests
 PASSWORD_HASHERS = [
-    'django.contrib.auth.hashers.MD5PasswordHasher',
+    "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
-# Disable logging during tests
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': True,
-}
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
-REST_FRAMEWORK = {
-    "DEFAULT_THROTTLE_RATES": {
-        "user": None,
-        "password_reset": None,
-    },
-}
+SECRET_API_KEYS = [os.getenv("SECRET_API_KEY", "test-api-key")]
 
-# Disable migrations during tests
-class DisableMigrations:
-    def __contains__(self, item):
-        return True #pragma: no cover
+CAPTCHA_ENABLED = False
 
-    def __getitem__(self, item):
-        return None #pragma: no cover
-
-# Define a simple SECRET_KEY for testing
-SECRET_KEY = 'test-secret-key-for-ci'
+# Disable throttling in tests so repeated password reset calls don't hit rate limits.
+DISABLE_PASSWORD_RESET_THROTTLE = True

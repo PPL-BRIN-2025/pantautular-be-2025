@@ -11,32 +11,55 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
-from csp.constants import SELF
+try:
+    from csp.constants import SELF
+except ImportError:
+    SELF = "'self'"
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv()
 
+TESTING = any(arg.lower() == "test" for arg in sys.argv)
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
-SECRET_API_KEY = os.getenv('SECRET_API_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
+SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
+ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
+_secret_keys_env = [item.strip() for item in os.getenv("SECRET_API_KEYS", "").split(",") if item.strip()]
+SECRET_API_KEYS = tuple(dict.fromkeys([SECRET_API_KEY, *_secret_keys_env]))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
+# print("DEBUG =", DEBUG)
 
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,.up.railway.app,.koyeb.app").split(",")
+DISABLE_PASSWORD_RESET_THROTTLE = os.getenv(
+    "DISABLE_PASSWORD_RESET_THROTTLE",
+    "true" if TESTING else "false",
+).lower() == "true"
+
+DISABLE_API_KEY_FOR_FILTERS = os.getenv(
+    "DISABLE_API_KEY_FOR_FILTERS",
+    "true" if TESTING else "false",
+).lower() == "true"
+
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1,.up.railway.app,.koyeb.app"
+).split(",")
 
 # Application definition
 
@@ -55,6 +78,10 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
+    'admin_feature', 
+    'curator_feature',
+    'expert_user_feature',
+
 ]
 
 MIDDLEWARE = [
@@ -115,9 +142,34 @@ WSGI_APPLICATION = 'pantau_tular.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
-}
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.config(default=DATABASE_URL)
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Force lightweight SQLite DB when executing automated tests (manage.py test / pytest)
+RUNNING_TESTS = (
+    os.environ.get("PYTEST_CURRENT_TEST")
+    or os.environ.get("DJANGO_TEST", "").lower() in {"1", "true"}
+    or any(arg in {"test", "testserver", "pytest"} for arg in sys.argv)
+)
+
+if RUNNING_TESTS:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'test_db.sqlite3',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -168,6 +220,7 @@ STATIC_URL = 'static/'
 
 CORS_ALLOWED_ORIGINS = [
     "https://pantautular.netlify.app",
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",
 ]
 
 
@@ -175,6 +228,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^https:\/\/.*\.up\.railway\.app$",  # Allows all railway.app subdomains
     r"^https:\/\/.*\.netlify\.app$",  # Allows all netlify.app subdomains
+    r"^https:\/\/.*\.koyeb\.app$",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -236,3 +290,20 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://keen-jewelle-samuellapnadia-71c13d07.koyeb.app",  # FE
+    "https://royal-rahel-nayaka-cbe367a7.koyeb.app",           # BE
+    "https://pantautular.netlify.app",
+]
+
+
+# sane defaults for curator role settings
+CURATOR_ROLE_NAME = "CURATOR"
+# which checks to use in IsCuratorRole: "role" attr on user, Django group membership
+CURATOR_ROLE_CHECKS = ("role", "group")
+
+if 'test' in sys.argv:
+    MIGRATION_MODULES = {
+        'curator_feature': None,  # ⛔ skip all migrations for this app
+    }

@@ -8,6 +8,7 @@ from ..services import ClimateService, CacheService
 import uuid
 from unittest.mock import patch, MagicMock
 import os
+from ..constants import PROVINCE_TO_CODE
 from .base_climate_test import BaseTemperatureRepositoryTest, BaseTemperatureServiceTest, BaseTemperatureViewTest
 from ..views import ProvinceTemperatureView
 
@@ -25,9 +26,12 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
         self.service = MagicMock()
         self.view.climate_service = self.service
         self.request = MagicMock()
-        self.request.META = {'HTTP_X_API_KEY': 'test-api-key'}
+        self.request.META = {
+            'HTTP_X_API_KEY': 'test-api-key',
+            'HTTP_AUTHORIZATION': f'Bearer {self.access_token}',
+        }
         os.environ['SECRET_API_KEY'] = 'test-api-key'
-        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        self._set_credentials()
 
     def tearDown(self):
         super().tearDown()
@@ -115,8 +119,13 @@ class ProvinceTemperatureViewTest(BaseTemperatureViewTest):
     def test_empty_data(self):
         response = self._make_request([])
         
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.data, {"error": "No temperature data available."})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(PROVINCE_TO_CODE))
+        self.assertTrue(all(item["value"] == 0.0 for item in response.data))
+        self.assertSetEqual(
+            {item["id"] for item in response.data},
+            set(PROVINCE_TO_CODE.values())
+        )
 
     def test_service_returns_error_dict(self):
         response = self._make_request({"error": "Some error occurred"})

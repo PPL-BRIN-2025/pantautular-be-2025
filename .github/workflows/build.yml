@@ -1,19 +1,75 @@
-name: Build
+name: Build, Test, and SonarCloud
+
 on:
   push:
-    branches: [staging]
+    branches: [ main, staging ]
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  sonarqube:
-    name: SonarQube
-    runs-on: windows-latest
+  test-and-scan:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+      DJANGO_SETTINGS_MODULE: pantau_tular.settings
+      PYTHONPATH: ${{ github.workspace }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: https://sonarcloud.io
+
     steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Checkout (full history for new-code calc)
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@1a6d90ebcb0e6a6b1d87e37ba693fe453195ae25 # v5.3.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install coverage
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 && break
+            sleep 1
+          done
+
+      - name: Run tests with coverage (XML)
+        run: |
+          coverage erase
+          coverage run --source=. manage.py test --keepdb -v 2
+          coverage xml -i -o coverage.xml
+          coverage report -m  # (optional: console summary)
+        # If you split test runs per app, keep aa single combined .coverage and then `coverage xml`
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarcloud-github-action@v2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.python.version=3.11
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.scm.provider=git
+            -Dsonar.verbose=false

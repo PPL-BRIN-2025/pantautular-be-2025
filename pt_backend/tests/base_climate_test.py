@@ -2,7 +2,8 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from ..models import Climate
+from rest_framework_simplejwt.tokens import RefreshToken
+from ..models import Climate, User
 from ..repositories import ClimateRepository
 from ..services import ClimateService, CacheService
 import uuid
@@ -139,6 +140,28 @@ class BaseClimateServiceTest(TestCase):
         result = getattr(self.service, f"validate_{self.field_name}_data")(data)
         self.assertEqual(result, "Invalid province name: InvalidProvince")
 
+    def test_validate_alias_province_name(self):
+        if not self.service_method:
+            return  # pragma: no cover
+
+        data = [{"province": "Kepulauan Bangka Belitung", "value": 80.0}]
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)(data)
+
+        self.assertIsNone(result)
+        self.assertEqual(data[0]["province"], "Bangka Belitung")
+
+    def test_validate_english_province_name(self):
+        if not self.service_method:
+            return  # pragma: no cover
+
+        data = [{"province": "West Papua", "value": 70.0}]
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)(data)
+
+        self.assertIsNone(result)
+        self.assertEqual(data[0]["province"], "Papua Barat")
+
     def test_validate_duplicate_province(self):
         if not self.service_method:
             return #pragma: no cover
@@ -149,6 +172,18 @@ class BaseClimateServiceTest(TestCase):
         ]
         result = getattr(self.service, f"validate_{self.field_name}_data")(data)
         self.assertEqual(result, "Duplicate province found: Aceh")
+
+    def test_validate_duplicate_aliases(self):
+        if not self.service_method:
+            return  # pragma: no cover
+
+        data = [
+            {"province": "West Papua", "value": 60.0},
+            {"province": "Papua Barat", "value": 65.0},
+        ]
+        validation_method = f"validate_{self.field_name}_data"
+        result = getattr(self.service, validation_method)(data)
+        self.assertEqual(result, "Duplicate province found: Papua Barat")
 
     def test_validate_invalid_value_type(self):
         if not self.service_method:
@@ -269,7 +304,9 @@ class BaseClimateViewTest(TestCase):
         self.service_method = None  # To be set by child classes to the relevant service method name
         
         os.environ['SECRET_API_KEY'] = 'test-api-key'
-        self.client.credentials(HTTP_X_API_KEY='test-api-key')
+        self.api_key = os.getenv('SECRET_API_KEY', 'test-api-key')
+        self._create_authenticated_user()
+        self._set_credentials()
 
     def tearDown(self):
         # Clean up environment variable
@@ -280,47 +317,65 @@ class BaseClimateViewTest(TestCase):
             return None
         return f'pt_backend.services.ClimateService.{self.service_method}'
 
+    def _create_authenticated_user(self):
+        self.user = User.objects.create(
+            name="Test User",
+            email="climate-test@example.com",
+            password="test-password",
+            role="ADMIN"
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(refresh.access_token)
+
+    def _set_credentials(self, api_key=None, access_token=None):
+        headers = {
+            "HTTP_X_API_KEY": api_key or self.api_key,
+            "HTTP_AUTHORIZATION": f"Bearer {access_token or self.access_token}",
+        }
+        self.client.credentials(**headers)
+
     def test_get_success(self):
         if not self.url or not self.get_patch_path():  # Skip if not properly configured
-            return #pragma: no cover
-            
+            return  # pragma: no cover
+
         patch_path = self.get_patch_path()
         with patch(patch_path) as mock_get_data:
             mock_get_data.return_value = [
                 {"province": "Aceh", "value": self.expected_aceh_value},
-                {"province": "Bali", "value": self.expected_bali_value}
+                {"province": "Bali", "value": self.expected_bali_value},
             ]
-            
             response = self.client.get(self.url)
-            
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(len(response.data), 2)
-            self.assertEqual(response.data[0]['id'], 'ID-AC')
-            self.assertEqual(response.data[1]['id'], 'ID-BA')
-            self.assertEqual(response.data[0]['value'], self.expected_aceh_value)
-            self.assertEqual(response.data[1]['value'], self.expected_bali_value)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]['id'], 'ID-AC')
+        self.assertEqual(response.data[1]['id'], 'ID-BA')
+        self.assertEqual(response.data[0]['value'], self.expected_aceh_value)
+        self.assertEqual(response.data[1]['value'], self.expected_bali_value)
 
     def test_service_returns_error_dict(self):
         if not self.url or not self.get_patch_path():  # Skip if not properly configured
-            return #pragma: no cover
-            
+            return  # pragma: no cover
+
         patch_path = self.get_patch_path()
         with patch(patch_path) as mock_get_data:
             mock_get_data.return_value = {"error": "Some error occurred"}
-            
             response = self.client.get(self.url)
-            
-            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-            self.assertEqual(response.data, {"error": "Some error occurred"})
 
-    @patch('pt_backend.services.ClimateService.get_province_humidity')
-    def test_serialization_error(self, mock_get_humidity):
-        mock_get_humidity.return_value = [{"invalid_field": "value"}] # pragma: no cover
-        
-        response = self.client.get(self.url) # pragma: no cover
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST) # pragma: no cover  
-        self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT}) # pragma: no cover
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data, {"error": "Some error occurred"})
+
+    def test_serialization_error(self):
+        if not self.url or not self.get_patch_path():
+            return  # pragma: no cover
+
+        patch_path = self.get_patch_path()
+        with patch(patch_path) as mock_get_data:
+            mock_get_data.return_value = [{"invalid_field": "value"}]
+            response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"error": CLIMATE_ERROR_INVALID_FORMAT})
 
     def test_authentication_required(self):
         """Test that authentication is required"""
@@ -329,7 +384,14 @@ class BaseClimateViewTest(TestCase):
             
         self.client.credentials()
         response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+        self.assertIn(
+            response.data,
+            (
+                {"detail": "Invalid API Key"},
+                {"detail": "Authentication credentials were not provided."}
+            )
+        )
 
 class BaseHumidityRepositoryTest(BaseClimateRepositoryTest):
     def setUp(self):
@@ -387,8 +449,7 @@ class BaseHumidityViewTest(BaseClimateViewTest):
 
     def test_serialization_error(self):
         if not self.service_method:
-            return #pragma: no cover        
-            
+            return #pragma: no cover
         with patch(f'pt_backend.services.ClimateService.{self.service_method}') as mock_get_data:
             mock_get_data.return_value = [{"invalid_field": "value"}]
             

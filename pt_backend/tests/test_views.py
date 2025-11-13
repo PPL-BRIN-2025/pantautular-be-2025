@@ -1,19 +1,25 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 from pantau_tular.settings import CACHES
-from pt_backend.models import Case, Location, Disease, News
+from pt_backend.models import Case, Location, Disease, News, User
+try:
+    from pt_backend.models import DownloadEvent
+except ImportError:  # pragma: no cover
+    DownloadEvent = None
+from pt_backend.filter.service import CaseFilterValidationError
 from pt_backend.services import CacheService
 from unittest.mock import patch, MagicMock
 from django.utils import timezone
-from datetime import datetime, timedelta
 import uuid
 import os
 from unittest.mock import patch, Mock
+from rest_framework_simplejwt.tokens import RefreshToken
 import json
 from ..views import StatisticsView, SeverityFilteringStatsView
+import pytz
 
 class CaseAPITest(TestCase):
     def setUp(self):
@@ -75,6 +81,22 @@ class CaseAPITest(TestCase):
             
             self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
             self.assertIn('error', response.data)
+
+    @patch('pt_backend.views.CaseFilterService.filter_cases')
+    def test_post_invalid_time_window_returns_bad_request(self, mock_filter_cases):
+        mock_filter_cases.side_effect = CaseFilterValidationError(
+            "Invalid start date format.",
+            fields={'start_date': ["Invalid datetime format."]},
+        )
+        url = reverse('all-case-locations')
+        response = self.client.post(
+            url,
+            data={"start_date": "not-a-date"},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'invalid_time_window')
+        self.assertIn('start_date', response.data['error'].get('fields', {}))
 
     def test_get_all_case_locations_missing_api_key(self):
         self.client.credentials()
@@ -248,7 +270,10 @@ class StatisticsViewTest(TestCase):
         
         # Check that the date_range parameter was correctly set
         self.assertIn('date_range', call_args)
-        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
+        self.assertEqual(
+            call_args['date_range']['start'],
+            datetime(2023, 1, 1, tzinfo=pytz.UTC)
+        )
         self.assertIsNone(call_args['date_range']['end'])
         
         # Verify the response contains the expected data
@@ -295,12 +320,28 @@ class StatisticsViewTest(TestCase):
         
         # Check that the date_range parameter was correctly set
         self.assertIn('date_range', call_args)
-        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
-        self.assertEqual(call_args['date_range']['end'], "2023-12-31")
+        self.assertEqual(
+            call_args['date_range']['start'],
+            datetime(2023, 1, 1, tzinfo=pytz.UTC)
+        )
+        self.assertEqual(
+            call_args['date_range']['end'],
+            datetime(2023, 12, 31, tzinfo=pytz.UTC)
+        )
         
         # Verify the response contains the expected data
         self.assertIn("prevalence_statistics", response.data)
         self.assertEqual(response.data["prevalence_statistics"]["year"], 2023)
+    
+    def test_statistics_post_with_invalid_time_window_returns_bad_request(self):
+        response = self.client.post(
+            self.url,
+            data=json.dumps({"start_date": "invalid-date"}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error']['code'], 'invalid_time_window')
+        self.mock_coordinator_instance.generate_comprehensive_report.assert_not_called()
     
     def test_statistics_with_disease_filter(self):
         """Test filtering statistics by disease"""
@@ -401,8 +442,14 @@ class StatisticsViewTest(TestCase):
         self.assertEqual(call_args['cities'], ["Jakarta"])
         self.assertEqual(call_args['portals'], ["kompas.com"])
         self.assertEqual(call_args['disease_alertness'], 2)
-        self.assertEqual(call_args['date_range']['start'], "2023-01-01")
-        self.assertEqual(call_args['date_range']['end'], "2023-06-30")
+        self.assertEqual(
+            call_args['date_range']['start'],
+            datetime(2023, 1, 1, tzinfo=pytz.UTC)
+        )
+        self.assertEqual(
+            call_args['date_range']['end'],
+            datetime(2023, 6, 30, tzinfo=pytz.UTC)
+        )
     
     def test_statistics_post_with_exception(self):
         """Test handling of exceptions in POST method"""
@@ -473,7 +520,15 @@ class WeightedSeverityAnalysisViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.api_key = os.getenv("SECRET_API_KEY", "test-api-key")
-        self.client.credentials(HTTP_X_API_KEY=self.api_key)
+        self.user = User.objects.create(
+            name="Weighted Tester",
+            email="weighted@example.com",
+            password="test-password",
+            role="ADMIN",
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(refresh.access_token)
+        self._set_credentials()
         self.url = reverse('province-weighted-severity')
         
         # Mock the APIKeyAuthentication to always authenticate successfully
@@ -494,8 +549,17 @@ class WeightedSeverityAnalysisViewTest(TestCase):
         
     def tearDown(self):
         self.auth_patcher.stop()
+        if DownloadEvent is not None:
+            DownloadEvent.objects.all().delete()
         self.case_service_patcher.stop()
         self.severity_analyzer_patcher.stop()
+
+    def _set_credentials(self, api_key=None):
+        headers = {
+            "HTTP_X_API_KEY": api_key or self.api_key,
+            "HTTP_AUTHORIZATION": f"Bearer {self.access_token}",
+        }
+        self.client.credentials(**headers)
     
     def test_get_success(self):
         # Setup mock data
@@ -543,30 +607,40 @@ class WeightedSeverityAnalysisViewTest(TestCase):
     def test_authentication_required(self):
         # Stop the authentication mock to test real authentication
         self.auth_patcher.stop()
-        
+
         # Remove API key from request
         self.client.credentials()
-        
+
         # Make request
         response = self.client.get(self.url)
-        
+
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data, {"detail": "Invalid API Key"})
-    
+
+        # Restore patcher for future tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
+
     def test_invalid_api_key(self):
         # Stop the authentication mock to test real authentication
         self.auth_patcher.stop()
-        
+
         # Set invalid API key
-        self.client.credentials(HTTP_X_API_KEY="invalid-key")
-        
+        self._set_credentials(api_key="invalid-key")
+
         # Make request
         response = self.client.get(self.url)
-        
+
         # Verify response
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data, {"detail": "Invalid API Key"})
+
+        # Restore patcher for future tests
+        self.auth_patcher = patch('pt_backend.authentication.APIKeyAuthentication.authenticate')
+        self.mock_auth = self.auth_patcher.start()
+        self.mock_auth.return_value = (None, None)
 
 class SeverityFilteringStatsViewTest(TestCase):
     def setUp(self):
@@ -626,7 +700,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
         self.assertEqual(response.json(), self.mock_results)
         # Verify caching occurred
@@ -717,7 +792,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,     # Should be None since city doesn't exist
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     def test_post_with_date_range(self):
@@ -744,8 +820,23 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=("2023-01-01", "2023-12-31")
+            date_range=(
+                datetime(2023, 1, 1, tzinfo=pytz.UTC),
+                datetime(2023, 12, 31, tzinfo=pytz.UTC),
+            ),
+            batch=None,
         )
+
+    def test_post_invalid_time_window_returns_bad_request(self):
+        self.mock_cache_instance.get.return_value = None
+        response = self.client.post(
+            self.url,
+            data={"start_date": "invalid-date"},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['error']['code'], 'invalid_time_window')
+        self.mock_service_instance.get_filter_stats.assert_not_called()
     
     def test_post_with_portals_and_alertness(self):
         """Test POST with news portals and alertness level"""
@@ -771,7 +862,8 @@ class SeverityFilteringStatsViewTest(TestCase):
             cities=None,
             news_portals=["Kompas", "Detik"],
             alert_levels=3,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     def test_post_with_invalid_alertness_level(self):
