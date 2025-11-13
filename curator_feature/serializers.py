@@ -8,7 +8,7 @@ from pt_backend.models import Case, Disease, Location, News
 # CURATOR DATA LOG SERIALIZER 
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
-    submittedBy = serializers.CharField(source="submitted_by")
+    submittedBy = serializers.CharField(source="submitted_by", read_only=True)
 
     class Meta:
         model = CuratorDataLog
@@ -292,6 +292,17 @@ class CaseReadSerializer(serializers.ModelSerializer):
     location = LocationReadSerializer(read_only=True)
     news = NewsInlineReadSerializer(many=True, read_only=True)
 
+    batch = serializers.SerializerMethodField()  # ✅ NEW
+
+    def get_batch(self, obj):
+        if obj.batch:
+            return {
+                "id": str(obj.batch.id),
+                "filename": obj.batch.filename,
+                "uploaded_at": obj.batch.uploaded_at,
+            }
+        return None
+
     class Meta:
         model = Case
         fields = [
@@ -300,4 +311,5 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "disease_name",
             "location",
             "news",
+            "batch",      # ✅ NEW
         ]

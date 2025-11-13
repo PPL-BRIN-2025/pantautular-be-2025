@@ -97,3 +97,30 @@ class TestSeverityGroupingReport(unittest.TestCase):
             "hospitalisasi": 2,
             "insiden": 1
         })
+
+    def test_severity_normalization(self):
+        """
+        Severities should be normalized (trimmed & lower-cased) before aggregation
+        so inconsistent casing in the database does not break charts.
+        """
+        cases = [
+            {"id": 1, "severity": "Hospitalisasi"},
+            {"id": 2, "severity": "  INSIDEN  "},
+            {"id": 3, "severity": "mortalitas"},
+        ]
+        report = self.report_service.generate_report(cases)
+        self.assertEqual(report["total_cases"], 3)
+        self.assertEqual(report["severity_counts"], {
+            "hospitalisasi": 1,
+            "insiden": 1,
+            "mortalitas": 1,
+        })
+
+    def test_blank_severity_after_normalization_ignored(self):
+        cases = [
+            {"id": 1, "severity": "   "},
+            {"id": 2, "severity": "Insiden"},
+        ]
+        report = self.report_service.generate_report(cases)
+        self.assertEqual(report["total_cases"], 2)
+        self.assertEqual(report["severity_counts"], {"insiden": 1})

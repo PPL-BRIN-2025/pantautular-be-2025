@@ -18,10 +18,16 @@ class SeverityGroupingReport(ReportStrategy):
 
                 counted_cases.add(case_id)
                 total_cases += 1
-                
+
                 severity = case.get("severity")
-                if severity is not None:
-                    severity_counts[severity] += 1
+                if not severity:
+                    continue
+
+                normalized = str(severity).strip().lower()
+                if not normalized:
+                    continue
+
+                severity_counts[normalized] += 1
         
         return {
             "total_cases": total_cases,

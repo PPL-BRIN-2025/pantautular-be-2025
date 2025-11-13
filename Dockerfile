@@ -39,6 +39,7 @@ COPY hello/ hello/
 COPY authentication/ authentication/
 COPY admin_feature/ admin_feature/
 COPY curator_feature/ curator_feature/
+COPY expert_user_feature/ expert_user_feature/
 # COPY templates/ templates/
 # COPY staticfiles/ staticfiles/  
 
