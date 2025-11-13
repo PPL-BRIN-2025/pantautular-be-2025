@@ -10,6 +10,7 @@ DATABASES = {
         "NAME": BASE_DIR / "test_db.sqlite3",
     }
 }
+PASSWORD_RESET_BASE_URL = "http://testserver/reset"
 
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
@@ -20,3 +21,6 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 SECRET_API_KEYS = [os.getenv("SECRET_API_KEY", "test-api-key")]
 
 CAPTCHA_ENABLED = False
+
+# Disable throttling in tests so repeated password reset calls don't hit rate limits.
+DISABLE_PASSWORD_RESET_THROTTLE = True

@@ -2,7 +2,7 @@ from django.test import TestCase
 from pt_backend.constants import PROVINCE_TO_CODE
 from pt_backend.services import AverageSeverityByProvince, CaseService, CacheService, CasesFilterService
 from pt_backend.interfaces import CaseRepositoryInterface, CacheInterface
-from pt_backend.models import Case, Disease, Location, News
+from pt_backend.models import Case, Disease, Location, News, CaseUploadBatch, User
 from pt_backend.repositories import CaseRepository
 from unittest.mock import MagicMock, call
 import unittest
@@ -56,7 +56,7 @@ class TestCaseService(unittest.TestCase):
         result = self.service.get_all_cases()
 
         self.mock_cache.get.assert_called_once_with("all_cases")
-        self.mock_repository.get_all_cases.assert_called_once()
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=None)
         # Verify that the cache is set with None and timeout is 300.
         self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
         # Since None is falsy, the service returns an empty list.
@@ -84,9 +84,21 @@ class TestCaseService(unittest.TestCase):
         result = self.service.get_all_cases()
 
         self.mock_cache.get.assert_called_once_with("all_cases")
-        self.mock_repository.get_all_cases.assert_called_once()
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=None)
         self.mock_cache.set.assert_called_once_with("all_cases", repository_data, timeout=300)
         self.assertEqual(result, repository_data)
+
+    def test_get_all_cases_with_batch_uses_namespaced_cache_key(self):
+        batch_id = "11111111-1111-1111-1111-111111111111"
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_all_cases.return_value = []
+
+        self.service.get_all_cases(batch_id=batch_id)
+
+        namespaced_key = f"all_cases:{batch_id}"
+        self.mock_cache.get.assert_called_once_with(namespaced_key)
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=batch_id)
+        self.mock_cache.set.assert_called_once_with(namespaced_key, [], timeout=300)
 
     def test_get_cases_by_year_cache_hit(self):
         """
@@ -454,6 +466,19 @@ class CasesFilterServiceIntegrationTests(TestCase):
             location=self.loc_bandung,
         )
 
+        self.expert = User.objects.create(
+            name="Expert User",
+            password="secret",
+            role="EXPERT",
+            email="expert@example.com",
+        )
+        self.batch_one = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="batch1.csv")
+        self.batch_two = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="batch2.csv")
+        self.case_jakarta.batch = self.batch_one
+        self.case_jakarta.save(update_fields=["batch"])
+        self.case_bandung.batch = self.batch_two
+        self.case_bandung.save(update_fields=["batch"])
+
         News.objects.create(
             case=self.case_jakarta,
             portal="Portal1",
@@ -479,8 +504,8 @@ class CasesFilterServiceIntegrationTests(TestCase):
 
         class DirectCaseService:
             @staticmethod
-            def get_all_cases():
-                return CaseRepository().get_all_cases()
+            def get_all_cases(batch_id=None):
+                return CaseRepository().get_all_cases(batch_id=batch_id)
 
         self.filter_service = CasesFilterService(case_service=DirectCaseService())
 
@@ -506,6 +531,12 @@ class CasesFilterServiceIntegrationTests(TestCase):
 
         # Both province and city filters should apply, duplicates should not break the query
         self.assertEqual(filtered_ids, {self.case_jakarta.id, self.case_bandung.id})
+
+    def test_filter_by_batch_returns_only_selected_cases(self):
+        filtered = list(self.filter_service.filter_cases(batch=str(self.batch_one.id)))
+        filtered_ids = {row["id"] for row in filtered}
+        self.assertEqual(filtered_ids, {self.case_jakarta.id})
+
 
 class TestAverageSeverityByProvince(unittest.TestCase):
     def setUp(self):
