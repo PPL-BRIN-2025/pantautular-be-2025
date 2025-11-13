@@ -31,17 +31,11 @@ def forwards(apps, schema_editor):
         return
 
     if vendor == "sqlite":
-        sql_block = SQLITE_SQL
-    else:
-        print(f"Skipping immutable trigger creation (not supported on {vendor})")
+        # SQLite (our default test DB) cannot express these triggers, so we skip them.
+        print("Skipping curator_feature_datalog immutability triggers (SQLite test environment)")
         return
 
-    for stmt in sql_block.split(";"):
-        if stmt.strip():
-            schema_editor.execute(stmt)
-
-    # ✅ Tests / SQLite: skip triggers entirely
-    print("Skipping curator_feature_datalog immutability triggers (SQLite test environment)")
+    print(f"Skipping immutable trigger creation (not supported on {vendor})")
 
 
 def backwards(apps, schema_editor):
@@ -63,3 +57,4 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(forwards, backwards),
     ]
+
