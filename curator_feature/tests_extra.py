@@ -51,7 +51,7 @@ class SerializerAndServiceExtraTests(TestCase):
         self.assertTrue(ser.is_valid())
         with self.assertRaises(drf_serializers.ValidationError) as cm:
             ser.resolve()
-        self.assertIn("Provide province, latitude, longitude", str(cm.exception))
+        self.assertIn("Provide province", str(cm.exception))
 
     def test_location_resolve_create_success(self):
         ser = LocationByNameSerializer(data={

@@ -2,6 +2,7 @@ from django.conf import settings
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from authentication.permissions import IsTokenAuthenticated
 
+ALLOWED_ROLES = {"CURATOR", "ADMIN", "EXP_USER"}  # adjust if needed
 
 class IsCuratorRole(BasePermission):
     """Grant access when the request user matches the configured curator role.
@@ -12,14 +13,12 @@ class IsCuratorRole(BasePermission):
     - ``"group"``: require membership in a Django Group named ``CURATOR_ROLE_NAME``.
     Unknown strategies are ignored to keep behaviour backward compatible.
     """
-
+    Allow only users whose role is one of the allowed roles.
+    """
     def has_permission(self, request, view):
         user = getattr(request, "user", None)
-        if not user:
-            return False
-
-        target_role = (getattr(settings, "CURATOR_ROLE_NAME", "CURATOR") or "CURATOR").upper()
-        strategies = getattr(settings, "CURATOR_ROLE_CHECKS", ("role",))
+        role = getattr(user, "role", None)
+        return bool(user and role and str(role).upper() in ALLOWED_ROLES)
 
         for strategy in strategies:
             if strategy == "role":
@@ -44,14 +43,14 @@ class IsCuratorRole(BasePermission):
         return False
 
 class ReadOnlyOrCurator(BasePermission):
-    """Allow safe methods to everyone; otherwise enforce curator auth."""
-
+    """
+    Allow safe methods (GET, HEAD, OPTIONS) to everyone.
+    For unsafe methods (POST, PUT, PATCH, DELETE) require token auth AND allowed role.
+    """
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
 
-        # For non-safe methods require the same checks as curator base view
-        # We rely on the IsTokenAuthenticated permission and IsCuratorRole.
         is_token_auth = IsTokenAuthenticated().has_permission(request, view)
         is_curator = IsCuratorRole().has_permission(request, view)
         return bool(is_token_auth and is_curator)

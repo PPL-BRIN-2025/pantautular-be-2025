@@ -343,6 +343,17 @@ class CaseReadSerializer(serializers.ModelSerializer):
     location = LocationReadSerializer(read_only=True)
     news = NewsInlineReadSerializer(many=True, read_only=True)
 
+    batch = serializers.SerializerMethodField()  # ✅ NEW
+
+    def get_batch(self, obj):
+        if obj.batch:
+            return {
+                "id": str(obj.batch.id),
+                "filename": obj.batch.filename,
+                "uploaded_at": obj.batch.uploaded_at,
+            }
+        return None
+
     class Meta:
         model = Case
         fields = [
@@ -351,5 +362,5 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "disease_name",
             "location",
             "news",
+            "batch",      # ✅ NEW
         ]
-

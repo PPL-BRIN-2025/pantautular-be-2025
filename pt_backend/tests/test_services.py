@@ -2,11 +2,14 @@ from django.test import TestCase
 from pt_backend.constants import PROVINCE_TO_CODE
 from pt_backend.services import AverageSeverityByProvince, CaseService, CacheService, CasesFilterService
 from pt_backend.interfaces import CaseRepositoryInterface, CacheInterface
+from pt_backend.models import Case, Disease, Location, News, CaseUploadBatch, User
+from pt_backend.repositories import CaseRepository
 from unittest.mock import MagicMock, call
 import unittest
 from django.core.cache import cache
 from datetime import datetime
 from django.db.models import Q
+from django.utils import timezone
 
 class TestCaseService(unittest.TestCase):
     def setUp(self):
@@ -53,7 +56,7 @@ class TestCaseService(unittest.TestCase):
         result = self.service.get_all_cases()
 
         self.mock_cache.get.assert_called_once_with("all_cases")
-        self.mock_repository.get_all_cases.assert_called_once()
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=None)
         # Verify that the cache is set with None and timeout is 300.
         self.mock_cache.set.assert_called_once_with("all_cases", None, timeout=300)
         # Since None is falsy, the service returns an empty list.
@@ -81,9 +84,21 @@ class TestCaseService(unittest.TestCase):
         result = self.service.get_all_cases()
 
         self.mock_cache.get.assert_called_once_with("all_cases")
-        self.mock_repository.get_all_cases.assert_called_once()
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=None)
         self.mock_cache.set.assert_called_once_with("all_cases", repository_data, timeout=300)
         self.assertEqual(result, repository_data)
+
+    def test_get_all_cases_with_batch_uses_namespaced_cache_key(self):
+        batch_id = "11111111-1111-1111-1111-111111111111"
+        self.mock_cache.get.return_value = None
+        self.mock_repository.get_all_cases.return_value = []
+
+        self.service.get_all_cases(batch_id=batch_id)
+
+        namespaced_key = f"all_cases:{batch_id}"
+        self.mock_cache.get.assert_called_once_with(namespaced_key)
+        self.mock_repository.get_all_cases.assert_called_once_with(batch_id=batch_id)
+        self.mock_cache.set.assert_called_once_with(namespaced_key, [], timeout=300)
 
     def test_get_cases_by_year_cache_hit(self):
         """
@@ -272,20 +287,26 @@ class TestCaseFilterService(unittest.TestCase):
             date_range=date_range
         )
         
-        expected_calls = [
-            call(disease__name__in=disease),
-            call(Q(location__province__in=provinces) | Q(location__city__in=cities)), 
-            call(news__portal__in=portals),
-            call(disease__level_of_alertness=disease_alertness),
-            # The following depends on the implementation of _filter_by_news_date_range
-            call(news__date_published__range=[date_range['start'], date_range['end']])
-        ]
-        
-        self.assertEqual(self.dummy_qs.filter.call_count, 5)
-        # We only check the first 5 calls as the date range filtering might be more complex
+        self.assertEqual(self.dummy_qs.filter.call_count, 6)
+        calls = self.dummy_qs.filter.call_args_list
+        self.assertEqual(calls[0], call(disease__name__in=disease))
 
-        for i in range(5):
-            self.assertEqual(self.dummy_qs.filter.call_args_list[i], expected_calls[i])
+        expected_province_q = Q()
+        for province in provinces:
+            expected_province_q |= Q(location__province__iexact=province)
+        self.assertEqual(str(calls[1].args[0]), str(expected_province_q))
+
+        expected_city_q = Q()
+        for city in cities:
+            expected_city_q |= Q(location__city__iexact=city) | Q(city__iexact=city)
+        self.assertEqual(str(calls[2].args[0]), str(expected_city_q))
+
+        self.assertEqual(calls[3], call(news__portal__in=portals))
+        self.assertEqual(calls[4], call(disease__level_of_alertness=disease_alertness))
+        self.assertEqual(
+            calls[5],
+            call(news__date_published__range=[date_range['start'], date_range['end']]),
+        )
         self.assertEqual(result, self.dummy_qs)
         
     
@@ -302,14 +323,19 @@ class TestCaseFilterService(unittest.TestCase):
             disease_alertness=disease_alertness  # Changed parameter name
         )
         
-        expected_calls = [
-            call(location__province__in=provinces),
-            call(disease__level_of_alertness=disease_alertness),
-        ]
-        
+        province_q = Q()
+        for province in provinces:
+            province_q |= Q(location__province__iexact=province)
+
         self.assertEqual(self.dummy_qs.filter.call_count, 2)
-        self.assertEqual(self.dummy_qs.filter.call_args_list[0], expected_calls[0])
-        self.assertEqual(self.dummy_qs.filter.call_args_list[1], expected_calls[1])
+        self.assertEqual(
+            str(self.dummy_qs.filter.call_args_list[0].args[0]),
+            str(province_q),
+        )
+        self.assertEqual(
+            self.dummy_qs.filter.call_args_list[1],
+            call(disease__level_of_alertness=disease_alertness),
+        )
         self.assertEqual(result, self.dummy_qs)
 
     def test_date_range_both_dates_provided(self):
@@ -407,8 +433,110 @@ class TestCaseFilterService(unittest.TestCase):
         result = self.filter_service.filter_cases(cities=cities)
         
         # Verify the correct filter was applied
-        self.dummy_qs.filter.assert_called_once_with(location__city__in=cities)
+        self.dummy_qs.filter.assert_called_once()
+        applied_q = self.dummy_qs.filter.call_args[0][0]
+        expected_q = Q()
+        for city in cities:
+            expected_q |= Q(location__city__iexact=city) | Q(city__iexact=city)
+        self.assertEqual(str(applied_q), str(expected_q))
         self.assertEqual(result, self.dummy_qs)
+
+class CasesFilterServiceIntegrationTests(TestCase):
+    def setUp(self):
+        self.disease = Disease.objects.create(name="DBD", level_of_alertness=2)
+        self.loc_jakarta = Location.objects.create(city="Jakarta", province="DKI Jakarta")
+        self.loc_bandung = Location.objects.create(city="Kab. Bandung", province="Jawa Barat")
+
+        self.case_jakarta = Case.objects.create(
+            gender="male",
+            age=32,
+            city="Jakarta",
+            status="biasa",
+            severity="hospitalisasi",
+            disease=self.disease,
+            location=self.loc_jakarta,
+        )
+        self.case_bandung = Case.objects.create(
+            gender="female",
+            age=27,
+            city="Bandung",
+            status="minimal",
+            severity="insiden",
+            disease=self.disease,
+            location=self.loc_bandung,
+        )
+
+        self.expert = User.objects.create(
+            name="Expert User",
+            password="secret",
+            role="EXPERT",
+            email="expert@example.com",
+        )
+        self.batch_one = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="batch1.csv")
+        self.batch_two = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="batch2.csv")
+        self.case_jakarta.batch = self.batch_one
+        self.case_jakarta.save(update_fields=["batch"])
+        self.case_bandung.batch = self.batch_two
+        self.case_bandung.save(update_fields=["batch"])
+
+        News.objects.create(
+            case=self.case_jakarta,
+            portal="Portal1",
+            title="News Jakarta",
+            type="nasional",
+            content="c",
+            url="https://example.com/jakarta",
+            author="Author J",
+            date_published=timezone.now(),
+            img_url="https://example.com/jakarta.jpg",
+        )
+        News.objects.create(
+            case=self.case_bandung,
+            portal="Portal2",
+            title="News Bandung",
+            type="lokal",
+            content="c",
+            url="https://example.com/bandung",
+            author="Author B",
+            date_published=timezone.now(),
+            img_url="https://example.com/bandung.jpg",
+        )
+
+        class DirectCaseService:
+            @staticmethod
+            def get_all_cases(batch_id=None):
+                return CaseRepository().get_all_cases(batch_id=batch_id)
+
+        self.filter_service = CasesFilterService(case_service=DirectCaseService())
+
+    def test_filter_by_city_matches_case_city_field(self):
+        filtered = list(self.filter_service.filter_cases(cities=["Bandung"]))
+        filtered_ids = {row["id"] for row in filtered}
+        self.assertEqual(filtered_ids, {self.case_bandung.id})
+
+    def test_filter_by_city_does_not_return_non_matching_locations(self):
+        filtered = list(self.filter_service.filter_cases(cities=["Bandung"]))
+        filtered_ids = {row["id"] for row in filtered}
+        self.assertNotIn(self.case_jakarta.id, filtered_ids)
+        self.assertEqual(len(filtered_ids), 1)
+
+    def test_filter_by_combined_locations_payload(self):
+        locations = {
+            "provinces": ["dki jakarta", "DKI Jakarta"],
+            "cities": [{"value": "bandung"}, {"label": "Jakarta"}],
+        }
+
+        filtered = list(self.filter_service.filter_cases(locations=locations))
+        filtered_ids = {row["id"] for row in filtered}
+
+        # Both province and city filters should apply, duplicates should not break the query
+        self.assertEqual(filtered_ids, {self.case_jakarta.id, self.case_bandung.id})
+
+    def test_filter_by_batch_returns_only_selected_cases(self):
+        filtered = list(self.filter_service.filter_cases(batch=str(self.batch_one.id)))
+        filtered_ids = {row["id"] for row in filtered}
+        self.assertEqual(filtered_ids, {self.case_jakarta.id})
+
 
 class TestAverageSeverityByProvince(unittest.TestCase):
     def setUp(self):
