@@ -47,7 +47,7 @@ class SignupAPIView(APIView):
 
         try:
             dto = RegistrationService.register_user(
-                role_name="TENAGA_AHLI",
+                role_name="CONTRIBUTOR",
                 **serializer.validated_data,
             )
         except RegistrationError as exc:
@@ -133,13 +133,16 @@ class PasswordResetLinkValidateView(APIView):
 class PasswordResetConfirmView(APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
-
-    def __init__(self, **kwargs):
-        self.password_token_service = PasswordTokenService(UserRepository())
-        self.password_validation_service = PasswordValidationService()
-        self.change_password_service = ChangePasswordService()
+    password_token_service_class = PasswordTokenService
+    password_validation_service_class = PasswordValidationService
+    change_password_service_class = ChangePasswordService
+    user_repository_class = UserRepository
 
     def post(self, request, uidb64, token):
+        password_token_service = self.password_token_service_class(self.user_repository_class())
+        password_validation_service = self.password_validation_service_class()
+        change_password_service = self.change_password_service_class()
+
         new_password = request.data.get("password")
         if not new_password:
             return Response({"detail": "Password diperlukan"}, status=status.HTTP_400_BAD_REQUEST)
@@ -148,21 +151,21 @@ class PasswordResetConfirmView(APIView):
         if not new_password_confirm:
             return Response({"detail": "Konfirmasi password diperlukan"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.password_validation_service.validate_password_match(new_password, new_password_confirm):
+        if not password_validation_service.validate_password_match(new_password, new_password_confirm):
             return Response({"detail": "Password tidak cocok"}, status=status.HTTP_400_BAD_REQUEST)
         
-        is_valid, error_message = self.password_validation_service.validate_password_strength(new_password)
+        is_valid, error_message = password_validation_service.validate_password_strength(new_password)
         if not is_valid:
             return Response({"detail": error_message}, status=status.HTTP_400_BAD_REQUEST)
         
-        user = self.password_token_service.get_user_from_uidb64(uidb64)
+        user = password_token_service.get_user_from_uidb64(uidb64)
         if not user:
             return Response({"detail": "Link tidak valid"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.password_token_service.validate_token(user, token):
+        if not password_token_service.validate_token(user, token):
             return Response({"detail": "Token tidak valid atau sudah kedaluwarsa"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.change_password_service.change_password(user.email, new_password):
+        if not change_password_service.change_password(user.email, new_password):
             return Response({"detail": "Gagal mengganti password"}, status=status.HTTP_400_BAD_REQUEST)
             
         return Response({"detail": "Password berhasil diganti"}, status=status.HTTP_200_OK)
@@ -180,6 +183,11 @@ class ChangePasswordView(APIView):
             # Extract JWT token from Authorization header
             auth_header = request.headers.get('Authorization')
             if not auth_header or not auth_header.startswith('Bearer '):
+                logger.warning(
+                    "ChangePasswordView denied request due to missing/invalid Authorization header; "
+                    "headers=%s",
+                    list(request.headers.keys()),
+                )
                 return Response(
                     {"error": "Authentication token required"}, 
                     status=status.HTTP_401_UNAUTHORIZED
@@ -194,6 +202,7 @@ class ChangePasswordView(APIView):
                 user_id = payload.get('user_id')
                 
                 if not user_id:
+                    logger.warning("ChangePasswordView token missing user_id claim")
                     return Response(
                         {"error": "Invalid token"}, 
                         status=status.HTTP_401_UNAUTHORIZED
@@ -232,16 +241,19 @@ class ChangePasswordView(APIView):
                 )
                 
             except jwt.ExpiredSignatureError:
+                logger.warning("ChangePasswordView token expired")
                 return Response(
                     {"error": "Token expired"}, 
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             except jwt.InvalidTokenError:
+                logger.warning("ChangePasswordView token invalid")
                 return Response(
                     {"error": "Invalid token"}, 
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             except User.DoesNotExist:
+                logger.warning("ChangePasswordView user not found for decoded token")
                 return Response(
                     {"error": "User not found"}, 
                     status=status.HTTP_401_UNAUTHORIZED

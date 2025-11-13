@@ -179,12 +179,52 @@ class Case(models.Model):
     disease = models.ForeignKey(Disease, on_delete=models.CASCADE, related_name="cases")
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="cases")
 
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="expert_uploaded_cases"
+    )
+
+    # Keep batch optional for now to avoid destructive cascades in production.
+    # When ready, switch to CASCADE and make non-null via a migration.
+    batch = models.ForeignKey(
+        "CaseUploadBatch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cases",
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
     @staticmethod
     def get_all_locations():
         return Case.objects.values("id", "location__longitude", "location__latitude", "city", "location__province")
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
+
+    class Meta:
+        ordering = ("-created_at", "id")
+
+class CaseUploadBatch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="case_batches"
+    )
+    filename = models.CharField(max_length=255)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-uploaded_at",)
+
+    def __str__(self):
+        return f"{self.filename} ({self.uploaded_by.email})"
 
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -197,3 +237,6 @@ class News(models.Model):
     date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
+
+    def __str__(self):
+        return self.title

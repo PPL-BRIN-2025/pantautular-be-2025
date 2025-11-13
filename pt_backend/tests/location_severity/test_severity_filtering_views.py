@@ -6,12 +6,16 @@ from pt_backend.authentication import APIKeyAuthentication
 from pt_backend.services import SeverityFilteringService
 from pt_backend.models import Location
 from rest_framework import status
+from datetime import datetime
+import pytz
+from django.core.cache import cache
 
 
 class SeverityFilteringStatsPostViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.url = reverse('severity-filtering-stats')
+        cache.clear()
         
         # Sample response data from the service
         self.mock_results = {
@@ -44,7 +48,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
         self.assertEqual(response.json(), self.mock_results)
     
@@ -75,7 +80,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=["Jakarta"],
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
 
     
@@ -103,7 +109,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=["Kompas", "Detik"],
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -130,7 +137,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=2,  # Should be converted to integer
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -160,8 +168,29 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=("2023-01-01", "2023-12-31")
+            date_range=(
+                datetime(2023, 1, 1, tzinfo=pytz.UTC),
+                datetime(2023, 12, 31, tzinfo=pytz.UTC),
+            ),
+            batch=None,
         )
+
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_invalid_time_window_returns_bad_request(self, mock_service, mock_auth):
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+
+        response = self.client.post(
+            self.url,
+            data={"start_date": "invalid-date"},
+            format='json'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['error']['code'], 'invalid_time_window')
+        mock_service_instance.get_filter_stats.assert_not_called()
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
     @patch('pt_backend.views.SeverityFilteringService')
@@ -197,7 +226,11 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=["Jakarta"],
             news_portals=["Kompas"],
             alert_levels=3,
-            date_range=("2023-01-01", "2023-12-31")
+            date_range=(
+                datetime(2023, 1, 1, tzinfo=pytz.UTC),
+                datetime(2023, 12, 31, tzinfo=pytz.UTC),
+            ),
+            batch=None,
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -247,7 +280,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -299,7 +333,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
     
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -334,7 +369,8 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=["Jakarta"],
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
         
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
@@ -376,7 +412,33 @@ class SeverityFilteringStatsPostViewTests(TestCase):
         # Cache should be queried twice and set once
         self.assertEqual(mock_cache_instance.get.call_count, 2)
         mock_cache_instance.set.assert_called_once()
-        
+
+    @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
+    @patch('pt_backend.views.SeverityFilteringService')
+    def test_post_with_batch_filter(self, mock_service, mock_auth):
+        batch_id = "11111111-1111-1111-1111-111111111111"
+
+        mock_service_instance = MagicMock(spec=SeverityFilteringService)
+        mock_service_instance.get_filter_stats.return_value = self.mock_results
+        mock_service.return_value = mock_service_instance
+
+        response = self.client.post(
+            self.url,
+            data={"batch": batch_id},
+            format='json'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_service_instance.get_filter_stats.assert_called_once_with(
+            diseases=None,
+            provinces=None,
+            cities=None,
+            news_portals=None,
+            alert_levels=None,
+            date_range=None,
+            batch=batch_id,
+        )
+
     @patch.object(APIKeyAuthentication, 'authenticate', return_value=None)
     @patch('pt_backend.views.SeverityFilteringService')
     def test_post_with_none_and_empty_data(self, mock_service, mock_auth):
@@ -406,11 +468,13 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None
+            date_range=None,
+            batch=None,
         )
         
         # Reset mock for next test
         mock_service_instance.get_filter_stats.reset_mock()
+        cache.clear()
         
         # Test with empty lists/strings
         response = self.client.post(
@@ -433,5 +497,6 @@ class SeverityFilteringStatsPostViewTests(TestCase):
             cities=None,
             news_portals=None,
             alert_levels=None,
-            date_range=None  # Empty strings should not be in date range
+            date_range=None,  # Empty strings should not be in date range
+            batch=None,
         )

@@ -37,7 +37,7 @@ class SeverityFilteringServiceTestCase(TestCase):
         
         # Verify filter service was called correctly
         self.mock_filter_service.filter_cases.assert_called_once_with(
-            None, None, None, None, None, None, ids_only=True
+            None, None, None, None, None, None, ids_only=True, batch=None
         )
         
         # Verify repositories were called with filtered IDs
@@ -72,7 +72,7 @@ class SeverityFilteringServiceTestCase(TestCase):
         
         # Verify filter service was called with all parameters
         self.mock_filter_service.filter_cases.assert_called_once_with(
-            diseases, provinces, cities, news_portals, alert_levels, date_range, ids_only=True
+            diseases, provinces, cities, news_portals, alert_levels, date_range, ids_only=True, batch=None
         )
         
         # Verify repositories were called with filtered IDs
@@ -116,7 +116,7 @@ class SeverityFilteringServiceTestCase(TestCase):
         
         # Verify filter service was called with empty date range
         self.mock_filter_service.filter_cases.assert_called_once_with(
-            None, None, None, None, None, date_range, ids_only=True
+            None, None, None, None, None, date_range, ids_only=True, batch=None
         )
         
         # Verify repositories were called with filtered IDs
@@ -125,6 +125,18 @@ class SeverityFilteringServiceTestCase(TestCase):
         self.mock_location_repository.get_city_severity_stats.assert_called_once_with(self.filtered_case_ids)
         
         # Verify structure of result
+        self.assertEqual(result["disease_stats"], self.mock_disease_stats)
+        self.assertEqual(result["province_stats"], self.mock_province_stats)
+        self.assertEqual(result["city_stats"], self.mock_city_stats)
+
+    def test_get_filter_stats_with_batch_filter(self):
+        batch_id = "11111111-1111-1111-1111-111111111111"
+
+        result = self.service.get_filter_stats(batch=batch_id)
+
+        self.mock_filter_service.filter_cases.assert_called_once_with(
+            None, None, None, None, None, None, ids_only=True, batch=batch_id
+        )
         self.assertEqual(result["disease_stats"], self.mock_disease_stats)
         self.assertEqual(result["province_stats"], self.mock_province_stats)
         self.assertEqual(result["city_stats"], self.mock_city_stats)
