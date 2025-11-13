@@ -1,5 +1,4 @@
 from rest_framework.permissions import BasePermission
-from django.core.exceptions import ImproperlyConfigured
 import sys
 try:
     # Role is optional here to avoid circular or test-time import issues
@@ -8,9 +7,13 @@ except Exception:  # pragma: no cover - in tests we may patch Role in views
     Role = None
 
 
-class IsTokenAuthenticated(BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and hasattr(request.user, 'id') and request.user.id is not None)
+def _roles_empty():
+    if Role is None:
+        return None
+    try:
+        return Role.objects.count() == 0
+    except Exception:
+        return None
 
 
 class IsAdminAuthenticated(BasePermission):
@@ -36,14 +39,9 @@ class IsAdminAuthenticated(BasePermission):
                 return True
         except Exception:
             pass
+        empty_roles = _roles_empty()
         if not user:
-            # If roles table is empty, allow access for unit tests/mocked envs
-            try:
-                if Role is not None and Role.objects.count() == 0:
-                    return True
-            except Exception:
-                pass
-            return False
+            return True if empty_roles else False
 
         # Support Django auth users and our custom pt_backend.models.User
         is_auth_attr = getattr(user, "is_authenticated", None)
@@ -56,26 +54,18 @@ class IsAdminAuthenticated(BasePermission):
             is_authenticated = hasattr(user, "id") and user.id is not None
 
         if not is_authenticated:
-            # Allow when no roles exist so unit tests with only API key can pass
-            try:
-                if Role is not None and Role.objects.count() == 0:
-                    return True
-            except Exception:
-                pass
-            return False
+            return True if empty_roles else False
 
         role = getattr(user, "role", "") or ""
 
         # If the Role model is available and there are zero roles defined in DB,
         # relax enforcement so unit tests that patch models/managers can proceed
         # without needing a real ADMIN user instance.
-        try:
-            if Role is not None and Role.objects.count() == 0:
-                return True
-        except Exception:
-            pass
+        if empty_roles:
+            return True
 
         return str(role).upper() == "ADMIN"
+
 
 class IsTokenAuthenticated(BasePermission):
     def has_permission(self, request, view):

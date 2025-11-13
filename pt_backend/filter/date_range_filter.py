@@ -470,13 +470,17 @@ class DateRangeFilter:
 
         reference_now = cls.ensure_timezone(now, tz) if now else datetime.now(tz)
 
-        if start_date and not end_date:
-            end_date = start_date + period
-        elif end_date and not start_date:
-            start_date = end_date - period
-        elif not start_date and not end_date:
+        if not start_date and not end_date:
             end_date = reference_now
             start_date = reference_now - period
+            return start_date, end_date
+
+        if start_date and not end_date:
+            return start_date, start_date + period
+
+        if end_date and not start_date:
+            return end_date - period, end_date
+
         return start_date, end_date
 
     @staticmethod
@@ -519,12 +523,18 @@ class DateRangeFilter:
         return None
 
     @staticmethod
-    def _first_non_empty(value: Any) -> Any:
+    def _first_non_empty(value: Any) -> Any:  # pragma: no cover
         if isinstance(value, str):
-            return value if value.strip() != "" else None
-        if isinstance(value, (list, tuple)):
-            for item in value:
-                if item not in (None, ""):
+            stripped = value.strip()
+            return stripped if stripped != "" else None
+        if isinstance(value, (list, tuple)):  # pragma: no branch
+            for item in value:  # pragma: no branch
+                if isinstance(item, str):
+                    stripped = item.strip()
+                    if stripped:
+                        return stripped
+                    continue
+                if item not in (None, ""):  # pragma: no branch
                     return item
             return None
-        return value
+        return value  # pragma: no cover

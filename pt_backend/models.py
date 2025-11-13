@@ -187,13 +187,18 @@ class Case(models.Model):
         related_name="expert_uploaded_cases"
     )
 
+    # Keep batch optional for now to avoid destructive cascades in production.
+    # When ready, switch to CASCADE and make non-null via a migration.
     batch = models.ForeignKey(
         "CaseUploadBatch",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name="cases"
+        related_name="cases",
+        db_index=True,
     )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     @staticmethod
     def get_all_locations():
@@ -201,6 +206,9 @@ class Case(models.Model):
     
     def __str__(self):
         return f"Case {self.id} - {self.city}"
+
+    class Meta:
+        ordering = ("-created_at", "id")
 
 class CaseUploadBatch(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -229,3 +237,6 @@ class News(models.Model):
     date_published = models.DateTimeField()
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="news")
     img_url = models.URLField(blank=True)
+
+    def __str__(self):
+        return self.title
