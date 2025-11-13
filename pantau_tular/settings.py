@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
@@ -25,6 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv()
 
+TESTING = any(arg.lower() == "test" for arg in sys.argv)
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -33,6 +36,8 @@ load_dotenv()
 SECRET_KEY = os.getenv('SECRET_KEY', 'unsafe-default-secret-key')
 SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
+_secret_keys_env = [item.strip() for item in os.getenv("SECRET_API_KEYS", "").split(",") if item.strip()]
+SECRET_API_KEYS = tuple(dict.fromkeys([SECRET_API_KEY, *_secret_keys_env]))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -40,6 +45,16 @@ DEBUG = False
 
 # settings.py
 PASSWORD_RESET_TIMEOUT = 60 * 15  # 15 menit (default)
+
+DISABLE_PASSWORD_RESET_THROTTLE = os.getenv(
+    "DISABLE_PASSWORD_RESET_THROTTLE",
+    "true" if TESTING else "false",
+).lower() == "true"
+
+DISABLE_API_KEY_FOR_FILTERS = os.getenv(
+    "DISABLE_API_KEY_FOR_FILTERS",
+    "true" if TESTING else "false",
+).lower() == "true"
 
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
@@ -65,6 +80,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'admin_feature', 
     'curator_feature',
+    'expert_user_feature',
 
 ]
 
@@ -137,6 +153,21 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Force lightweight SQLite DB when executing automated tests (manage.py test / pytest)
+RUNNING_TESTS = (
+    os.environ.get("PYTEST_CURRENT_TEST")
+    or os.environ.get("DJANGO_TEST", "").lower() in {"1", "true"}
+    or any(arg in {"test", "testserver", "pytest"} for arg in sys.argv)
+)
+
+if RUNNING_TESTS:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
 
@@ -271,3 +302,8 @@ CSRF_TRUSTED_ORIGINS = [
 CURATOR_ROLE_NAME = "CURATOR"
 # which checks to use in IsCuratorRole: "role" attr on user, Django group membership
 CURATOR_ROLE_CHECKS = ("role", "group")
+
+if 'test' in sys.argv:
+    MIGRATION_MODULES = {
+        'curator_feature': None,  # ⛔ skip all migrations for this app
+    }
