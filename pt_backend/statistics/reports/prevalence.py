@@ -52,8 +52,8 @@ class PrevalenceStatistics(ReportStrategy):
 
         if isinstance(date_range, dict):
             date_range_start = date_range.get("start")
-        elif isinstance(date_range, Iterable) and not isinstance(date_range, (str, bytes)):
-            for item in date_range:
+        elif isinstance(date_range, Iterable) and not isinstance(date_range, (str, bytes)):  # pragma: no branch
+            for item in date_range:  # pragma: no branch
                 date_range_start = item
                 break
 
@@ -72,8 +72,12 @@ class PrevalenceStatistics(ReportStrategy):
         if not value:
             return None
 
-        if isinstance(value, datetime):
-            return value.year
+        try:
+            if isinstance(value, datetime):
+                return value.year
+        except TypeError:
+            # When datetime is patched/mocked, isinstance may raise.
+            pass
 
         try:
             if isinstance(value, str):

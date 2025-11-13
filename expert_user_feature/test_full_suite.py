@@ -10,7 +10,7 @@ import django
 django.setup()
 
 from datetime import datetime
-
+from django.contrib.auth.hashers import make_password
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
@@ -19,7 +19,7 @@ from rest_framework.test import APIClient, APITestCase, APIRequestFactory
 from django.urls import reverse
 
 from pt_backend.models import Case, CaseUploadBatch, Disease, Location, News, User as PtUser
-
+import uuid
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 from django.contrib.auth import get_user_model
@@ -39,7 +39,7 @@ class TestExpertCaseAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert User",
             email="expert@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(user=self.expert)
@@ -290,7 +290,7 @@ class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
         )
         setattr(self.user, "role", "EXPERT")
         self.user.save()
@@ -568,7 +568,7 @@ class TestExpertDatasetRowSerializer(TestCase):
 
 class TestExpertDatasetService(TestCase):
     def test_build_dataset_handles_empty_batch(self):
-        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password="x", role="EXP_USER")
+        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
 
         dataset = build_or_refresh_dataset_from_batch(batch)
@@ -636,7 +636,7 @@ class TestExpertCaseBatchAPI(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert",
             email="expert@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
@@ -672,7 +672,7 @@ class TestExpertCaseBatchAPI(TestCase):
     def test_list_batches_returns_only_user_batches(self):
         self._upload_csv()
 
-        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.get(EXPERT_BATCH_BASE)
@@ -695,7 +695,7 @@ class TestExpertCaseBatchAPI(TestCase):
 
     # ✅ 4. User tidak bisa delete batch milik orang lain
     def test_user_cannot_delete_other_users_batch(self):
-        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch.id}/delete/")
@@ -723,7 +723,7 @@ class TestExpertCaseBatchAPI(TestCase):
             severity="insiden",
             created_by=self.expert,
         )
-        other = PtUser.objects.create(name="Other", email="other@example.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="other@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         Case.objects.create(
             disease=self.disease,
             location=self.loc,
@@ -758,7 +758,7 @@ class TestExpertDatasetMirror(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert Mirror",
             email="expert.mirror@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
@@ -850,3 +850,5 @@ class TestExpertDatasetMirror(TestCase):
         self.assertTrue(ExpertDataset.objects.filter(data_id=str(b)).exists())
         self.assertTrue(ExpertDatasetRow.objects.filter(dataset__data_id=str(b)).exists())
         audit_mock.assert_called() 
+
+
