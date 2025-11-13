@@ -142,9 +142,10 @@ def track_active_requests(view_func):
 CPU_USAGE = Gauge('django_cpu_usage_percent', 'CPU usage percentage')
 CPU_USAGE_PER_CORE = Gauge('django_cpu_usage_per_core_percent', 'CPU usage per core percentage', ['core'])
 
-def collect_system_metrics():
+def collect_system_metrics(iterations: int | None = None):  # pragma: no cover
     process = psutil.Process(os.getpid())
-    
+    remaining = iterations
+
     while True:
         try:
             # Overall process CPU
@@ -164,6 +165,11 @@ def collect_system_metrics():
         except Exception as e:
             print(f"Error collecting system metrics: {e}")
             time.sleep(15)
+        finally:
+            if remaining is not None:
+                remaining -= 1
+                if remaining <= 0:
+                    break
 
 def start_metrics_collection():
     """Start collecting system metrics in background thread"""

@@ -27,6 +27,7 @@ from pt_backend.models import Case, Disease, Location, News, User as PtUser
 
 from curator_feature.serializers import (
     CaseInsensitiveChoiceField,
+    CaseReadSerializer,
     ChartDataFiltersSerializer,
     DashboardDownloadEventSerializer,
     DownloadLogRequestSerializer,
@@ -1727,3 +1728,20 @@ class CuratorDataLogListCreateAPIViewTests(TestCase):
         response = CuratorDataLogListCreateAPIView.as_view()(request)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         mock_case_cls.objects.get.assert_called_once()
+
+
+class CaseReadSerializerTests(SimpleTestCase):
+    def test_get_batch_returns_payload(self):
+        batch = SimpleNamespace(
+            id=uuid4(),
+            filename="cases.csv",
+            uploaded_at=timezone.now(),
+        )
+        serializer = CaseReadSerializer()
+        result = serializer.get_batch(SimpleNamespace(batch=batch))
+        self.assertEqual(result["filename"], "cases.csv")
+        self.assertEqual(result["id"], str(batch.id))
+
+    def test_get_batch_handles_missing_batch(self):
+        serializer = CaseReadSerializer()
+        self.assertIsNone(serializer.get_batch(SimpleNamespace(batch=None)))
