@@ -10,7 +10,7 @@ import django
 django.setup()
 
 from datetime import datetime
-
+from django.contrib.auth.hashers import make_password
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
@@ -19,7 +19,7 @@ from rest_framework.test import APIClient, APITestCase, APIRequestFactory
 from django.urls import reverse
 
 from pt_backend.models import Case, CaseUploadBatch, Disease, Location, News, User as PtUser
-
+import uuid
 
 EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 from django.contrib.auth import get_user_model
@@ -32,14 +32,14 @@ from .views import ExpertCaseListCreateView
 
 User = get_user_model()
 
-class ExpertCaseAPITests(TestCase):
+class TestExpertCaseAPI(TestCase):
     def setUp(self):
         self.client = APIClient()
 
         self.expert = PtUser.objects.create(
             name="Expert User",
             email="expert@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(user=self.expert)
@@ -286,11 +286,11 @@ class ExpertCaseAPITests(TestCase):
         self.assertEqual(News.objects.count(), 2)
 
 
-class ExpertDatasetAPITests(APITestCase):
+class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
         )
         setattr(self.user, "role", "EXPERT")
         self.user.save()
@@ -365,7 +365,7 @@ class ExpertDatasetAPITests(APITestCase):
         self.assertIn("Summary.pdf", str(dataset))
 
 
-class AuditTrailTests(TestCase):
+class TestAuditTrail(TestCase):
     def setUp(self):
         from expert_user_feature import audittrail
         self.audit_module = audittrail
@@ -412,7 +412,7 @@ class AuditTrailTests(TestCase):
         self.audit_module.curator_log_event = self.original_curator
 
 
-class ExpertDataLogModelTests(TestCase):
+class TestExpertDataLogModel(TestCase):
     def test_str_and_immutable_guards(self):
         dataset = ExpertDataset.objects.create(
             data_id="DATASET-ID",
@@ -442,7 +442,7 @@ class ExpertDataLogModelTests(TestCase):
             log.delete()
 
 
-class ExpertDatasetRowSerializerTests(TestCase):
+class TestExpertDatasetRowSerializer(TestCase):
     def setUp(self):
         self.dataset = ExpertDataset.objects.create(
             data_id="SERIALIZER",
@@ -566,9 +566,9 @@ class ExpertDatasetRowSerializerTests(TestCase):
         self.assertEqual(data["location_province"], self.location.province)
 
 
-class ExpertDatasetServiceTests(TestCase):
+class TestExpertDatasetService(TestCase):
     def test_build_dataset_handles_empty_batch(self):
-        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password="x", role="EXP_USER")
+        uploader = PtUser.objects.create(name="Uploader", email="uploader@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="empty.csv")
 
         dataset = build_or_refresh_dataset_from_batch(batch)
@@ -576,7 +576,7 @@ class ExpertDatasetServiceTests(TestCase):
         self.assertEqual(ExpertDatasetRow.objects.filter(dataset=dataset).count(), 0)
 
 
-class ExpertDataLogViewTests(TestCase):
+class TestExpertDataLogView(TestCase):
     def setUp(self):
         self.user = PtUser.objects.create(
             name="Auditor",
@@ -629,14 +629,14 @@ EXPERT_CASES_BASE = "/expert-feature/experts/cases/"
 EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
 
 
-class ExpertCaseBatchAPITests(TestCase):
+class TestExpertCaseBatchAPI(TestCase):
     def setUp(self):
         self.client = APIClient()
 
         self.expert = PtUser.objects.create(
             name="Expert",
             email="expert@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
@@ -672,7 +672,7 @@ class ExpertCaseBatchAPITests(TestCase):
     def test_list_batches_returns_only_user_batches(self):
         self._upload_csv()
 
-        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.get(EXPERT_BATCH_BASE)
@@ -695,7 +695,7 @@ class ExpertCaseBatchAPITests(TestCase):
 
     # ✅ 4. User tidak bisa delete batch milik orang lain
     def test_user_cannot_delete_other_users_batch(self):
-        other = PtUser.objects.create(name="Other", email="o@x.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="o@x.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         batch = CaseUploadBatch.objects.create(uploaded_by=other, filename="other.csv")
 
         res = self.client.delete(f"{EXPERT_BATCH_BASE}{batch.id}/delete/")
@@ -723,7 +723,7 @@ class ExpertCaseBatchAPITests(TestCase):
             severity="insiden",
             created_by=self.expert,
         )
-        other = PtUser.objects.create(name="Other", email="other@example.com", password="x", role="EXP_USER")
+        other = PtUser.objects.create(name="Other", email="other@example.com", password=make_password(str(uuid.uuid4())), role="EXP_USER")
         Case.objects.create(
             disease=self.disease,
             location=self.loc,
@@ -750,7 +750,7 @@ class ExpertCaseBatchAPITests(TestCase):
 EXPERT_BATCH_BASE = "/expert-feature/experts/batches/"
 DATASET_ROWS_BASE = "/expert-feature/api/expert/datasets/{data_id}/rows/"
 
-class ExpertDatasetMirrorTests(TestCase):
+class TestExpertDatasetMirror(TestCase):
     def setUp(self):
         self.client = APIClient()
 
@@ -758,7 +758,7 @@ class ExpertDatasetMirrorTests(TestCase):
         self.expert = PtUser.objects.create(
             name="Expert Mirror",
             email="expert.mirror@example.com",
-            password="x",
+            password=make_password(str(uuid.uuid4())),
             role="EXP_USER",
         )
         self.client.force_authenticate(self.expert)
@@ -850,3 +850,5 @@ class ExpertDatasetMirrorTests(TestCase):
         self.assertTrue(ExpertDataset.objects.filter(data_id=str(b)).exists())
         self.assertTrue(ExpertDatasetRow.objects.filter(dataset__data_id=str(b)).exists())
         audit_mock.assert_called() 
+
+

@@ -1,4 +1,5 @@
 import hmac
+import logging
 import os
 from typing import Iterable
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -11,6 +12,8 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from types import SimpleNamespace
 
+logger = logging.getLogger(__name__)
+
 class APIKeyAuthentication(BaseAuthentication):
    
 
@@ -18,22 +21,23 @@ class APIKeyAuthentication(BaseAuthentication):
     def authenticate(self, request):
         api_key = request.headers.get(self.HEADER_NAME)
         if not api_key:
-            # Friendly message hinting auth/token per tests
-            raise AuthenticationFailed("API key missing. Authentication required.")
+            logger.warning("API key missing for %s", request.get_full_path())
+            raise AuthenticationFailed("API key missing.")
 
         if not self._key_is_valid(api_key):
-            raise AuthenticationFailed("Invalid API key. Please provide a valid token.")
+            logger.warning("Invalid API key for %s", request.get_full_path())
+            raise AuthenticationFailed("Invalid API key.")
         return (AnonymousUser(), api_key)
 
     def authenticate_header(self, request):
         return f'{self.HEADER_NAME} realm="api"'
 
     def _get_expected_keys(self) -> Iterable[str]:
-        keys = getattr(settings, "SECRET_API_KEYS", None)
-        if keys:
-            return keys
+        configured_keys = list(getattr(settings, "SECRET_API_KEYS", []) or [])
         env_key = os.getenv("SECRET_API_KEY")
-        return (env_key,) if env_key else ()
+        if env_key:
+            configured_keys.append(env_key)
+        return tuple(k for k in configured_keys if k)
 
     def _key_is_valid(self, candidate: str) -> bool:
         for expected in self._get_expected_keys():

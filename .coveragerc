@@ -1,13 +1,26 @@
 [run]
-source = curator_feature
 branch = True
-relative_files = True
+# Let coverage track the whole repo
+source =
+    .
+# Don’t exclude production code you care about.
+# Keep tests, migrations, and virtualenv noise out.
 omit =
     */migrations/*
-    */tests.py
+    */tests/*
     */test_*.py
-    */tests/**/*
     */__pycache__/*
+    .venv/*
+    venv/*
+    */site-packages/*
+    manage.py
+
+[paths]
+# Normalize paths so coverage.xml matches files in GitHub Actions and on Windows dev
+source =
+    .
+    */work/*/*         # /home/runner/work/<repo>/<repo>
+    C:\Kuliah\PPL      # your Windows workspace root (adjust if different)
 
 [report]
 show_missing = True
@@ -19,11 +32,5 @@ exclude_lines =
     ^\s*@abstractmethod
     ^\s*raise NotImplementedError
 
-[paths]
-source =
-    curator_feature
-    */pantautular-be-2025/curator_feature
-    */_work/*/pantautular-be-2025/curator_feature
-
-[html]
-directory = htmlcov
+[xml]
+output = coverage.xml

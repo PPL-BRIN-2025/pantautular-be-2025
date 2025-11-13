@@ -1,8 +1,15 @@
+from typing import Iterable, Sequence
+
 from django.utils import timezone
 from pt_backend.models import Case, CaseUploadBatch
+
 from .models import ExpertDataset, ExpertDatasetRow
 
-def build_or_refresh_dataset_from_batch(batch: CaseUploadBatch) -> ExpertDataset:
+
+def build_or_refresh_dataset_from_batch(
+    batch: CaseUploadBatch,
+    cases_in_order: Sequence[Case] | Iterable[Case] | None = None,
+) -> ExpertDataset:
     """
     Buat/refresh ExpertDataset + rows berdasarkan CaseUploadBatch.
     - data_id    : batch.id
@@ -27,11 +34,29 @@ def build_or_refresh_dataset_from_batch(batch: CaseUploadBatch) -> ExpertDataset
 
     # rebuild rows idempotent
     ExpertDatasetRow.objects.filter(dataset=ds).delete()
-    cases = (
+
+    ordered_ids = None
+    if cases_in_order:
+        ordered_ids = [str(getattr(case, "id", case)) for case in cases_in_order]
+        order_map = {case_id: idx for idx, case_id in enumerate(ordered_ids)}
+    else:
+        order_map = None
+
+    cases_qs = (
         Case.objects.filter(batch=batch)
         .select_related("disease", "location")
         .order_by("created_at", "id")
     )
+    cases = list(cases_qs)
+    if order_map:
+        fallback_start = len(order_map)
+        cases.sort(
+            key=lambda c: (
+                order_map.get(str(c.id), fallback_start),
+                c.created_at,
+                str(c.id),
+            )
+        )
 
     bulk = []
     for idx, c in enumerate(cases, start=1):
