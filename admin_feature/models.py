@@ -6,9 +6,9 @@ class AdminUserLog(models.Model):
     username = models.CharField(max_length=150, db_index=True)
     email = models.EmailField(db_index=True)
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
-    action = models.CharField(max_length=100, null=True, blank=True, db_index=True)   
-    detail = models.TextField(null=True, blank=True, db_index=True)                 
-    note = models.TextField(null=True, blank=True)                                    
+    action = models.CharField(max_length=100, blank=True, default="", db_index=True)
+    detail = models.TextField(blank=True, default="", db_index=True)
+    note = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
