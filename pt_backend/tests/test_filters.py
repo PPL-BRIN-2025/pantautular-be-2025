@@ -352,6 +352,33 @@ class CaseFilterServiceTest(TestCase):
         self.mock_queryset.distinct.assert_called_once()
         self.assertEqual(result, ['mocked_result'])
 
+    def test_filter_cases_with_batch_id(self):
+        batch_id = uuid.uuid4()
+        data = {'batch': str(batch_id)}
+
+        result = self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_called_once_with(batch_id=str(batch_id))
+        self.mock_queryset.values.assert_called_once_with(
+            'id', 'location__longitude', 'location__latitude', 'city', 'location__province', 'severity'
+        )
+        self.mock_queryset.distinct.assert_called_once()
+        self.assertEqual(result, ['mocked_result'])
+
+    def test_filter_cases_invalid_batch_id_raises(self):
+        data = {'batch': 'invalid-uuid'}
+
+        with self.assertRaises(CaseFilterValidationError):
+            self.filter_service.filter_cases(data)
+
+        self.mock_case.objects.select_related.assert_called_once_with('location', 'disease')
+        self.mock_queryset.prefetch_related.assert_called_once_with('news_set')
+        self.mock_queryset.filter.assert_not_called()
+        self.mock_queryset.values.assert_not_called()
+        self.mock_queryset.distinct.assert_not_called()
+
     def test_filter_cases_invalid_filter_data(self):
         data = {
             'diseases': [], 

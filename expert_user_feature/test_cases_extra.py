@@ -11,11 +11,13 @@ django.setup()
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from expert_user_feature.views import ExpertCaseCSVUploadAPIView
 
-from pt_backend.models import Case, Disease, Location, User as PtUser
+from pt_backend.models import Case, CaseUploadBatch, Disease, Location, User as PtUser
 
 
 CASE_BASE = "/expert-feature/experts/cases/"
@@ -156,3 +158,89 @@ class ExpertCaseErrorAPITests(TestCase):
         self.assertIsNone(view._clean_decimal(None))
         self.assertIsNone(view._clean_decimal(" "))
         self.assertEqual(view._clean_decimal(" 1.23 "), "1.23")
+
+    def test_flatten_error_detail_handles_nested_structures(self):
+        view = ExpertCaseCSVUploadAPIView()
+        nested = {"file": ["Missing header", {"news": ["invalid"]}]}
+        flattened = view._flatten_error_detail(nested)
+        self.assertIn("file:", flattened)
+        self.assertIn("news:", flattened)
+
+    def test_csv_upload_handles_missing_header_row(self):
+        upload = SimpleUploadedFile("cases.csv", b"disease,gender\n", content_type="text/csv")
+        dummy_reader = type("R", (), {"fieldnames": None})()
+        with patch("expert_user_feature.views.csv.DictReader", return_value=dummy_reader):
+            response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data.get("errors", {}))
+
+    def test_csv_upload_reports_missing_columns(self):
+        csv_content = "disease,gender\nDBD,L\n"
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data.get("errors", {}))
+
+    def test_csv_upload_handles_unexpected_error(self):
+        csv_content = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,9,City,biasa,insiden,City,Province,Portal,Title,artikel,Content,https://example.com,Author,2024-01-01T00:00:00Z\n"
+        )
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        with patch("expert_user_feature.views.CaseWriteSerializer.save", side_effect=RuntimeError("boom")):
+            response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["message"], "Failed to import CSV")
+
+    def test_csv_upload_handles_validation_error_during_save(self):
+        csv_content = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,9,City,biasa,insiden,City,Province,Portal,Title,artikel,Content,https://example.com,Author,2024-01-01T00:00:00Z\n"
+        )
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        with patch("expert_user_feature.views.CaseWriteSerializer.save", side_effect=ValidationError({"file": ["invalid"]})):
+            response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("errors", response.data)
+        self.assertEqual(CaseUploadBatch.objects.count(), 0)
+
+    @patch("expert_user_feature.views.log_expert_action", side_effect=RuntimeError("audit fail"))
+    @patch("expert_user_feature.views.build_or_refresh_dataset_from_batch", side_effect=RuntimeError("sync fail"))
+    def test_csv_upload_swallow_downstream_failures(self, *_mocks):
+        csv_content = (
+            "disease,gender,age,city,status,severity,"
+            "location_city,location_province,location_latitude,location_longitude,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,L,10,City,biasa,insiden,City,Province,-6.2,106.8,Portal,Title,artikel,Content,https://example.com,Author,2024-01-01T00:00:00Z\n"
+        )
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_convert_includes_lat_lon_when_present(self):
+        view = ExpertCaseCSVUploadAPIView()
+        row = {
+            "disease": self.disease.name,
+            "gender": "P",
+            "age": "33",
+            "city": "City A",
+            "status": "biasa",
+            "severity": "insiden",
+            "location_city": "City A",
+            "location_province": "Province A",
+            "location_latitude": "1.234",
+            "location_longitude": "5.678",
+            "news_portal": "Portal",
+            "news_title": "Title",
+            "news_type": "artikel",
+            "news_content": "Content",
+            "news_url": "https://example.com",
+            "news_author": "Reporter",
+            "news_date_published": "2024-01-01T00:00:00Z",
+            "news_img_url": "",
+        }
+        data = view._convert(row)
+        self.assertEqual(data["location"]["latitude"], "1.234")
+        self.assertEqual(data["location"]["longitude"], "5.678")

@@ -2,57 +2,50 @@ from django.http import HttpResponse
 from django.urls import path
 
 from .views import (
-    # Case CRUD + CSV
-    ExpertCaseCreateView,
+    # cases
+    ExpertCaseListCreateView,
     ExpertCaseDetailView,
-    ExpertCaseCSVUploadAPIView,
-
-    # Batch system
-    ExpertCaseListView,
+    ExpertCaseCSVUploadView,
     ExpertCaseBulkDeleteView,
-    ExpertBatchListView,
-    ExpertBatchDeleteView,
-
-    # Dashboard export + audit
-    ExpertDashboardCSVDownloadAPIView,
+    # dashboard downloads
     ExpertDashboardDownloadLogAPIView,
-
-    # Dataset list + detail
+    ExpertDashboardCSVDownloadAPIView,
+    # datasets
     ExpertDatasetListView,
     ExpertDatasetDetailView,
+    ExpertDatasetRowsView,
+    # batches
+    ExpertBatchListView,
+    ExpertBatchDeleteView,
+    # audit logs (opsional)
+    ExpertDataLogListView,
 )
-
 
 def feature_placeholder(request):
     return HttpResponse("Expert User Feature Placeholder")
 
-
 urlpatterns = [
-    # Placeholder
     path("", feature_placeholder, name="expert-feature-placeholder"),
 
-    # CASE CRUD
-    path("experts/cases/", ExpertCaseCreateView.as_view(), name="expert-cases"),
-    path("experts/cases/<uuid:pk>/", ExpertCaseDetailView.as_view(), name="expert-case-detail"),
+    # Cases
+    path("experts/cases/",                 ExpertCaseListCreateView.as_view(), name="expert-cases"),
+    path("experts/cases/<uuid:pk>/",       ExpertCaseDetailView.as_view(),     name="expert-case-detail"),
+    path("experts/cases/upload-csv/",      ExpertCaseCSVUploadView.as_view(),  name="expert-cases-upload-csv"),
+    path("experts/cases/delete-all/",      ExpertCaseBulkDeleteView.as_view(), name="expert-case-delete-all"),
 
-    # CASE LIST (for filtering via ?batch=…)
-    path("experts/cases/list/", ExpertCaseListView.as_view(), name="expert-case-list"),
+    # Download logging + CSV
+    path("downloads/log/",                 ExpertDashboardDownloadLogAPIView.as_view(),  name="expert-dashboard-download-log"),
+    path("downloads/csv/",                 ExpertDashboardCSVDownloadAPIView.as_view(),  name="expert-dashboard-download-csv"),
 
-    # CASE BULK DELETE
-    path("experts/cases/delete-all/", ExpertCaseBulkDeleteView.as_view(), name="expert-case-delete-all"),
+    # Datasets (public read)
+    path("api/expert/datasets/",                 ExpertDatasetListView.as_view(),       name="expert-dataset-list"),
+    path("api/expert/datasets/<str:data_id>/",   ExpertDatasetDetailView.as_view(),     name="expert-dataset-detail"),
+    path("api/expert/datasets/<str:data_id>/rows/", ExpertDatasetRowsView.as_view(),   name="expert-dataset-rows"),
 
-    # CASE CSV UPLOAD
-    path("experts/cases/upload-csv/", ExpertCaseCSVUploadAPIView.as_view(), name="expert-cases-upload-csv"),
+    # Batches
+    path("experts/batches/",                     ExpertBatchListView.as_view(),          name="expert-batch-list"),
+    path("experts/batches/<uuid:batch_id>/delete/", ExpertBatchDeleteView.as_view(),     name="expert-batch-delete"),
 
-    # ✅ BATCH LIST + DELETE
-    path("experts/batches/", ExpertBatchListView.as_view(), name="expert-batch-list"),
-    path("experts/batches/<uuid:batch_id>/delete/", ExpertBatchDeleteView.as_view(), name="expert-batch-delete"),
-
-    # DASHBOARD EXPORT + LOGS
-    path("downloads/log/", ExpertDashboardDownloadLogAPIView.as_view(), name="expert-dashboard-download-log"),
-    path("downloads/csv/", ExpertDashboardCSVDownloadAPIView.as_view(), name="expert-dashboard-download-csv"),
-
-    # DATASET API
-    path("api/expert/datasets/", ExpertDatasetListView.as_view(), name="expert-dataset-list"),
-    path("api/expert/datasets/<str:data_id>/", ExpertDatasetDetailView.as_view(), name="expert-dataset-detail"),
+    # Audit log (opsional)
+    path("api/expert/audit-logs/",               ExpertDataLogListView.as_view(),        name="expert-audit-logs"),
 ]
