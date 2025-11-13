@@ -115,3 +115,12 @@ class TestSeverityGroupingReport(unittest.TestCase):
             "insiden": 1,
             "mortalitas": 1,
         })
+
+    def test_blank_severity_after_normalization_ignored(self):
+        cases = [
+            {"id": 1, "severity": "   "},
+            {"id": 2, "severity": "Insiden"},
+        ]
+        report = self.report_service.generate_report(cases)
+        self.assertEqual(report["total_cases"], 2)
+        self.assertEqual(report["severity_counts"], {"insiden": 1})

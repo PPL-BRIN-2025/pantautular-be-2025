@@ -75,3 +75,93 @@ class TestPrevalenceReport(TestCase):
         out = self.report.generate_report(start_date="2021-01-01")
         mock_dt.strptime.assert_called_once_with("2021-01-01", "%Y-%m-%d")
         self.assertEqual(out["year"], 2021)
+
+    def test_date_range_dict_extracts_start(self):
+        """date_range dict should populate start_date"""
+        self.repo.get_cases_by_year.return_value.count.return_value = 11
+        result = self.report.generate_report(date_range={"start": "2022-07-01"})
+        self.assertEqual(result["year"], 2022)
+        self.repo.get_cases_by_year.assert_called_with(2022)
+
+    def test_datetime_start_date_passthrough(self):
+        when = datetime(2023, 8, 5)
+        self.repo.get_cases_by_year.return_value.count.return_value = 4
+        result = self.report.generate_report(start_date=when)
+        self.assertEqual(result["year"], 2023)
+        self.assertEqual(result["total_cases"], 4)
+
+    def test_infer_year_from_queryset(self):
+        mock_case = MagicMock()
+        mock_case.news.date_published.year = 2020
+
+        filtered_qs = MagicMock()
+        filtered_qs.filter.return_value = filtered_qs
+        filtered_qs.order_by.return_value = filtered_qs
+        filtered_qs.first.return_value = mock_case
+        filtered_qs.count.return_value = 9
+
+        result = self.report.generate_report(filtered_cases=filtered_qs)
+        self.assertEqual(result["year"], 2020)
+        self.assertEqual(result["total_cases"], 9)
+        filtered_qs.filter.assert_called_once_with(news__date_published__year=2020)
+
+    def test_iterable_case_count_branch(self):
+        """_count_cases should handle plain iterables."""
+        self.repo.get_cases_by_year.return_value = ({"id": i} for i in range(3))
+        result = self.report.generate_report(start_date="2022-01-01")
+        self.assertEqual(result["total_cases"], 3)
+
+    def test_generate_report_handles_repository_error(self):
+        self.repo.get_cases_by_year.side_effect = Exception("db down")
+        out = self.report.generate_report(start_date="2022-01-01")
+        self.assertIn("error", out)
+        self.repo.get_cases_by_year.side_effect = None
+
+    def test_parse_year_with_non_string_value(self):
+        """Non string start_date should gracefully fallback."""
+        result = self.report.generate_report(start_date=object())
+        self.assertIsInstance(result["year"], int)
+
+    def test_infer_year_handles_empty_queryset(self):
+        filtered_qs = MagicMock()
+        filtered_qs.filter.return_value = filtered_qs
+        filtered_qs.order_by.return_value = filtered_qs
+        filtered_qs.first.return_value = None
+        filtered_qs.count.return_value = 0
+
+        result = self.report.generate_report(filtered_cases=filtered_qs)
+        self.assertEqual(result["total_cases"], 0)
+
+    def test_infer_year_handles_missing_news(self):
+        mock_case = MagicMock()
+        mock_case.news = None
+
+        filtered_qs = MagicMock()
+        filtered_qs.filter.return_value = filtered_qs
+        filtered_qs.order_by.return_value = filtered_qs
+        filtered_qs.first.return_value = mock_case
+        filtered_qs.count.return_value = 0
+
+        result = self.report.generate_report(filtered_cases=filtered_qs)
+        self.assertEqual(result["total_cases"], 0)
+
+    def test_count_cases_handles_unknown_object(self):
+        self.repo.get_cases_by_year.return_value = object()
+        result = self.report.generate_report(start_date="2022-01-01")
+        self.assertEqual(result["total_cases"], 0)
+
+    def test_string_date_range_is_ignored(self):
+        """String date_range should not break iterable branch."""
+        self.repo.get_cases_by_year.return_value.count.return_value = 6
+        result = self.report.generate_report(date_range="2021-02-01")
+        self.assertEqual(result["total_cases"], 6)
+
+    def test_iterable_date_range_without_values(self):
+        """Empty iterable should simply fall back to defaults."""
+        result = self.report.generate_report(date_range=[])
+        self.assertIsInstance(result["year"], int)
+
+    def test_non_iterable_date_range_value(self):
+        """Truthy non-iterable should skip iterable branch entirely."""
+        result = self.report.generate_report(date_range=5)
+        self.assertIsInstance(result["year"], int)

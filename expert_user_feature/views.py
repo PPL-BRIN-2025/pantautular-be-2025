@@ -216,10 +216,15 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         if not upload:
             return self._error_response("file", "CSV file is required.")
 
+        # ---- decode and validate file ----
         try:
             raw = upload.read().decode("utf-8-sig")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as e:
+            logger.exception("CSV decode failed: %s", e)
             return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+        except Exception as e:
+            logger.exception("Unexpected decode error: %s", e)
+            return self._error_response("file", f"Error reading file: {e}")
 
         if not raw.strip():
             return self._error_response("file", "CSV file is empty.")
@@ -249,7 +254,12 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         if row_errors:
             return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ---- recreate reader since we've exhausted it ----
+        reader = iter(preview_rows)
+
+        # ---- create batch ----
         batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
+
         created_cases = []
         try:
             with transaction.atomic():
@@ -259,11 +269,12 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         except ValidationError as exc:
             batch.delete()
             return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
+        except Exception as e:
             batch.delete()
-            logger.exception("CSV upload failed; rolling back")
+            logger.exception("CSV upload failed: %s", e)
             return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ---- optional sync & audit ----
         try:
             build_or_refresh_dataset_from_batch(batch, created_cases)
         except Exception:
@@ -281,6 +292,7 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
         return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)
 
+    # ---- helpers ----
     def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
         return Response({"errors": {field: [message]}}, status=status_code)
 
@@ -322,9 +334,9 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         longitude = self._clean_decimal(row.get("location_longitude"))
 
         location_data = {"city": city, "province": province}
-        if latitude is not None:
+        if latitude:
             location_data["latitude"] = latitude
-        if longitude is not None:
+        if longitude:
             location_data["longitude"] = longitude
 
         return {
@@ -346,6 +358,8 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
                 "img_url": clean(row.get("news_img_url")) or "",
             },
         }
+
+
 
 
 class ExpertCaseCSVUploadAPIView(ExpertCaseCSVUploadView):
