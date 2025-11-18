@@ -1,3 +1,4 @@
+from django.core.validators import validate_ipv46_address
 from django.db import models
 
 class BackendCase(models.Model):
@@ -83,7 +84,12 @@ class DashboardDownloadEvent(models.Model):
     metric = models.CharField(max_length=64, choices=Metric.choices)
     file_format = models.CharField(max_length=16, choices=FileFormat.choices)
     metadata = models.JSONField(blank=True, null=True)
-    client_ip = models.GenericIPAddressField(blank=True, null=True)
+    client_ip = models.CharField(
+        max_length=45,
+        blank=True,
+        default="",
+        validators=[validate_ipv46_address],
+    )
     user_agent = models.CharField(max_length=512, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

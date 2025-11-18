@@ -146,7 +146,7 @@ class FailedLoginStatsHelperTests(SimpleTestCase):
         self.assertEqual(unique, 2)
 
     def test_parse_iso_timestamp_with_naive_datetime(self):
-        now = datetime.now(datetime_timezone.utc).replace(microsecond=0)
+        now = timezone.now().astimezone(datetime_timezone.utc).replace(microsecond=0)
         parsed = AdminDashboardService._parse_iso_timestamp(now.isoformat())
 
         self.assertIsNotNone(parsed)
@@ -168,8 +168,14 @@ class FailedLoginStatsHelperTests(SimpleTestCase):
 
     def test_get_failed_login_stats_reads_unique_from_events_when_missing(self):
         events = [
-            {"email": "user1@example.com", "timestamp": datetime.now(datetime_timezone.utc).isoformat()},
-            {"email": "user2@example.com", "timestamp": datetime.now(datetime_timezone.utc).isoformat()},
+            {
+                "email": "user1@example.com",
+                "timestamp": timezone.now().astimezone(datetime_timezone.utc).isoformat(),
+            },
+            {
+                "email": "user2@example.com",
+                "timestamp": timezone.now().astimezone(datetime_timezone.utc).isoformat(),
+            },
         ]
 
         cache_backend = {

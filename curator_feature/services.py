@@ -59,7 +59,7 @@ class DashboardDownloadEventService:
                     metric=metric,
                     file_format=file_format,
                     metadata=metadata,
-                    client_ip=client_details.ip_address,
+                    client_ip=client_details.ip_address or "",
                     user_agent=(client_details.user_agent or "")[: client_details.max_user_agent_length],
                 )
         except DatabaseError:

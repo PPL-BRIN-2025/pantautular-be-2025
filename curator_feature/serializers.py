@@ -45,11 +45,10 @@ class DownloadLogRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"{field_label} may not be blank.")
         return value
 
-    def validate_username(self, value: str) -> str:
-        return self._validate_required_string(value, "Username")
-
-    def validate_chartType(self, value: str) -> str:
-        return self._validate_required_string(value, "Chart type")
+    def validate(self, attrs):
+        attrs["username"] = self._validate_required_string(attrs.get("username"), "Username")
+        attrs["chartType"] = self._validate_required_string(attrs.get("chartType"), "Chart type")
+        return attrs
 
 
 class DownloadLogResponseSerializer(serializers.ModelSerializer):
