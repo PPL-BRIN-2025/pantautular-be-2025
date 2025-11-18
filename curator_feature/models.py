@@ -21,7 +21,7 @@ class CuratorDataLog(models.Model):
     title = models.CharField(max_length=255)
     last_edited = models.DateTimeField(auto_now_add=True)
     submitted_by = models.CharField(max_length=150)
-    note = models.TextField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "curator_feature_datalog"
@@ -98,5 +98,4 @@ class DashboardDownloadEvent(models.Model):
         created = self.created_at.isoformat() if self.created_at else "unknown"
         return f"{self.get_metric_display()} ({self.file_format}) @ {created}"
     
-
 

@@ -30,7 +30,7 @@ class DownloadLogService:
                     chart_type=chart_type,
                     timestamp=timestamp,
                 )
-        except DatabaseError as exc:
+        except DatabaseError:
             logger.exception("Failed to persist download log for user=%s chart=%s", username, chart_type)
             raise
 

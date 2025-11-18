@@ -146,7 +146,7 @@ class FailedLoginStatsHelperTests(SimpleTestCase):
         self.assertEqual(unique, 2)
 
     def test_parse_iso_timestamp_with_naive_datetime(self):
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(datetime_timezone.utc).replace(microsecond=0)
         parsed = AdminDashboardService._parse_iso_timestamp(now.isoformat())
 
         self.assertIsNotNone(parsed)
