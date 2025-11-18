@@ -154,7 +154,7 @@ class SerializerAndServiceExtraTests(TestCase):
 
         case = Case.objects.create(gender='male', age=30, city='CityA', status='biasa', severity='insiden', disease=d1, location=loc1)
         # create an existing news (older)
-        old_news = News.objects.create(
+        News.objects.create(
             portal='X', title='old', type='t', content='c', url='http://x', author='a', date_published=timezone.now() - timedelta(days=2), case=case
         )
 
