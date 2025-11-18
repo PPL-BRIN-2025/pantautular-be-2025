@@ -8,6 +8,7 @@ source =
 omit =
     */migrations/*
     */tests/*
+    */tests.py
     */test_*.py
     */__pycache__/*
     .venv/*
@@ -24,6 +25,7 @@ omit =
     pantau_tular\urls.py
     pantau_tular\wsgi.py
     pt_backend\filter\date_range_filter.py
+    hello/*
 
 [paths]
 # Normalize paths so coverage.xml matches files in GitHub Actions and on Windows dev

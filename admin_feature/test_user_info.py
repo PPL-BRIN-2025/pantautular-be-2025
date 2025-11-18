@@ -6,7 +6,7 @@ from pt_backend.models import Role, User
 from django.contrib.auth.hashers import make_password
 from django.conf import settings
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from rest_framework import status
 
 TEST_API_KEY_HEADER = {"HTTP_X_API_KEY": "test-key"}
@@ -49,7 +49,7 @@ class UserInfoJWTOnlyTests(TestCase):
             "name": user.name,
             "email": user.email,
             "role": user.role,
-            "exp": datetime.utcnow() + timedelta(hours=1),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
         return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
@@ -74,7 +74,7 @@ class UserInfoJWTOnlyTests(TestCase):
             "user_id": 999999,
             "name": "Embedded Admin",
             "role": "ADMIN",
-            "exp": datetime.utcnow() + timedelta(hours=1),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
         headers = {**TEST_API_KEY_HEADER, "HTTP_AUTHORIZATION": f"Bearer {token}"}
@@ -96,7 +96,7 @@ class UserInfoJWTOnlyTests(TestCase):
     def test_jwt_token_but_no_name_or_role(self):
         payload = {
             "user_id": self.admin.id,
-            "exp": datetime.utcnow() + timedelta(hours=1),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
         headers = {"HTTP_AUTHORIZATION": f"Bearer {token}"}

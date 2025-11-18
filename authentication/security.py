@@ -19,6 +19,8 @@ class APIKeyAuthentication(BaseAuthentication):
 
     HEADER_NAME = "X-API-KEY"
     def authenticate(self, request):
+        if getattr(request, "_skip_api_key_auth", False):
+            return None
         api_key = request.headers.get(self.HEADER_NAME)
         if not api_key:
             logger.warning("API key missing for %s", request.get_full_path())

@@ -56,6 +56,12 @@ class APIKeyAuthenticationTests(TestCase):
         header = self.auth.authenticate_header(factory.get("/"))
         self.assertEqual(header, 'X-API-KEY realm="api"')
 
+    def test_authentication_skips_when_flagged(self):
+        request = factory.get("/")
+        request._skip_api_key_auth = True
+
+        self.assertIsNone(self.auth.authenticate(request))
+
 
 class CustomJWTAuthenticationTests(TestCase):
     
