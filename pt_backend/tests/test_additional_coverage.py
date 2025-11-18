@@ -272,6 +272,7 @@ class DateRangeFilterTests(SimpleTestCase):
         self.assertIsNone(self.filter.parse_period("   "))
         self.assertIsNone(self.filter.parse_period("unknownunit"))
         self.assertIsNone(self.filter.parse_period("xxhours"))
+        self.assertIsNone(self.filter.parse_period(3.14))
 
     def test_apply_period_infers_when_missing(self):
         now = timezone.now()

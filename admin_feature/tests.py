@@ -152,6 +152,13 @@ class FailedLoginStatsHelperTests(SimpleTestCase):
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.tzinfo, datetime_timezone.utc)
 
+    def test_parse_iso_timestamp_sets_timezone_for_naive_input(self):
+        naive = datetime(2025, 1, 1, 12, 0, 0)
+        parsed = AdminDashboardService._parse_iso_timestamp(naive.isoformat())
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.tzinfo, datetime_timezone.utc)
+
     def test_count_events_last_24h(self):
         now = datetime(2025, 9, 29, 12, 0, tzinfo=datetime_timezone.utc)
         events = [

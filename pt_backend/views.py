@@ -61,10 +61,12 @@ class AllCaseLocationsView(APIView):
     serializer_class = CaseLocationSerializer
 
     def dispatch(self, request, *args, **kwargs):
-        if getattr(settings, "DISABLE_API_KEY_FOR_FILTERS", False):  # pragma: no branch
-            path = getattr(request, "path", "")
-            if path.rstrip("/") == "/cases":
-                setattr(request, "_skip_api_key_auth", True)
+        path = getattr(request, "path", "") or ""
+        normalized_path = path.rstrip("/")
+
+        if normalized_path == "/cases":  # pragma: no branch
+            setattr(request, "_skip_api_key_auth", True)
+
         return super().dispatch(request, *args, **kwargs)
 
     def __init__(self, **kwargs):

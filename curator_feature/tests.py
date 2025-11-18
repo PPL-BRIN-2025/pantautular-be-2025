@@ -539,6 +539,11 @@ class SerializerUnitTests(SimpleTestCase):
         with self.assertRaises(serializers.ValidationError):
             serializer.validate_chartType("")
 
+    def test_download_log_required_string_helper_rejects_empty(self):
+        serializer = DownloadLogRequestSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            serializer._validate_required_string("", "Username")
+
     def test_download_log_request_serializer_accepts_valid_payload(self):
         serializer = DownloadLogRequestSerializer(
             data={
