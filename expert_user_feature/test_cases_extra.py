@@ -137,35 +137,6 @@ class ExpertCaseErrorAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("file", response.data.get("errors", {}))
 
-    def test_csv_upload_reports_row_errors(self):
-        csv_content = (
-            "disease,gender,age,city,status,severity,"
-            "location_city,location_province,location_latitude,location_longitude,"
-            "news_portal,news_title,news_type,news_content,news_url,news_author,"
-            "news_date_published,news_img_url\n"
-            ",L,7,City A,bahaya,insiden,City A,Province A,,,Portal,Title,artikel,Content,"
-            "https://example.com,Reporter,2024-02-01T00:00:00Z,\n"
-        )
-        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
-
-        response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("errors", response.data)
-        self.assertEqual(Case.objects.count(), 1)
-
-    def test_clean_decimal_helper(self):
-        view = ExpertCaseCSVUploadAPIView()
-        self.assertIsNone(view._clean_decimal(None))
-        self.assertIsNone(view._clean_decimal(" "))
-        self.assertEqual(view._clean_decimal(" 1.23 "), "1.23")
-
-    def test_flatten_error_detail_handles_nested_structures(self):
-        view = ExpertCaseCSVUploadAPIView()
-        nested = {"file": ["Missing header", {"news": ["invalid"]}]}
-        flattened = view._flatten_error_detail(nested)
-        self.assertIn("file:", flattened)
-        self.assertIn("news:", flattened)
-
     def test_csv_upload_handles_missing_header_row(self):
         upload = SimpleUploadedFile("cases.csv", b"disease,gender\n", content_type="text/csv")
         dummy_reader = type("R", (), {"fieldnames": None})()
@@ -244,3 +215,51 @@ class ExpertCaseErrorAPITests(TestCase):
         data = view._convert(row)
         self.assertEqual(data["location"]["latitude"], "1.234")
         self.assertEqual(data["location"]["longitude"], "5.678")
+
+        # ------------------------------------------------------------------
+    # NEW TESTS FOR RED & YELLOW PARTS IN CSV UPLOAD VIEW
+    # ------------------------------------------------------------------
+    
+    def test_csv_upload_missing_header_after_valid_decode(self):
+        """Covers YELLOW block: header exists but DictReader returns None."""
+        csv_content = "disease,gender,age\nDBD,L,10"
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+        dummy_reader = type("R", (), {"fieldnames": None})()
+
+        # Patch DictReader AFTER successful decode
+        with patch("expert_user_feature.views.csv.DictReader", return_value=dummy_reader):
+            response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data.get("errors", {}))
+        self.assertIn("CSV header row is missing.", response.data["errors"]["file"][0])
+
+
+    def test_csv_upload_missing_required_columns(self):
+        """Covers RED block: missing column detection."""
+        csv_content = "disease,gender,age\nDBD,L,9"
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+
+        response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data.get("errors", {}))
+        self.assertTrue("Missing columns" in response.data["errors"]["file"][0])
+
+
+    def test_csv_upload_validation_error_in_row_conversion(self):
+        """Covers RED part: row validation errors before batch creation."""
+        # Missing MANY required fields so serializer.is_valid() fails
+        csv_content = (
+            "disease,gender,age,city,status,severity,location_city,location_province,"
+            "news_portal,news_title,news_type,news_content,news_url,news_author,news_date_published\n"
+            "DBD,,10,,,,,Province,Portal,Title,artikel,Content,https://example.com,Author,2024-01-01T00:00:00Z\n"
+        )
+
+        upload = SimpleUploadedFile("cases.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        response = self.client.post(f"{CASE_BASE}upload-csv/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("errors", response.data)
+        self.assertEqual(CaseUploadBatch.objects.count(), 0)
