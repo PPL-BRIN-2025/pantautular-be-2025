@@ -2,13 +2,13 @@ from django.db import models
 
 class BackendCase(models.Model):
     id = models.UUIDField(primary_key=True)
-    gender = models.CharField(max_length=10, null=True, blank=True)
+    gender = models.CharField(max_length=10, blank=True, default="")
     age = models.IntegerField(null=True, blank=True)
-    city = models.CharField(max_length=255, null=True, blank=True)
-    status = models.CharField(max_length=20, null=True, blank=True)
+    city = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=20, blank=True, default="")
     disease_id = models.UUIDField(null=True, blank=True)
     location_id = models.UUIDField(null=True, blank=True)
-    severity = models.CharField(max_length=255, null=True, blank=True)
+    severity = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         managed = False 
@@ -98,4 +98,3 @@ class DashboardDownloadEvent(models.Model):
         created = self.created_at.isoformat() if self.created_at else "unknown"
         return f"{self.get_metric_display()} ({self.file_format}) @ {created}"
     
-
