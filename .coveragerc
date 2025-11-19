@@ -26,6 +26,7 @@ omit =
     pantau_tular\wsgi.py
     pt_backend\filter\date_range_filter.py
     hello/*
+    contributor_feature/*
 
 [paths]
 # Normalize paths so coverage.xml matches files in GitHub Actions and on Windows dev
