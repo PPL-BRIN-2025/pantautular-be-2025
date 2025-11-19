@@ -31,6 +31,8 @@ import jwt
 from django.conf import settings
 import logging
 
+from pantau_tular.monitoring import log_event, record_duration
+
 logger = logging.getLogger(__name__)
 
 INTERNAL_SERVER_ERR_MSG = "An unexpected error occurred. Please try again later."
@@ -278,25 +280,36 @@ class LoginAPIView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+        context = {
+            "email": email,
+            "client_ip": request.META.get("REMOTE_ADDR"),
+            "path": getattr(request, "path", ""),
+        }
         
         try:
-            tokens = self.auth_service.login(
-                email=serializer.validated_data['email'],
-                password=serializer.validated_data['password']
-            )
+            with record_duration("auth.login", threshold_ms=750, warn_message="Login endpoint slow", **context):
+                tokens = self.auth_service.login(
+                    email=email,
+                    password=serializer.validated_data['password'],
+                    request=request,
+                )
 
             if tokens and isinstance(tokens, dict) and tokens.get('locked'):
+                log_event("auth.login.locked", status="locked", **context)
                 return Response(
                     {"detail": tokens['message']},
                     status=status.HTTP_423_LOCKED
                 )
             
             if not tokens:
+                log_event("auth.login.failed", status="invalid_credentials", **context)
                 return Response(
                     {"detail": "Invalid email or password"},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
+            log_event("auth.login.success", status="success", **context)
             return Response(
                 {
                     "detail": "Login successful",
@@ -306,6 +319,7 @@ class LoginAPIView(APIView):
             )
             
         except Exception:
+            log_event("auth.login.error", status="error", **context)
             return Response(
                 {"detail": "Login failed. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

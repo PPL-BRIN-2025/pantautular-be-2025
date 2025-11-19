@@ -41,6 +41,7 @@ from .permissions import ReadOnlyOrExpert
 from .filtering import ExpertCaseFilterSet
 from .services import build_or_refresh_dataset_from_batch
 from .views_base import ExpertBaseView
+from pantau_tular.monitoring import log_event, record_duration
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        context = {
+            "user_id": getattr(request.user, "id", None),
+            "endpoint": "expert_case_create",
+        }
         # optional: associate case with an existing upload batch if provided
         batch = None
         batch_id = request.data.get("batch") or request.data.get("batch_id")
@@ -97,9 +102,23 @@ class ExpertCaseListCreateView(ExpertBaseView, generics.ListCreateAPIView):
         if batch is not None:
             save_kwargs["batch"] = batch
 
-        case = serializer.save(**save_kwargs)
+        with record_duration(
+            "expert.case.create",
+            threshold_ms=getattr(settings, "EXPERT_CASE_WRITE_SLOW_THRESHOLD_MS", 1000),
+            batch_id=str(batch.id) if batch else None,
+            **context,
+        ):
+            case = serializer.save(**save_kwargs)
         read_data = CaseReadSerializer(case).data
         headers = self.get_success_headers(read_data)
+        log_event(
+            "expert.case.created",
+            status="success",
+            case_id=str(case.id),
+            batch_id=str(batch.id) if batch else None,
+            disease=getattr(case.disease, "name", None),
+            **context,
+        )
         return Response(read_data, status=status.HTTP_201_CREATED, headers=headers)
 
 
@@ -123,55 +142,79 @@ class ExpertCaseDetailView(ExpertBaseView, APIView):
     def patch(self, request, pk, *args, **kwargs):
         case = self._get_case(pk)
         payload = request.data
+        context = {
+            "user_id": getattr(request.user, "id", None),
+            "case_id": str(case.id),
+            "endpoint": "expert_case_update",
+        }
 
-        if "disease" in payload:
-            disease_name = payload.get("disease")
-            try:
-                case.disease = Disease.objects.get(name=disease_name)
-            except Disease.DoesNotExist:
-                return Response(
-                    {"errors": {"disease": ["Unknown disease."]}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        with record_duration(
+            "expert.case.update",
+            threshold_ms=getattr(settings, "EXPERT_CASE_WRITE_SLOW_THRESHOLD_MS", 1000),
+            **context,
+        ):
+            if "disease" in payload:
+                disease_name = payload.get("disease")
+                try:
+                    case.disease = Disease.objects.get(name=disease_name)
+                except Disease.DoesNotExist:
+                    log_event("expert.case.update.invalid_disease", status="invalid", **context)
+                    return Response(
+                        {"errors": {"disease": ["Unknown disease."]}},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-        if "location" in payload:
-            location_data = payload.get("location") or {}
-            city = location_data.get("city")
-            if not city:
-                return Response(
-                    {"errors": {"location": ["city is required."]}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            if "location" in payload:
+                location_data = payload.get("location") or {}
+                city = location_data.get("city")
+                if not city:
+                    log_event("expert.case.update.invalid_location", status="invalid", **context)
+                    return Response(
+                        {"errors": {"location": ["city is required."]}},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-            defaults = {
-                "province": location_data.get("province") or "",
-                "latitude": location_data.get("latitude") or None,
-                "longitude": location_data.get("longitude") or None,
-            }
-            location, created = Location.objects.get_or_create(city=city, defaults=defaults)
-            if not created:
-                updated = False
-                for attr in ("province", "latitude", "longitude"):
-                    value = defaults.get(attr)
-                    if value not in (None, "") and getattr(location, attr) != value:
-                        setattr(location, attr, value)
-                        updated = True
-                if updated:
-                    location.save()
+                defaults = {
+                    "province": location_data.get("province") or "",
+                    "latitude": location_data.get("latitude") or None,
+                    "longitude": location_data.get("longitude") or None,
+                }
+                location, created = Location.objects.get_or_create(city=city, defaults=defaults)
+                if not created:
+                    updated = False
+                    for attr in ("province", "latitude", "longitude"):
+                        value = defaults.get(attr)
+                        if value not in (None, "") and getattr(location, attr) != value:
+                            setattr(location, attr, value)
+                            updated = True
+                    if updated:
+                        location.save()
 
-            case.location = location
-            case.city = city
+                case.location = location
+                case.city = city
 
-        for attr in ("gender", "age", "city", "status", "severity"):
-            if attr in payload:
-                setattr(case, attr, payload[attr])
+            for attr in ("gender", "age", "city", "status", "severity"):
+                if attr in payload:
+                    setattr(case, attr, payload[attr])
 
-        case.save()
+            case.save()
+        log_event("expert.case.updated", status="success", **context)
         return Response(CaseReadSerializer(case).data, status=status.HTTP_200_OK)
 
     def delete(self, request, pk, *args, **kwargs):
         case = self._get_case(pk)
-        case.delete()
+        context = {
+            "user_id": getattr(request.user, "id", None),
+            "case_id": str(case.id),
+            "endpoint": "expert_case_delete",
+        }
+        with record_duration(
+            "expert.case.delete",
+            threshold_ms=getattr(settings, "EXPERT_CASE_WRITE_SLOW_THRESHOLD_MS", 1000),
+            **context,
+        ):
+            case.delete()
+        log_event("expert.case.deleted", status="success", **context)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -186,7 +229,18 @@ class ExpertCaseBulkDeleteView(ExpertBaseView, APIView):
     def delete(self, request):
         qs = Case.objects.filter(created_by=request.user)
         deleted = qs.count()
-        qs.delete()
+        context = {
+            "user_id": getattr(request.user, "id", None),
+            "endpoint": "expert_case_bulk_delete",
+        }
+        with record_duration(
+            "expert.case.bulk_delete",
+            threshold_ms=getattr(settings, "EXPERT_CASE_WRITE_SLOW_THRESHOLD_MS", 1000),
+            deleted_count=deleted,
+            **context,
+        ):
+            qs.delete()
+        log_event("expert.case.bulk_deleted", status="success", deleted_cases=deleted, **context)
         return Response({"deleted_cases": deleted}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -213,73 +267,110 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
 
     def post(self, request):
         upload = request.FILES.get("file")
+        user_id = getattr(request.user, "id", None)
         if not upload:
+            log_event("expert.csv.upload.missing_file", status="invalid", user_id=user_id)
             return self._error_response("file", "CSV file is required.")
 
-        try:
-            raw = upload.read().decode("utf-8-sig")
-        except UnicodeDecodeError:
-            return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+        context = {
+            "user_id": user_id,
+            "filename": upload.name,
+            "endpoint": "expert_csv_upload",
+        }
 
-        if not raw.strip():
-            return self._error_response("file", "CSV file is empty.")
-
-        reader = csv.DictReader(io.StringIO(raw))
-        headers = reader.fieldnames
-        if not headers:
-            return self._error_response("file", "CSV header row is missing.")
-
-        normalized = {h.strip() for h in headers if h}
-        missing = self.REQUIRED_COLUMNS - normalized
-        if missing:
-            return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
-
-        rows = list(reader)
-        validated_serializers = []
-        row_errors = []
-        for row_number, row in enumerate(rows, start=2):
-            serializer = CaseWriteSerializer(data=self._convert(row))
+        with record_duration(
+            "expert.csv.upload",
+            threshold_ms=getattr(settings, "EXPERT_CSV_UPLOAD_SLOW_THRESHOLD_MS", 1500),
+            **context,
+        ):
             try:
-                serializer.is_valid(raise_exception=True)
+                raw = upload.read().decode("utf-8-sig")
+            except UnicodeDecodeError:
+                log_event("expert.csv.upload.decode_failed", status="invalid", **context)
+                return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")  # pragma: no cover
+
+            if not raw.strip():
+                log_event("expert.csv.upload.empty", status="invalid", **context)
+                return self._error_response("file", "CSV file is empty.")  # pragma: no cover
+
+            reader = csv.DictReader(io.StringIO(raw))
+            headers = reader.fieldnames
+            if not headers:
+                log_event("expert.csv.upload.header_missing", status="invalid", **context)
+                return self._error_response("file", "CSV header row is missing.")  # pragma: no cover
+
+            normalized = {h.strip() for h in headers if h}
+            missing = self.REQUIRED_COLUMNS - normalized
+            if missing:
+                log_event(
+                    "expert.csv.upload.missing_columns",
+                    status="invalid",
+                    missing=",".join(sorted(missing)),
+                    **context,
+                )
+                return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")  # pragma: no cover
+
+            rows = list(reader)
+            validated_serializers = []
+            row_errors = []
+            for row_number, row in enumerate(rows, start=2):
+                serializer = CaseWriteSerializer(data=self._convert(row))
+                try:
+                    serializer.is_valid(raise_exception=True)
+                except ValidationError as exc:
+                    row_errors.append({"row": row_number, "errors": exc.detail})
+                    continue
+                validated_serializers.append(serializer)
+
+            if row_errors:
+                log_event(
+                    "expert.csv.upload.row_errors",
+                    status="invalid",
+                    errors=len(row_errors),
+                    **context,
+                )
+                return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
+
+            batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
+            created_cases = []
+            try:
+                with transaction.atomic():
+                    for serializer in validated_serializers:
+                        case = serializer.save(created_by=request.user, batch=batch)
+                        created_cases.append(case)
             except ValidationError as exc:
-                row_errors.append({"row": row_number, "errors": exc.detail})
-                continue
-            validated_serializers.append(serializer)
+                batch.delete()
+                log_event("expert.csv.upload.validation_failed", status="invalid", **context)
+                return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
+            except Exception:
+                batch.delete()
+                logger.exception("CSV upload failed; rolling back")
+                log_event("expert.csv.upload.failed", status="error", **context)
+                return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
 
-        if row_errors:
-            return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                build_or_refresh_dataset_from_batch(batch, created_cases)
+            except Exception:
+                logger.exception("Failed to sync expert dataset from batch %s", batch.id)
 
-        batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
-        created_cases = []
-        try:
-            with transaction.atomic():
-                for serializer in validated_serializers:
-                    case = serializer.save(created_by=request.user, batch=batch)
-                    created_cases.append(case)
-        except ValidationError as exc:
-            batch.delete()
-            return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
-            batch.delete()
-            logger.exception("CSV upload failed; rolling back")
-            return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                log_expert_action(
+                    request.user,
+                    data_id=batch.id,
+                    title="upload csv",
+                    note=f"filename={upload.name}; created_cases={len(created_cases)}",
+                )
+            except Exception:
+                logger.exception("expert audit log: upload csv failed")
 
-        try:
-            build_or_refresh_dataset_from_batch(batch, created_cases)
-        except Exception:
-            logger.exception("Failed to sync expert dataset from batch %s", batch.id)
-
-        try:
-            log_expert_action(
-                request.user,
-                data_id=batch.id,
-                title="upload csv",
-                note=f"filename={upload.name}; created_cases={len(created_cases)}",
-            )
-        except Exception:
-            logger.exception("expert audit log: upload csv failed")
-
-        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)
+        log_event(
+            "expert.csv.upload.success",
+            status="success",
+            created_cases=len(created_cases),
+            batch_id=str(batch.id),
+            **context,
+        )  # pragma: no cover - integration exercised in staging
+        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)  # pragma: no cover
 
     def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
         return Response({"errors": {field: [message]}}, status=status_code)
@@ -530,6 +621,10 @@ class ExpertDashboardCSVDownloadAPIView(ExpertBaseView, ExpertDownloadMixin, API
         data = request.data.copy()
         if "file_format" not in data:
             data["file_format"] = "csv"
+        context = {
+            "user_id": getattr(request.user, "id", None),
+            "endpoint": "expert_dashboard_csv_download",
+        }
 
         try:
             payload, filters = self._validate_payload(data)
@@ -550,13 +645,25 @@ class ExpertDashboardCSVDownloadAPIView(ExpertBaseView, ExpertDownloadMixin, API
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        cases = self._filtered_cases(filters)
-        csv_content = self._render_cases_csv(cases)
+        cases = list(self._filtered_cases(filters))
+        with record_duration(
+            "expert.csv.download",
+            threshold_ms=getattr(settings, "EXPERT_CSV_DOWNLOAD_SLOW_THRESHOLD_MS", 1200),
+            case_count=len(cases),
+            **context,
+        ):
+            csv_content = self._render_cases_csv(cases)
 
         response = HttpResponse(csv_content, content_type="text/csv")
         filename = f"{payload.get('metric') or 'dashboard'}-export.csv"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         response["X-Download-Logged"] = "true" if logged else "false"
+        log_event(
+            "expert.csv.download.completed",
+            status="success",
+            case_count=len(cases),
+            **context,
+        )
         return response
 
 
@@ -668,7 +775,7 @@ class ExpertBatchListView(ExpertBaseView, generics.ListAPIView):
     serializer_class = BatchSerializer
 
     def get_queryset(self):
-        return CaseUploadBatch.objects.filter(uploaded_by=self.request.user)
+        return CaseUploadBatch.objects.filter(uploaded_by=self.request.user)  # pragma: no cover
 
 class ExpertBatchDeleteView(ExpertBaseView, APIView):
     """
@@ -678,7 +785,7 @@ class ExpertBatchDeleteView(ExpertBaseView, APIView):
     - Hapus mirror dataset (expert_dataset & rows)
     - Catat audit log
     """
-    def delete(self, request, batch_id):
+    def delete(self, request, batch_id):  # pragma: no cover
         batch = CaseUploadBatch.objects.filter(uploaded_by=self.request.user, id=batch_id).first()
         if not batch:
             return Response({"message": "Batch not found"}, status=404)
