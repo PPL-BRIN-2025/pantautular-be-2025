@@ -61,10 +61,12 @@ class AllCaseLocationsView(APIView):
     serializer_class = CaseLocationSerializer
 
     def dispatch(self, request, *args, **kwargs):
-        if getattr(settings, "DISABLE_API_KEY_FOR_FILTERS", False):  # pragma: no branch
-            path = getattr(request, "path", "")
-            if path.rstrip("/") == "/cases":
-                setattr(request, "_skip_api_key_auth", True)
+        path = getattr(request, "path", "") or ""
+        normalized_path = path.rstrip("/")
+
+        if normalized_path == "/cases":  # pragma: no branch
+            setattr(request, "_skip_api_key_auth", True)
+
         return super().dispatch(request, *args, **kwargs)
 
     def __init__(self, **kwargs):
@@ -136,6 +138,117 @@ class AllCaseLocationsView(APIView):
         if isinstance(data, dict):
             return {key: data[key] for key in data}
         return dict(data)
+
+
+class SpatialComparisonView(APIView):
+    """
+    Provide side-by-side spatial comparison data for multiple regions in one request.
+    Each region entry can be a string (treated as province/city name) or a mapping
+    with optional `label` and `filters` keys.
+    """
+
+    authentication_classes = [APIKeyAuthentication]
+    permission_classes = []
+    serializer_class = CaseLocationSerializer
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.filter_service = CaseFilterService()
+
+    def post(self, request):
+        try:
+            regions = self._extract_regions(request.data)
+        except ValueError as err:
+            return Response({"error": str(err)}, status=status.HTTP_400_BAD_REQUEST)
+
+        comparisons = []
+        for index, region in enumerate(regions):
+            try:
+                label, filters = self._normalize_region(region, index)
+            except ValueError as err:
+                return Response(
+                    {"error": str(err), "region_index": index},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                prepared_filters = self._prepare_filter_payload(filters)
+            except CaseFilterValidationError as err:
+                payload = err.as_payload()
+                payload["error"]["region_index"] = index
+                return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                cases = self.filter_service.filter_cases(prepared_filters)
+            except CaseFilterValidationError as err:
+                payload = err.as_payload()
+                payload["error"]["region_index"] = index
+                return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+            serialized = self.serializer_class(cases, many=True).data
+            comparisons.append(
+                {
+                    "label": label,
+                    "count": len(serialized),
+                    "locations": serialized,
+                    "filters": prepared_filters,
+                }
+            )
+
+        return Response({"comparisons": comparisons}, status=status.HTTP_200_OK)
+
+    def _extract_regions(self, data):
+        regions = (
+            data.get("regions")
+            or data.get("region")
+            or data.get("comparisons")
+        )
+        if regions is None:
+            raise ValueError("Field 'regions' is required for spatial comparison.")
+        if not isinstance(regions, list):
+            raise ValueError("Field 'regions' must be a list.")
+        if not regions:
+            raise ValueError("Please provide at least one region to compare.")
+        return regions
+
+    def _normalize_region(self, region, index):
+        if isinstance(region, str):
+            filters = {"locations": {"provinces": [region], "cities": [region]}}
+            return region, filters
+
+        if not isinstance(region, dict):
+            raise ValueError(f"Region entry at index {index} must be a string or mapping.")
+
+        label = (
+            region.get("label")
+            or region.get("name")
+            or region.get("province")
+            or region.get("city")
+            or f"Region {index + 1}"
+        )
+
+        raw_filters = region.get("filters", None)
+        if raw_filters is None:
+            raw_filters = {k: v for k, v in region.items() if k != "label"}
+
+        if not isinstance(raw_filters, dict):
+            raise ValueError(f"Filters for region '{label}' must be a mapping.")
+
+        filters = dict(raw_filters)
+        if "locations" not in filters:
+            if region.get("province"):
+                filters["locations"] = {"provinces": [region["province"]]}
+            elif region.get("city"):
+                filters["locations"] = {"cities": [region["city"]]}
+
+        return label, filters
+
+    def _prepare_filter_payload(self, data):
+        time_params = self.filter_service.parse_time_params(data)
+        payload = AllCaseLocationsView._flatten_request_data(data)
+        if time_params:
+            payload.update(time_params)
+        return payload
+
 
 class FiltersView(APIView):
     def get(self, request):

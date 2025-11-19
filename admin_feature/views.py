@@ -256,9 +256,12 @@ class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin,
 
         total = qs.count()
         items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
-
         data = AdminUserLogSerializer(items, many=True).data
-        return Response({"data": data, "page": page, "pageSize": page_size, "total": total}, status=status.HTTP_200_OK)
+
+        return Response(
+            {"data": data, "page": page, "pageSize": page_size, "total": total},
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request):
         data = request.data.copy()
@@ -270,6 +273,7 @@ class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin,
             obj = ser.save()
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class AdminUserLogDetailAPIView(AuditLogMixin, generics.RetrieveAPIView):

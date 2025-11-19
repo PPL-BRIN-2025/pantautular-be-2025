@@ -40,15 +40,21 @@ class DownloadLogRequestSerializer(serializers.Serializer):
     chartType = serializers.CharField(max_length=255, trim_whitespace=True)
     timestamp = serializers.DateTimeField()
 
-    def validate_username(self, value: str) -> str:
+    def _validate_required_string(self, value: str, field_label: str) -> str:
         if not value:
-            raise serializers.ValidationError("This field may not be blank.")
+            raise serializers.ValidationError(f"{field_label} may not be blank.")
         return value
 
+    def validate_username(self, value: str) -> str:
+        return self._validate_required_string(value, "Username")
+
     def validate_chartType(self, value: str) -> str:
-        if not value:
-            raise serializers.ValidationError("This field may not be blank.")
-        return value
+        return self._validate_required_string(value, "Chart type")
+
+    def validate(self, attrs):
+        attrs["username"] = self._validate_required_string(attrs.get("username"), "Username")
+        attrs["chartType"] = self._validate_required_string(attrs.get("chartType"), "Chart type")
+        return attrs
 
 
 class DownloadLogResponseSerializer(serializers.ModelSerializer):
