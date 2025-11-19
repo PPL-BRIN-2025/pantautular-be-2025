@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import (AllCaseLocationsView, CitySeverityStatsView, 
+from .views import (AllCaseLocationsView, SpatialComparisonView, CitySeverityStatsView, 
                     DiseaseSeverityStatsView, CaseDetailView, FiltersView, 
                     StatisticsView, LocationSeverityStatsView, SeverityFilteringStatsView,
                     ProvinceHumidityView, ProvincePrecipitationView, ProvinceTemperatureView,
@@ -8,6 +8,7 @@ from . import views
 
 urlpatterns = [
     path('cases/locations/', AllCaseLocationsView.as_view(), name='all-case-locations'),
+    path('cases/spatial-comparisons/', SpatialComparisonView.as_view(), name='spatial-comparisons'),
     path('api/filters/', FiltersView.as_view(), name='filters'),
     path('cases/<uuid:case_id>/', CaseDetailView.as_view(), name='case-detail'),
     path('api/diseases/severity-stats/', DiseaseSeverityStatsView.as_view(), name='disease-severity-stats'),
