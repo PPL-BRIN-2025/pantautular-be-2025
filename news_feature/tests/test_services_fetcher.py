@@ -5,12 +5,8 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from news_feature.models import NewsArticle
 from news_feature.services.fetcher import (
     ExternalNewsClient,
-    _extract_source_name,
-    _get_existing_articles,
-    _is_value_present,
-    _normalize_item,
-    _normalize_items,
-    _parse_datetime as fetcher_parse_datetime,
+    NewsIngestor,
+    NewsPayload,
     fetch_and_store_news,
 )
 
@@ -80,9 +76,10 @@ class FetchAndStoreNewsTests(TestCase):
                 "thumbnail": None,
             },
         ]
+        self.ingestor = NewsIngestor(client=FakeClient(self.payload))
 
     def test_successful_fetch_creates_articles_and_assigns_defaults(self):
-        result = fetch_and_store_news(client=FakeClient(self.payload))
+        result = self.ingestor.fetch_and_store()
 
         self.assertEqual(len(result), 2)
         self.assertEqual(NewsArticle.objects.count(), 2)
@@ -101,7 +98,7 @@ class FetchAndStoreNewsTests(TestCase):
             external_id="ext-1",
         )
 
-        result = fetch_and_store_news(client=FakeClient(self.payload))
+        result = self.ingestor.fetch_and_store()
 
         self.assertEqual(len(result), 2)
         self.assertEqual(NewsArticle.objects.count(), 2)
@@ -131,7 +128,7 @@ class FetchAndStoreNewsTests(TestCase):
             }
         ]
 
-        fetch_and_store_news(client=FakeClient(payload))
+        NewsIngestor(client=FakeClient(payload)).fetch_and_store()
 
         existing.refresh_from_db()
         self.assertEqual(existing.title, "Updated title")
@@ -150,19 +147,19 @@ class FetchAndStoreNewsTests(TestCase):
             },
         ]
 
-        result = fetch_and_store_news(client=FakeClient(bad_payload))
+        result = NewsIngestor(client=FakeClient(bad_payload)).fetch_and_store()
 
         self.assertEqual(len(result), 1)
         self.assertEqual(NewsArticle.objects.count(), 1)
 
     def test_fetch_error_does_not_raise_and_returns_empty_list(self):
-        result = fetch_and_store_news(client=FailingClient())
+        result = NewsIngestor(client=FailingClient()).fetch_and_store()
 
         self.assertEqual(result, [])
         self.assertEqual(NewsArticle.objects.count(), 0)
 
     def test_returns_empty_when_client_has_no_items(self):
-        result = fetch_and_store_news(client=FakeClient([]))
+        result = NewsIngestor(client=FakeClient([])).fetch_and_store()
         self.assertEqual(result, [])
 
     def test_update_assigns_thumbnail_when_missing(self):
@@ -188,10 +185,17 @@ class FetchAndStoreNewsTests(TestCase):
             }
         ]
 
-        fetch_and_store_news(client=FakeClient(payload))
+        NewsIngestor(client=FakeClient(payload)).fetch_and_store()
 
         existing.refresh_from_db()
         self.assertEqual(existing.thumbnail_url, "https://cdn.example.com/default.jpg")
+
+    def test_wrapper_function_still_routes_provider(self):
+        client = FakeClient(self.payload)
+
+        fetch_and_store_news(provider="curated", client=client)
+
+        self.assertEqual(client.fetch_called_with, "curated")
 
 
 class ExternalNewsClientTests(SimpleTestCase):
@@ -239,6 +243,9 @@ class ExternalNewsClientTests(SimpleTestCase):
 
 
 class FetcherHelperUnitTests(SimpleTestCase):
+    def setUp(self):
+        self.ingestor = NewsIngestor(client=FakeClient([]))
+
     def test_normalize_items_deduplicates_entries(self):
         payload = [
             {
@@ -261,10 +268,11 @@ class FetcherHelperUnitTests(SimpleTestCase):
             },
         ]
 
-        normalized = _normalize_items(payload)
+        normalized = self.ingestor._normalize_items(payload)
 
         self.assertEqual(len(normalized), 1)
-        self.assertEqual(normalized[0]["title"], "Title")
+        self.assertIsInstance(normalized[0], NewsPayload)
+        self.assertEqual(normalized[0].title, "Title")
 
     def test_normalize_item_validations(self):
         base = {
@@ -275,10 +283,10 @@ class FetcherHelperUnitTests(SimpleTestCase):
         }
 
         with self.assertRaisesMessage(ValueError, "title is required"):
-            _normalize_item({**base, "title": ""})
+            self.ingestor._normalize_item({**base, "title": ""})
 
         with self.assertRaisesMessage(ValueError, "source_url is required"):
-            _normalize_item(
+            self.ingestor._normalize_item(
                 {
                     **base,
                     "title": "Title",
@@ -287,7 +295,7 @@ class FetcherHelperUnitTests(SimpleTestCase):
             )
 
         with self.assertRaisesMessage(ValueError, "source_name is required"):
-            _normalize_item(
+            self.ingestor._normalize_item(
                 {
                     **base,
                     "title": "Title",
@@ -296,7 +304,7 @@ class FetcherHelperUnitTests(SimpleTestCase):
             )
 
         with self.assertRaisesMessage(ValueError, "published_at is required"):
-            _normalize_item(
+            self.ingestor._normalize_item(
                 {
                     **base,
                     "title": "Title",
@@ -306,32 +314,35 @@ class FetcherHelperUnitTests(SimpleTestCase):
 
     def test_extract_source_name_variants(self):
         self.assertEqual(
-            _extract_source_name({"source": {"name": "Kompas"}}),
+            self.ingestor._extract_source_name({"source": {"name": "Kompas"}}),
             "Kompas",
         )
-        self.assertEqual(_extract_source_name({"source_name": " Detik "}), "Detik")
-        self.assertIsNone(_extract_source_name({"source": 123}))
+        self.assertEqual(self.ingestor._extract_source_name({"source_name": " Detik "}), "Detik")
+        self.assertIsNone(self.ingestor._extract_source_name({"source": 123}))
 
     def test_parse_datetime_variants(self):
         aware = datetime(2025, 1, 1, tzinfo=dt_timezone.utc)
-        self.assertEqual(fetcher_parse_datetime(aware), aware)
+        self.assertEqual(self.ingestor._parse_datetime(aware), aware)
 
         naive_str = "2025-01-01T12:00:00"
-        converted = fetcher_parse_datetime(naive_str)
+        converted = self.ingestor._parse_datetime(naive_str)
         self.assertIsNotNone(converted.tzinfo)
 
-        self.assertIsNone(fetcher_parse_datetime("invalid"))
-        self.assertIsNone(fetcher_parse_datetime(None))
+        self.assertIsNone(self.ingestor._parse_datetime("invalid"))
+        self.assertIsNone(self.ingestor._parse_datetime(None))
 
     def test_is_value_present(self):
-        self.assertFalse(_is_value_present(""))
-        self.assertTrue(_is_value_present(" data "))
+        self.assertFalse(self.ingestor._is_value_present(""))
+        self.assertTrue(self.ingestor._is_value_present(" data "))
 
 
 class GetExistingArticlesTests(TestCase):
+    def setUp(self):
+        self.ingestor = NewsIngestor()
+
     def test_returns_empty_mapping_when_no_identifiers(self):
         self.assertEqual(
-            _get_existing_articles([]),
+            self.ingestor._get_existing_articles([]),
             {"external": {}, "url": {}},
         )
 
@@ -346,12 +357,17 @@ class GetExistingArticlesTests(TestCase):
             external_id="ext-existing",
         )
 
-        result = _get_existing_articles(
+        result = self.ingestor._get_existing_articles(
             [
-                {
-                    "external_id": "ext-existing",
-                    "source_url": "https://example.com/existing",
-                }
+                NewsPayload(
+                    title="",
+                    summary="",
+                    source_url="https://example.com/existing",
+                    source_name="Kompas",
+                    thumbnail_url="",
+                    published_at=datetime(2025, 1, 1, tzinfo=dt_timezone.utc),
+                    external_id="ext-existing",
+                )
             ]
         )
 
