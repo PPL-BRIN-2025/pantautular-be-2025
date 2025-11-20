@@ -117,7 +117,7 @@ class FetchAndStoreNewsTests(TestCase):
             source_name="Old source",
             thumbnail_url="https://img/old2.jpg",
             published_at=datetime(2024, 12, 30, tzinfo=dt_timezone.utc),
-            external_id=None,
+            external_id="",
         )
 
         payload = [
@@ -341,7 +341,7 @@ class GetExistingArticlesTests(TestCase):
             summary="S",
             source_url="https://example.com/existing",
             source_name="Kompas",
-            thumbnail_url=None,
+            thumbnail_url="",
             published_at=datetime(2025, 1, 1, tzinfo=dt_timezone.utc),
             external_id="ext-existing",
         )

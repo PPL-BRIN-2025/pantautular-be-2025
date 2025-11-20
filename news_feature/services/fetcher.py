@@ -68,7 +68,7 @@ def fetch_and_store_news(provider: str = "default", client: Optional[ExternalNew
 
     try:
         raw_items = client.fetch(provider=provider)
-    except Exception as exc:  # pragma: no cover - defensive logging branch
+    except Exception:  # pragma: no cover - defensive logging branch
         logger.exception("Failed to fetch news articles from provider %s", provider)
         return []
 
@@ -77,6 +77,11 @@ def fetch_and_store_news(provider: str = "default", client: Optional[ExternalNew
         return []
 
     existing = _get_existing_articles(normalized)
+    to_create, to_update = _split_articles(normalized, existing)
+    return _store_articles(to_create, to_update)
+
+
+def _split_articles(normalized: List[dict], existing: dict) -> tuple[List[NewsArticle], List[NewsArticle]]:
     to_create: List[NewsArticle] = []
     to_update: List[NewsArticle] = []
 
@@ -85,53 +90,75 @@ def fetch_and_store_news(provider: str = "default", client: Optional[ExternalNew
         if article:
             _update_article_from_payload(article, item)
             to_update.append(article)
-        else:
-            article = NewsArticle(
-                title=item["title"],
-                summary=item["summary"],
-                source_url=item["source_url"],
-                source_name=item["source_name"],
-                thumbnail_url=item["thumbnail_url"],
-                published_at=item["published_at"],
-                external_id=item["external_id"],
-            )
-            assign_default_thumbnail(article)
-            to_create.append(article)
+            continue
+
+        to_create.append(_build_article(item))
+
+    return to_create, to_update
+
+
+def _build_article(payload: dict) -> NewsArticle:
+    article = NewsArticle(
+        title=payload["title"],
+        summary=_coerce_text(payload["summary"]),
+        source_url=payload["source_url"],
+        source_name=payload["source_name"],
+        thumbnail_url=_coerce_text(payload["thumbnail_url"]),
+        published_at=payload["published_at"],
+        external_id=_coerce_text(payload["external_id"]),
+    )
+    assign_default_thumbnail(article)
+    return article
+
+
+def _store_articles(to_create: List[NewsArticle], to_update: List[NewsArticle]) -> List[NewsArticle]:
+    if not to_create and not to_update:
+        return []
 
     saved_articles: List[NewsArticle] = []
-
     with transaction.atomic():
-        if to_create:
-            # Regular save keeps SQLite-based tests stable with the unique source_url constraint.
-            for article in to_create:
-                article.save()
-            saved_articles.extend(to_create)
-
-        if to_update:
-            now = timezone.now()
-            for article in to_update:
-                if not _is_value_present(article.thumbnail_url):
-                    temp = NewsArticle(thumbnail_url=article.thumbnail_url)
-                    assign_default_thumbnail(temp)
-                    article.thumbnail_url = temp.thumbnail_url
-                article.updated_at = now
-
-            NewsArticle.objects.bulk_update(
-                to_update,
-                [
-                    "title",
-                    "summary",
-                    "source_url",
-                    "source_name",
-                    "thumbnail_url",
-                    "published_at",
-                    "external_id",
-                    "updated_at",
-                ],
-            )
-            saved_articles.extend(to_update)
+        saved_articles.extend(_save_new_articles(to_create))
+        saved_articles.extend(_update_existing_articles(to_update))
 
     return saved_articles
+
+
+def _save_new_articles(to_create: List[NewsArticle]) -> List[NewsArticle]:
+    if not to_create:
+        return []
+
+    # Regular save keeps SQLite-based tests stable with the unique source_url constraint.
+    for article in to_create:
+        article.save()
+    return list(to_create)
+
+
+def _update_existing_articles(to_update: List[NewsArticle]) -> List[NewsArticle]:
+    if not to_update:
+        return []
+
+    now = timezone.now()
+    for article in to_update:
+        if not _is_value_present(article.thumbnail_url):
+            temp = NewsArticle(thumbnail_url=_coerce_text(article.thumbnail_url))
+            assign_default_thumbnail(temp)
+            article.thumbnail_url = temp.thumbnail_url
+        article.updated_at = now
+
+    NewsArticle.objects.bulk_update(
+        to_update,
+        [
+            "title",
+            "summary",
+            "source_url",
+            "source_name",
+            "thumbnail_url",
+            "published_at",
+            "external_id",
+            "updated_at",
+        ],
+    )
+    return list(to_update)
 
 
 def _normalize_items(raw_items: Iterable[dict]) -> List[dict]:
@@ -173,9 +200,11 @@ def _normalize_item(item: dict) -> dict:
     if not published_at:
         raise ValueError("published_at is required")
 
-    summary = item.get("summary") or item.get("description") or item.get("content")
+    summary = _coerce_text(
+        item.get("summary") or item.get("description") or item.get("content")
+    )
 
-    thumbnail = (
+    thumbnail = _coerce_text(
         item.get("thumbnail_url")
         or item.get("thumbnail")
         or item.get("image_url")
@@ -193,7 +222,7 @@ def _normalize_item(item: dict) -> dict:
         "source_name": source_name,
         "thumbnail_url": thumbnail,
         "published_at": published_at,
-        "external_id": external_id,
+        "external_id": _coerce_text(external_id),
     }
 
 
@@ -259,16 +288,23 @@ def _match_existing(existing: dict, item: dict) -> Optional[NewsArticle]:
 
 def _update_article_from_payload(article: NewsArticle, payload: dict) -> None:
     article.title = payload["title"]
-    article.summary = payload["summary"]
+    article.summary = _coerce_text(payload["summary"])
     article.source_url = payload["source_url"]
     article.source_name = payload["source_name"]
     article.published_at = payload["published_at"]
-    if payload["thumbnail_url"]:
-        article.thumbnail_url = payload["thumbnail_url"]
-    article.external_id = payload["external_id"]
+    thumbnail = _coerce_text(payload["thumbnail_url"])
+    if _is_value_present(thumbnail):
+        article.thumbnail_url = thumbnail
+    article.external_id = _coerce_text(payload["external_id"])
 
 
 def _is_value_present(value: Optional[str]) -> bool:
     if not value:
         return False
     return bool(str(value).strip())
+
+
+def _coerce_text(value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()

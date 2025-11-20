@@ -55,7 +55,7 @@ class Command(BaseCommand):
 
         for payload in SAMPLE_NEWS:
             defaults = {**payload, "case": case}
-            article, was_created = News.objects.get_or_create(
+            _, was_created = News.objects.get_or_create(
                 url=payload["url"],
                 defaults=defaults,
             )
@@ -67,14 +67,18 @@ class Command(BaseCommand):
         )
 
     def _ensure_case(self) -> Case:
+        secure_password = make_password(None)
         user, _ = User.objects.get_or_create(
             email=SEED_USER_EMAIL,
             defaults={
                 "name": "News Seeder",
-                "password": make_password("news-seed"),
+                "password": secure_password,
                 "role": "CURATOR",
             },
         )
+        if not user.password.startswith("!"):
+            user.password = secure_password
+            user.save(update_fields=["password"])
 
         location = (
             Location.objects.filter(city="Jakarta", province="DKI Jakarta").first()
