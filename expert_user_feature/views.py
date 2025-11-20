@@ -133,14 +133,23 @@ class ExpertCaseCreateView(ExpertCaseListCreateView):
 class ExpertCaseDetailView(ExpertBaseView, APIView):
     """Handle expert case update and delete operations."""
 
-    def _get_case(self, pk):
+    def _user_is_admin(self, user) -> bool:
+        return str(getattr(user, "role", "") or "").upper() == "ADMIN"
+
+    def _get_case(self, request, pk):
         try:
-            return Case.objects.select_related("location", "disease").get(pk=pk)
+            qs = Case.objects.select_related("location", "disease")
+            if not self._user_is_admin(request.user):
+                qs = qs.filter(
+                    Q(created_by=request.user) |
+                    Q(batch__uploaded_by=request.user)
+                )
+            return qs.get(pk=pk)
         except Case.DoesNotExist as exc:
             raise Http404("Case not found.") from exc
 
     def patch(self, request, pk, *args, **kwargs):
-        case = self._get_case(pk)
+        case = self._get_case(request, pk)
         payload = request.data
         context = {
             "user_id": getattr(request.user, "id", None),
@@ -202,7 +211,7 @@ class ExpertCaseDetailView(ExpertBaseView, APIView):
         return Response(CaseReadSerializer(case).data, status=status.HTTP_200_OK)
 
     def delete(self, request, pk, *args, **kwargs):
-        case = self._get_case(pk)
+        case = self._get_case(request, pk)
         context = {
             "user_id": getattr(request.user, "id", None),
             "case_id": str(case.id),

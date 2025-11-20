@@ -80,6 +80,10 @@ This will:
 - Generate a GitHub release
 - Trigger the Docker image build with the new version tag
 
+## Security
+
+Security controls and SDLC expectations are documented in [SECURITY.md](./SECURITY.md), including how we apply OWASP guidance (Top 10 and CSV injection mitigation), enforce expert data ownership, and require practices such as GPG commit signing, dependency auditing, and full test/coverage gates.
+
 ## Branching Strategy
 
 The project uses the following branches:
@@ -100,4 +104,3 @@ The project uses the following branches:
 - Created for new features or bug fixes
 - Should branch off from `staging`
 - Pull requests should target the `staging` branch
-
