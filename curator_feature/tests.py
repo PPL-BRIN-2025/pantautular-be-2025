@@ -1016,7 +1016,8 @@ class CuratorCaseAPITests(TestCase):
         self.as_curator()
         res_list = self.client.get(CASES_BASE)
         self.assertEqual(res_list.status_code, 200)
-        self.assertIn("disease_name", res_list.data[0])
+        self.assertGreater(res_list.data["total"], 0)
+        self.assertIn("disease_name", res_list.data["data"][0])
 
         res_detail = self.client.get(f"{CASES_BASE}{case.id}/")
         self.assertEqual(res_detail.status_code, 200)
@@ -1281,6 +1282,47 @@ class DashboardDownloadEventInvalidChoicesTests(APITestCase):
         req.user = AnonymousUser()  # no auth
         perm = IsCuratorRole()
         assert perm.has_permission(req, None) is False
+
+from django.db import connection
+from django.db.utils import InternalError
+from django.test import TestCase, override_settings
+from curator_feature.models import CuratorDataLog
+from django.utils import timezone
+from uuid import uuid4
+
+class CuratorDataLogImmutabilityTests(TestCase):
+    def setUp(self):
+        self.log = CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="insiden",
+            submitted_by="tester",
+            note="seed",
+            last_edited=timezone.now(),
+        )
+
+    def test_prevent_update_via_orm(self):
+        self.log.note = "changed"
+        with self.assertRaises(ValueError):
+            self.log.save()
+
+    def test_prevent_delete_via_orm(self):
+        with self.assertRaises(ValueError):
+            self.log.delete()
+
+    def test_prevent_update_via_sql(self):
+        with connection.cursor() as cur:
+            with self.assertRaises((InternalError, IntegrityError)):
+                cur.execute(
+                    "UPDATE curator_feature_datalog SET note='sql' WHERE id=%s", [self.log.id]
+                )
+
+    def test_prevent_delete_via_sql(self):
+        with connection.cursor() as cur:
+            with self.assertRaises((InternalError, IntegrityError)):
+                cur.execute(
+                    "DELETE FROM curator_feature_datalog WHERE id=%s", [self.log.id]
+                )
+
 
 class CuratorDataLogSerializerHardeningTests(TestCase):
     def test_submitted_by_is_readonly(self):

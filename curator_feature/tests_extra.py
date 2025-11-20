@@ -9,11 +9,27 @@ from django.test import TestCase
 from rest_framework import serializers as drf_serializers
 
 from curator_feature.serializers import LocationByNameSerializer, CaseWriteSerializer
-from curator_feature.services import ChartDataService
-from curator_feature.models import DownloadLog, DashboardDownloadEvent
+from curator_feature.services import ChartDataService, log_curator_edit
+from curator_feature.models import DownloadLog, DashboardDownloadEvent, CuratorDataLog, BackendCase
+from curator_feature.permissions import IsCuratorRole, ReadOnlyOrCurator
+from curator_feature.views import (
+    CuratorCaseListCreateView,
+    CuratorCaseDetailView,
+    DiseaseListCreateView,
+    CuratorDiseaseListCreateView,
+    CuratorDataLogListCreateAPIView,
+)
+from curator_feature.admin import CuratorDataLogAdmin
 from pt_backend.models import Location, Disease
-from pt_backend.models import Case, News
+from pt_backend.models import Case, News, User as PtUser
 from django.utils import timezone
+from django.test import override_settings
+from rest_framework.test import APIRequestFactory, force_authenticate
+from django.contrib.admin.sites import AdminSite
+from types import SimpleNamespace
+from unittest.mock import patch
+from uuid import uuid4
+from curator_feature.tests import _create_case_table_no_fk, _drop_case_table
 from datetime import timedelta
 from decimal import Decimal
 
@@ -281,3 +297,275 @@ class SerializerAndServiceExtraTests(TestCase):
 
         # _json_serializer should stringify non-set values
         self.assertEqual(svc5._json_serializer(Decimal('1.5')), '1.5')
+
+
+class AdminAndModelCoverageTests(TestCase):
+    def test_admin_disables_mutations_and_model_str(self):
+        log = CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="sample",
+            submitted_by="tester",
+            note="n",
+            last_edited=timezone.now(),
+        )
+        admin_site = AdminSite()
+        admin_obj = CuratorDataLogAdmin(CuratorDataLog, admin_site)
+        request = SimpleNamespace()
+        self.assertFalse(admin_obj.has_change_permission(request, obj=log))
+        self.assertFalse(admin_obj.has_delete_permission(request, obj=log))
+        self.assertIn("sample", str(log))
+
+    def test_log_curator_edit_creates_entry(self):
+        data_id = uuid4()
+        user = SimpleNamespace(username="coverage", email="coverage@example.com")
+        log_curator_edit(user=user, data_id=data_id, title="Edited", note="done")
+        entry = CuratorDataLog.objects.get(data_id=data_id)
+        self.assertEqual(entry.title, "Edited")
+        self.assertEqual(entry.submitted_by, "coverage")
+
+
+class PermissionsCoverageTests(TestCase):
+    def test_is_curator_role_no_user(self):
+        request = SimpleNamespace(user=None)
+        self.assertFalse(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("role",))
+    def test_role_strategy_matches(self):
+        request = SimpleNamespace(user=SimpleNamespace(role="curator"))
+        self.assertTrue(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("group",))
+    def test_group_strategy_queryset_success(self):
+        class HappyGroups:
+            def filter(self, **kwargs):
+                return self
+
+            def exists(self):
+                return True
+
+        request = SimpleNamespace(user=SimpleNamespace(groups=HappyGroups()))
+        self.assertTrue(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("group",))
+    def test_group_strategy_iterable_fallback(self):
+        class FaultyGroups(list):
+            def filter(self, *args, **kwargs):
+                raise RuntimeError("boom")
+
+        request = SimpleNamespace(
+            user=SimpleNamespace(groups=FaultyGroups([SimpleNamespace(name="CURATOR")]))
+        )
+        self.assertTrue(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("group",))
+    def test_group_strategy_iterable_exception(self):
+        class BadGroups:
+            def filter(self, *args, **kwargs):
+                raise RuntimeError("boom")
+
+            def __iter__(self):
+                raise RuntimeError("iter fail")
+
+        request = SimpleNamespace(user=SimpleNamespace(groups=BadGroups()))
+        self.assertFalse(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("group",))
+    def test_group_strategy_iterable_no_match(self):
+        request = SimpleNamespace(
+            user=SimpleNamespace(groups=[SimpleNamespace(name="VIEWER")])
+        )
+        self.assertFalse(IsCuratorRole().has_permission(request, None))
+
+    @override_settings(CURATOR_ROLE_CHECKS=("unknown",))
+    def test_unknown_strategy_denies(self):
+        request = SimpleNamespace(user=SimpleNamespace(role="CURATOR"))
+        self.assertFalse(IsCuratorRole().has_permission(request, None))
+
+    def test_read_only_or_curator_safe_methods(self):
+        request = SimpleNamespace(method="GET")
+        self.assertTrue(ReadOnlyOrCurator().has_permission(request, None))
+
+    def test_read_only_or_curator_requires_token_and_role(self):
+        allowed_request = SimpleNamespace(method="POST", user=SimpleNamespace(id=1, role="CURATOR"))
+        denied_request = SimpleNamespace(method="POST", user=SimpleNamespace(id=None, role="CURATOR"))
+        self.assertTrue(ReadOnlyOrCurator().has_permission(allowed_request, None))
+        self.assertFalse(ReadOnlyOrCurator().has_permission(denied_request, None))
+
+
+class ViewHelpersCoverageTests(TestCase):
+    def test_disease_list_get_permissions(self):
+        view = DiseaseListCreateView()
+        view.request = SimpleNamespace(method="GET")
+        self.assertEqual(view.get_permissions(), [])
+
+        view.request = SimpleNamespace(method="POST")
+        perms = view.get_permissions()
+        self.assertEqual(len(perms), 1)
+        self.assertIsInstance(perms[0], ReadOnlyOrCurator)
+        self.assertTrue(hasattr(view.get_queryset(), "order_by"))
+
+    def test_curator_disease_list_get_queryset(self):
+        view = CuratorDiseaseListCreateView()
+        queryset = view.get_queryset()
+        self.assertTrue(hasattr(queryset, "order_by"))
+
+    def test_parse_positive_int_invalid(self):
+        view = CuratorCaseListCreateView()
+        self.assertEqual(view._parse_positive_int("abc", default=7), 7)
+        self.assertEqual(view._parse_positive_int(-3, default=5), 5)
+
+    def test_case_view_logging_exceptions_suppressed(self):
+        view = CuratorCaseListCreateView()
+        view.request = SimpleNamespace(user=SimpleNamespace(username="tester"))
+
+        class DummySerializer:
+            def save(self):
+                return SimpleNamespace(id=uuid4(), severity=None, status="active")
+
+        with patch("curator_feature.views.log_curator_action", side_effect=RuntimeError("boom")):
+            view.perform_create(DummySerializer())
+
+        detail_view = CuratorCaseDetailView()
+        detail_view.request = SimpleNamespace(user=SimpleNamespace(username="tester"))
+
+        class UpdateSerializer:
+            def save(self):
+                return SimpleNamespace(id=uuid4(), severity="high", status="active")
+
+        with patch("curator_feature.views.log_curator_action", side_effect=RuntimeError("boom")):
+            detail_view.perform_update(UpdateSerializer())
+
+        disease = Disease.objects.create(name="D", level_of_alertness=1)
+        location = Location.objects.create(city="C", province="P", latitude=0, longitude=0)
+        case = Case.objects.create(
+            disease=disease,
+            location=location,
+            gender="P",
+            age=10,
+            city="C",
+            status="minimal",
+            severity="insiden",
+        )
+        with patch("curator_feature.views.log_curator_action", side_effect=RuntimeError("boom")):
+            detail_view.perform_destroy(case)
+
+    def test_case_list_backend_branch_for_pt_user(self):
+        _drop_case_table()
+        _create_case_table_no_fk()
+        BackendCase.objects.create(
+            id=uuid4(),
+            gender="P",
+            age=21,
+            city="Bandung",
+            status="active",
+            disease_id=uuid4(),
+            location_id=uuid4(),
+            severity="high",
+        )
+        user = PtUser.objects.create(name="Cur", email="cur@example.com", password="x", role="CURATOR")
+        factory = APIRequestFactory()
+        request = factory.get("/curator/cases/")
+        force_authenticate(request, user=user)
+        response = CuratorCaseListCreateView.as_view()(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(response.data["total"], 1)
+
+    def test_curator_datalog_filters_with_dates(self):
+        now = timezone.now()
+        CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="alpha",
+            submitted_by="alice",
+            note="n1",
+            last_edited=now - timedelta(days=2),
+        )
+        CuratorDataLog.objects.create(
+            data_id=uuid4(),
+            title="beta",
+            submitted_by="bob",
+            note="n2",
+            last_edited=now - timedelta(hours=6),
+        )
+        start = (now - timedelta(days=1)).isoformat()
+        end = now.isoformat()
+        request = SimpleNamespace(query_params={"start": start, "end": end})
+        view = CuratorDataLogListCreateAPIView()
+        response = view.get(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data", response.data)
+
+
+class CaseSerializerCoverageTests(TestCase):
+    def setUp(self):
+        self.disease = Disease.objects.create(name="DBD", level_of_alertness=2)
+        self.other_disease = Disease.objects.create(name="Flu", level_of_alertness=1)
+        self.location = Location.objects.create(city="Jakarta", province="DKI", latitude=0.1, longitude=0.2)
+
+    def _news_payload(self, title="Kasus"):
+        return {
+            "portal": "Portal",
+            "title": title,
+            "type": "artikel",
+            "content": "Konten",
+            "url": "https://example.com/news",
+            "author": "Reporter",
+            "date_published": "2024-01-01T00:00:00Z",
+            "img_url": "",
+        }
+
+    def test_case_write_create_and_update_flow(self):
+        payload = {
+            "disease": "DBD",
+            "gender": "P",
+            "age": 12,
+            "city": "Jakarta",
+            "status": "bahaya",
+            "severity": "insiden",
+            "location": {"city": "Jakarta"},
+            "news": self._news_payload(),
+        }
+        serializer = CaseWriteSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        case = serializer.save()
+        self.assertEqual(case.disease.name, "DBD")
+        self.assertEqual(case.news.count(), 1)
+
+        update_payload = {
+            "disease": "Flu",
+            "location": {"city": "Jakarta"},
+            "severity": "mortalitas",
+            "news": self._news_payload(title="Update"),
+        }
+        update_serializer = CaseWriteSerializer(instance=case, data=update_payload, partial=True)
+        self.assertTrue(update_serializer.is_valid(), update_serializer.errors)
+        updated_case = update_serializer.save()
+        self.assertEqual(updated_case.disease.name, "Flu")
+        self.assertEqual(updated_case.severity, "mortalitas")
+        self.assertEqual(updated_case.news.order_by("date_published").last().title, "Update")
+
+        # exercise branch creating news when none exist
+        updated_case.news.all().delete()
+        second_update = CaseWriteSerializer(
+            instance=updated_case,
+            data={"news": self._news_payload(title="Baru")},
+            partial=True,
+        )
+        self.assertTrue(second_update.is_valid(), second_update.errors)
+        second_update.save()
+        self.assertEqual(updated_case.news.count(), 1)
+
+    def test_case_write_unknown_disease_raises(self):
+        payload = {
+            "disease": "Unknown",
+            "gender": "L",
+            "age": 10,
+            "city": "Jakarta",
+            "status": "minimal",
+            "severity": "insiden",
+            "location": {"city": "Jakarta"},
+            "news": self._news_payload(),
+        }
+        serializer = CaseWriteSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        with self.assertRaises(drf_serializers.ValidationError):
+            serializer.save()

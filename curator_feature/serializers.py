@@ -9,10 +9,11 @@ from pt_backend.models import Case, Disease, Location, News
 class CuratorDataLogSerializer(serializers.ModelSerializer):
     lastEdited = serializers.DateTimeField(source="last_edited", read_only=True)
     submittedBy = serializers.CharField(source="submitted_by", read_only=True)
+    submitted_by = serializers.CharField(read_only=True)    # snake case alias for tests
 
     class Meta:
         model = CuratorDataLog
-        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "note")
+        fields = ("id", "data_id", "title", "lastEdited", "submittedBy", "submitted_by", "note")
 
 
 # DISEASE SERIALIZER 
@@ -140,15 +141,23 @@ class DashboardDownloadEventSerializer(serializers.Serializer):
         return value
 
 
+class NewsInlineWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+class NewsInlineReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["id", "portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+
+
 class LocationByNameSerializer(serializers.Serializer):
-    """
-    Resolve a location by city name (optionally province).
-    - If exactly one match is found -> reuse it.
-    - If multiple cities match and 'province' not provided -> ask for province.
-    - If none found:
-        * create only if province + latitude + longitude are provided
-        * otherwise return a helpful 400 asking for the missing fields
-    """
+    """Resolve a location by city name with helpful fallbacks."""
+
     city = serializers.CharField()
     province = serializers.CharField(required=False)
     latitude = serializers.DecimalField(max_digits=8, decimal_places=6, required=False)
@@ -172,31 +181,23 @@ class LocationByNameSerializer(serializers.Serializer):
                 "location": f"Multiple locations named '{city}'. Provide 'province' to disambiguate."
             })
 
-        # Create if at least province provided; latitude/longitude are optional
-        missing = [k for k in ("province",) if k not in data]
-        if missing:
+        missing_any = any(
+            key not in data or data[key] in ("", None)
+            for key in ("province", "latitude", "longitude")
+        )
+        if missing_any:
             raise serializers.ValidationError({
-                "location": f"Location '{city}' not found. Provide province to create it."
+                "location": (
+                    f"Location '{city}' not found. Provide province, latitude, longitude to create it."
+                )
             })
 
         return Location.objects.create(
             city=city,
             province=str(data["province"]).strip(),
-            latitude=data.get("latitude"),
-            longitude=data.get("longitude"),
+            latitude=data["latitude"],
+            longitude=data["longitude"],
         )
-
-
-class NewsInlineWriteSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = News
-        fields = ["portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
-
-
-class NewsInlineReadSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = News
-        fields = ["id", "portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
 
 
 class CaseWriteSerializer(serializers.ModelSerializer):
@@ -291,6 +292,56 @@ class LocationSerializer(serializers.ModelSerializer):
             "latitude": {"required": False, "allow_null": True},
             "longitude": {"required": False, "allow_null": True},
         }
+
+
+
+
+class LocationReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "city", "province", "latitude", "longitude"]
+        extra_kwargs = {
+            "latitude": {"required": False, "allow_null": True},
+            "longitude": {"required": False, "allow_null": True},
+        }
+
+
+class CaseReadSerializer(serializers.ModelSerializer):
+    disease_name = serializers.CharField(source="disease.name", read_only=True)
+    location = LocationReadSerializer(read_only=True)
+    news = NewsInlineReadSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Case
+        fields = [
+            "id",
+            "gender", "age", "city", "status", "severity",
+            "disease_name",
+            "location",
+            "news",
+        ]
+
+
+
+class NewsInlineWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+class NewsInlineReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = News
+        fields = ["id", "portal", "title", "type", "content", "url", "author", "date_published", "img_url"]
+
+
+
 
 
 class CaseReadSerializer(serializers.ModelSerializer):

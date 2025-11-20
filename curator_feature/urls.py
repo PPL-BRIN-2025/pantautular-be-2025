@@ -18,6 +18,8 @@ urlpatterns = [
     path("charts/data", ChartDataAPIView.as_view(), name="curator-charts-data"),
     path("download", DownloadLogAPIView.as_view(), name="curator-download-log"),
     path("downloads/log/", DashboardDownloadEventAPIView.as_view(), name="curator-dashboard-download-log"),
+    # alias name to match test
+    path("downloads/log/", DashboardDownloadEventAPIView.as_view(), name="dashboard-download-log"),
     path("charts", ChartsSimpleView.as_view(), name="curator-charts-simple"),
 
     # --- Public diseases (GET) / curator-only POST
@@ -27,6 +29,11 @@ urlpatterns = [
     path("curator/cases/", CuratorCaseListCreateView.as_view(), name="curator-cases"),
     path("curator/cases/<uuid:id>/", CuratorCaseDetailView.as_view(), name="curator-case-detail"),
     path("curator/diseases/", CuratorDiseaseListCreateView.as_view(), name="curator-disease-list-create"),
+
+    # --- Curator Case CRUD endpoints but aliases for the tests ---
+    path("curator/cases/", CuratorCaseListCreateView.as_view(), name="curator_cases_list"),
+    path("curator/cases/<uuid:id>/", CuratorCaseDetailView.as_view(), name="curator_case_detail"),
+    path("curator/diseases/", CuratorDiseaseListCreateView.as_view(), name="curator_disease_list_create"),
 
     # --- Curator audit logs endpoint ---
     path("api/curator/audit-logs/", CuratorDataLogListCreateAPIView.as_view(), name="curator_audit_logs"),
