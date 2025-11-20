@@ -43,8 +43,6 @@ urlpatterns = [
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("expert-feature/", include("expert_user_feature.urls")),
     re_path(r"^news/?", include("news_feature.urls")),
-    re_path(
-        r"^api/news/?",
-        include(("news_feature.urls", "news_feature"), namespace="news_feature_api"),
-    ),
+    re_path(r"^api/news/?", include(("news_feature.urls", "news_feature"), namespace="news_feature_api")),
+    path("contributor-feature/", include("contributor_feature.urls")),
 ]

@@ -85,10 +85,11 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
-    'admin_feature', 
+    'admin_feature',
     'curator_feature',
     'expert_user_feature',
     'news_feature',
+    'contributor_feature',
 
 ]
 
