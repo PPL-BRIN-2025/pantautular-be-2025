@@ -12,7 +12,7 @@ django.setup()
 from datetime import datetime
 from django.contrib.auth.hashers import make_password
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, SimpleTestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase, APIRequestFactory
@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from .models import ExpertDataLog, ExpertDataset, ExpertDatasetRow
 from .services import build_or_refresh_dataset_from_batch
+from . import services as expert_services
 from .serializers import ExpertDatasetRowSerializer
 from .views import ExpertCaseListCreateView
 
@@ -107,6 +108,7 @@ class TestExpertCaseAPI(TestCase):
             city="Bandung",
             status="biasa",
             severity="hospitalisasi",
+            created_by=self.expert,
         )
 
         payload = {
@@ -132,6 +134,7 @@ class TestExpertCaseAPI(TestCase):
             city="Jakarta",
             status="bahaya",
             severity="insiden",
+            created_by=self.expert,
         )
         News.objects.create(
             case=case,
@@ -149,6 +152,42 @@ class TestExpertCaseAPI(TestCase):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Case.objects.filter(id=case.id).exists())
         self.assertFalse(News.objects.filter(case=case).exists())
+
+    def test_admin_can_modify_case_owned_by_other_user(self):
+        other_user = PtUser.objects.create(
+            name="Other Expert",
+            email="other@example.com",
+            password=make_password(str(uuid.uuid4())),
+            role="EXP_USER",
+        )
+        case = Case.objects.create(
+            id=uuid.uuid4(),
+            disease=self.disease_dbd,
+            location=self.loc_jakarta,
+            gender="L",
+            age=34,
+            city="Jakarta",
+            status="biasa",
+            severity="insiden",
+            created_by=other_user,
+        )
+        admin = PtUser.objects.create(
+            name="Admin",
+            email="admin@example.com",
+            password=make_password(str(uuid.uuid4())),
+            role="ADMIN",
+        )
+        self.client.force_authenticate(user=admin)
+        response = self.client.patch(
+            f"{EXPERT_CASES_BASE}{case.id}/",
+            {"status": "bahaya"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        case.refresh_from_db()
+        self.assertEqual(case.status, "bahaya")
+        # restore default auth for other tests
+        self.client.force_authenticate(user=self.expert)
 
     def test_case_list_filters_by_batch_param(self):
         batch_a = CaseUploadBatch.objects.create(uploaded_by=self.expert, filename="a.csv")
@@ -575,6 +614,67 @@ class TestExpertDatasetService(TestCase):
         self.assertEqual(dataset.file_name, "empty.csv")
         self.assertEqual(ExpertDatasetRow.objects.filter(dataset=dataset).count(), 0)
 
+    def test_build_dataset_sanitizes_formula_like_strings(self):
+        uploader = PtUser.objects.create(
+            name="Uploader",
+            email="uploader+sani@example.com",
+            password=make_password(str(uuid.uuid4())),
+            role="EXP_USER",
+        )
+        batch = CaseUploadBatch.objects.create(uploaded_by=uploader, filename="=evil.csv")
+        disease = Disease.objects.create(name="=DBD", level_of_alertness=1)
+        location = Location.objects.create(city="=Jakarta", province="+DKI")
+        case = Case.objects.create(
+            disease=disease,
+            location=location,
+            gender="=X",
+            age=18,
+            city="+City",
+            status="-status",
+            severity="@sev",
+            created_by=uploader,
+            batch=batch,
+        )
+        News.objects.create(
+            case=case,
+            portal="=Portal",
+            title="@=Title",
+            type="artikel",
+            content="-Content",
+            url="https://example.com/=1",
+            author="Author",
+            date_published=timezone.now(),
+            img_url="",
+        )
+
+        dataset = build_or_refresh_dataset_from_batch(batch)
+        row = ExpertDatasetRow.objects.get(dataset=dataset)
+
+        self.assertTrue(dataset.file_name.startswith("'"))
+        self.assertTrue(row.city.startswith("'"))
+        self.assertTrue(row.payload["news"]["title"].startswith("'"))
+
+
+class TestExpertDatasetSanitizeHelpers(SimpleTestCase):
+    def test_sanitize_export_string_handles_control_chars_and_formulas(self):
+        sanitized = expert_services._sanitize_export_string("\x00=\ncmd", max_length=6)
+        self.assertEqual(sanitized, "' = cm")
+        self.assertEqual(expert_services._sanitize_export_string(None), "")
+
+    def test_sanitize_payload_value_handles_nested_structures(self):
+        payload = {"a": "=1", "b": ["+2", ("-3", None)]}
+        sanitized = expert_services._sanitize_payload_value(payload)
+        self.assertEqual(sanitized["a"], "'=1")
+        self.assertEqual(sanitized["b"][0], "'+2")
+        self.assertIsInstance(sanitized["b"][1], tuple)
+        self.assertEqual(sanitized["b"][1][0], "'-3")
+        self.assertEqual(sanitized["b"][1][1], "")
+        self.assertEqual(expert_services._sanitize_payload_value(42), 42)
+        self.assertEqual(
+            expert_services._safe_filename("/tmp/=evil.csv", "fallback.csv"),
+            "'=evil.csv",
+        )
+
 
 class TestExpertDataLogView(TestCase):
     def setUp(self):
@@ -850,5 +950,3 @@ class TestExpertDatasetMirror(TestCase):
         self.assertTrue(ExpertDataset.objects.filter(data_id=str(b)).exists())
         self.assertTrue(ExpertDatasetRow.objects.filter(dataset__data_id=str(b)).exists())
         audit_mock.assert_called() 
-
-

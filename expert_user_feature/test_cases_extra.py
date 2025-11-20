@@ -47,6 +47,7 @@ class ExpertCaseErrorAPITests(TestCase):
             city="City A",
             status="biasa",
             severity="insiden",
+            created_by=self.user,
         )
 
     def test_patch_unknown_case_returns_404(self):
@@ -118,6 +119,50 @@ class ExpertCaseErrorAPITests(TestCase):
 
     def test_delete_unknown_case_returns_404(self):
         response = self.client.delete(f"{CASE_BASE}{uuid.uuid4()}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_patch_case_owned_by_other_user(self):
+        other_user = PtUser.objects.create(
+            name="Other",
+            email="other@example.com",
+            password="pwd",
+            role="EXP_USER",
+        )
+        foreign_case = Case.objects.create(
+            disease=self.disease,
+            location=self.location,
+            gender="P",
+            age=27,
+            city="City B",
+            status="biasa",
+            severity="insiden",
+            created_by=other_user,
+        )
+        response = self.client.patch(
+            f"{CASE_BASE}{foreign_case.id}/",
+            {"status": "bahaya"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_cannot_delete_case_owned_by_other_user(self):
+        other_user = PtUser.objects.create(
+            name="Other",
+            email="other2@example.com",
+            password="pwd",
+            role="EXP_USER",
+        )
+        foreign_case = Case.objects.create(
+            disease=self.disease,
+            location=self.location,
+            gender="P",
+            age=28,
+            city="City C",
+            status="bahaya",
+            severity="insiden",
+            created_by=other_user,
+        )
+        response = self.client.delete(f"{CASE_BASE}{foreign_case.id}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_csv_upload_requires_file(self):
