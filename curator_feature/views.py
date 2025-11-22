@@ -8,11 +8,13 @@ from django.conf import settings
 from django.shortcuts import render  # if unused, you can remove later
 from django.db.models import Q
 
+from rest_framework.exceptions import ValidationError, PermissionDenied, APIException
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from curator_feature.audittrail import log_curator_action
 
 from authentication.permissions import IsTokenAuthenticated
@@ -30,19 +32,23 @@ from curator_feature.serializers import (
     CaseReadSerializer,
     # audit logs
     CuratorDataLogSerializer,
+    ContributorSubmission,
+    ContributorSubmissionListSerializer,
+    ContributorSubmissionDetailSerializer,
 )
 from pt_backend.serializers import DiseaseSerializer
 from curator_feature.services import (
     ChartDataService,
     DashboardDownloadEventService,
     DownloadLogService,
+    ContributorSubmissionService
 )
 from curator_feature.value_objects import ClientMetadata
 from pt_backend.models import Case
 from .permissions import IsCuratorRole
 
 # models for audit logs
-from .models import CuratorDataLog, BackendCase
+from .models import CuratorDataLog, BackendCase, ContributorSubmission
 
 logger = logging.getLogger(__name__)
 
@@ -378,3 +384,97 @@ class CuratorDataLogListCreateAPIView(APIView):
             ser.save()
             return Response(ser.data, status=status.HTTP_201_CREATED)
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# LIST VIEW
+# ============================================================
+
+class ContributorSubmissionListView(_CuratorBaseView, generics.ListAPIView):
+    serializer_class = ContributorSubmissionListSerializer
+    service = ContributorSubmissionService()
+
+    def get_queryset(self):
+        search = self.request.query_params.get("search")
+        status_param = self.request.query_params.get("status")
+
+        try:
+            return self.service.list(search=search, status=status_param)
+        except Exception:
+            logger.exception("Unable to retrieve contributor submissions")
+            raise APIException("Unable to retrieve contributor submissions.")
+
+
+# ============================================================
+# DETAIL VIEW
+# ============================================================
+
+class ContributorSubmissionDetailView(_CuratorBaseView, generics.RetrieveAPIView):
+    queryset = ContributorSubmission.objects.all()
+    serializer_class = ContributorSubmissionDetailSerializer
+    lookup_field = "id"
+
+
+# ============================================================
+# STATUS UPDATE VIEW
+# ============================================================
+
+class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
+    """
+    PATCH /submissions/<id>/status/
+
+    Includes parser_classes → prevents DRF from failing with 415 Unsupported Media Type
+    when RequestFactory sends no content-type.
+    """
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    service = ContributorSubmissionService()
+
+    def patch(self, request, id):
+        # Extract new status safely
+        new_status = request.data.get("status")
+
+        # Basic validation
+        if new_status not in ["APPROVED", "REJECTED", "NEED_REVISION"]:
+            return Response(
+                {"error": "Invalid status"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            updated = self.service.update_status(
+                submission_id=id,
+                new_status=new_status,
+                reviewer=request.user,
+            )
+
+        except PermissionDenied as exc:
+            # RBAC violation (non-curator)
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        except ValidationError as exc:
+            # Any validation error from service layer
+            return Response(
+                exc.detail,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception:
+            # THIS IS WHAT THE LAST FAILING TEST EXPECTS → return 500
+            logger.exception("Error updating contributor submission status id=%s", id)
+            return Response(
+                {"detail": "Internal error while updating submission status."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Success
+        return Response(
+            ContributorSubmissionDetailSerializer(updated).data,
+            status=status.HTTP_200_OK,
+        )
