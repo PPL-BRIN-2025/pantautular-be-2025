@@ -1,9 +1,12 @@
+from datetime import datetime
+
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from django.test import TestCase
+from contributor_feature.views import ContributorCaseDetailView, ContributorCaseListCreateView
 
 from contributor_feature.models import ContributorApprovalRole, ContributorCaseSubmission
 from pt_backend.models import Case, Disease, Location, News, Role, User
@@ -161,3 +164,100 @@ class ContributorFeatureAPITests(TestCase):
             city__iexact="Newtown", province__iexact="New Province"
         )
         self.assertEqual(submission.location_id, location.id)
+
+class ContributorCaseModelMethodTests(TestCase):
+    def setUp(self):
+        self.role = Role.objects.create(name="CONTRIBUTOR")
+        self.user = User.objects.create(
+            name="Contributor",
+            email="test@example.com",
+            password="pwd",
+            role="CONTRIBUTOR",
+        )
+        self.disease = Disease.objects.create(name="Flu", level_of_alertness=1)
+        self.location = Location.objects.create(
+            city="Jakarta",
+            province="DKI Jakarta",
+            latitude=1.0,
+            longitude=106.0,
+        )
+
+        self.obj = ContributorCaseSubmission.objects.create(
+            gender="male",
+            age=20,
+            city="Jakarta",
+            status="biasa",
+            severity="insiden",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.user,
+        )
+
+    # ---------------------------------------------------------
+    # serialize_news_payload()
+    # ---------------------------------------------------------
+    def test_serialize_skips_none(self):
+        out = self.obj.serialize_news_payload({"a": None})
+        self.assertEqual(out, {})
+
+    def test_serialize_datetime_aware(self):
+        aware = timezone.now()
+        out = self.obj.serialize_news_payload({"dt": aware})
+        self.assertTrue(out["dt"].endswith("Z"))
+
+    def test_serialize_datetime_naive(self):
+        naive = datetime(2024, 1, 1, 8, 30, 0)
+        out = self.obj.serialize_news_payload({"dt": naive})
+        self.assertEqual(out["dt"], naive.isoformat())
+
+    def test_serialize_non_datetime(self):
+        out = self.obj.serialize_news_payload({"title": "Hello"})
+        self.assertEqual(out["title"], "Hello")
+
+    # ---------------------------------------------------------
+    # news_payload_for_case()
+    # ---------------------------------------------------------
+    def test_news_payload_empty(self):
+        self.obj.set_news_payload({})
+        self.assertEqual(self.obj.news_payload_for_case(), {})
+
+    def test_news_payload_skips_none_and_empty(self):
+        self.obj.set_news_payload({"x": None, "y": ""})
+        self.assertEqual(self.obj.news_payload_for_case(), {})
+
+    def test_news_payload_parses_date(self):
+        self.obj.set_news_payload({"date_published": "2024-02-01T10:00:00"})
+        out = self.obj.news_payload_for_case()
+        self.assertIsInstance(out.get("date_published"), datetime)
+
+    def test_news_payload_non_date_key(self):
+        self.obj.set_news_payload({"title": "Breaking News"})
+        out = self.obj.news_payload_for_case()
+        self.assertEqual(out["title"], "Breaking News")
+
+    # ---------------------------------------------------------
+    # _parse_date()
+    # ---------------------------------------------------------
+    def test_parse_date_none(self):
+        self.assertIsNone(self.obj._parse_date(None))
+
+    def test_parse_date_datetime_aware(self):
+        aware = timezone.now()
+        parsed = self.obj._parse_date(aware)
+        self.assertEqual(parsed, aware)
+
+    def test_parse_date_datetime_naive(self):
+        naive = datetime(2024, 1, 1, 10, 0, 0)
+        parsed = self.obj._parse_date(naive)
+        self.assertTrue(timezone.is_aware(parsed))
+
+    def test_parse_date_valid_string(self):
+        parsed = self.obj._parse_date("2024-02-02T12:00:00")
+        self.assertTrue(timezone.is_aware(parsed))
+
+    def test_parse_date_invalid_string_returns_now(self):
+        before = timezone.now()
+        parsed = self.obj._parse_date("not-a-date")
+        after = timezone.now()
+        self.assertTrue(before <= parsed <= after)
+
