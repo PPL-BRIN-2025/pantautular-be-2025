@@ -662,3 +662,294 @@ class ContributorSerializerLogicTests(TestCase):
         with self.assertRaises(serializers.ValidationError):
             ser.validate_roles([])
 
+class ContributorViewLogicTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+        self.role_contributor = Role.objects.create(name="CONTRIBUTOR")
+        self.role_curator = Role.objects.create(name="CURATOR")
+        self.role_admin = Role.objects.create(name="ADMIN")
+        ContributorApprovalRole.objects.create(role=self.role_curator)
+
+        self.contributor = User.objects.create(
+            name="Contributor",
+            email="contrib@example.com",
+            password="pwd",
+            role="CONTRIBUTOR",
+        )
+        self.curator = User.objects.create(
+            name="Curator",
+            email="curator@example.com",
+            password="pwd",
+            role="CURATOR",
+        )
+        self.admin = User.objects.create(
+            name="Admin",
+            email="admin@example.com",
+            password="pwd",
+            role="ADMIN",
+        )
+
+        self.disease = Disease.objects.create(name="Flu", level_of_alertness=1)
+        self.location = Location.objects.create(
+            city="Jakarta",
+            province="DKI",
+            latitude=1.0,
+            longitude=100.0,
+        )
+
+    def _auth(self, user):
+        self.client.force_authenticate(user=user)
+
+    # ----------------------------------------------------------------------
+    # get_serializer_class()
+    # ----------------------------------------------------------------------
+
+    def test_list_uses_read_serializer(self):
+        self._auth(self.contributor)
+        url = reverse("contributor-case-list")
+        request = self.client.get(url)
+        view = ContributorCaseListCreateView()
+        view.request = request.wsgi_request
+        self.assertEqual(view.get_serializer_class(), ContributorCaseReadSerializer)
+
+    def test_create_uses_write_serializer(self):
+        self._auth(self.contributor)
+        url = reverse("contributor-case-list")
+        request = self.client.post(url, {}, format="json")
+        view = ContributorCaseListCreateView()
+        view.request = request.wsgi_request
+        self.assertEqual(view.get_serializer_class(), ContributorCaseWriteSerializer)
+
+    # ----------------------------------------------------------------------
+    # get_queryset()
+    # ----------------------------------------------------------------------
+
+    def test_queryset_filters_created_by_for_non_approver(self):
+        # Created by curator (not visible to contributor)
+        ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.curator, updated_by=self.curator
+        )
+        # Created by contributor (visible)
+        visible = ContributorCaseSubmission.objects.create(
+            gender="m", age=2, city="B", status="y", severity="y",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-list")
+        response = self.client.get(url)
+
+        ids = [obj["id"] for obj in response.data]
+        self.assertEqual(ids, [str(visible.id)])
+
+
+    def test_queryset_state_filter(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="PENDING"
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-list") + "?state=pending"
+        response = self.client.get(url)
+
+        ids = [obj["id"] for obj in response.data]
+        self.assertIn(str(sub.id), ids)
+
+
+    # ----------------------------------------------------------------------
+    # get_object() access control
+    # ----------------------------------------------------------------------
+
+    def test_get_object_denied_for_non_author_non_approver(self):
+        other = User.objects.create(
+            name="X", email="x@x.com", password="pwd", role="CONTRIBUTOR"
+        )
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor
+        )
+
+        self._auth(other)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    # ----------------------------------------------------------------------
+    # perform_update()
+    # ----------------------------------------------------------------------
+
+    def test_update_rejected_for_non_approver_on_processed(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="APPROVED"
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.patch(url, {"city": "New"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_update_rejected_for_non_author_non_approver(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="PENDING"
+        )
+
+        self._auth(self.admin)  # admin is NOT approver unless configured
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.patch(url, {"city": "X"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_update_success_by_author(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="PENDING"
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.patch(url, {"city": "NewCity"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        sub.refresh_from_db()
+        self.assertEqual(sub.city, "NewCity")
+
+    # ----------------------------------------------------------------------
+    # perform_destroy()
+    # ----------------------------------------------------------------------
+
+    def test_delete_denied_non_author(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="PENDING"
+        )
+
+        self._auth(self.admin)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_denied_if_not_pending(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="APPROVED"
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_success(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="PENDING"
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 204)
+
+    # ----------------------------------------------------------------------
+    # ReviewView — pending check
+    # ----------------------------------------------------------------------
+
+    def test_review_denied_if_not_pending(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            state="APPROVED"
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-review", args=[sub.id])
+        response = self.client.post(url, {"action": "approve"}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already been reviewed", response.data["detail"])
+
+    # ----------------------------------------------------------------------
+    # Approve_submission() — news or no news
+    # ----------------------------------------------------------------------
+
+    def test_approve_without_news_does_not_create_news(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            news_payload={},
+            state="PENDING"
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-review", args=[sub.id])
+        response = self.client.post(url, {"action": "approve", "note": "ok"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(News.objects.count(), 0)
+
+    def test_approve_with_news_creates_news(self):
+        payload = {
+            "portal": "X",
+            "title": "Y",
+            "type": "Z",
+            "content": "C",
+            "url": "http://x.com",
+            "author": "A",
+            "date_published": timezone.now().isoformat(),
+            "img_url": "http://x.com/i.jpg"
+        }
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m", age=1, city="A", status="x", severity="x",
+            disease=self.disease, location=self.location,
+            created_by=self.contributor, updated_by=self.contributor,
+            news_payload=payload,
+            state="PENDING"
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-review", args=[sub.id])
+        response = self.client.post(url, {"action": "approve", "note": "ok"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(News.objects.count(), 1)
+
+    # ----------------------------------------------------------------------
+    # Approver roles GET
+    # ----------------------------------------------------------------------
+
+    def test_get_approver_roles(self):
+        self._auth(self.admin)
+        url = reverse("contributor-approver-roles")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("roles", response.data)
+        
+
+
+
