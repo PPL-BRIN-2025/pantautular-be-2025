@@ -261,3 +261,404 @@ class ContributorCaseModelMethodTests(TestCase):
         after = timezone.now()
         self.assertTrue(before <= parsed <= after)
 
+class ContributorApprovalRoleLogicTests(TestCase):
+    def setUp(self):
+        self.role_contrib = Role.objects.create(name="CONTRIBUTOR")
+        self.role_curator = Role.objects.create(name="CURATOR")
+        self.role_admin = Role.objects.create(name="ADMIN")
+
+        self.user_no_role = User.objects.create(
+            name="NoRole",
+            email="norole@example.com",
+            password="pwd",
+            role=""
+        )
+        self.user_curator = User.objects.create(
+            name="Curator",
+            email="curator@example.com",
+            password="pwd",
+            role="CURATOR"
+        )
+        self.user_admin = User.objects.create(
+            name="Admin",
+            email="admin@example.com",
+            password="pwd",
+            role="ADMIN"
+        )
+
+    # ---------------------------------------------------------------
+    # __str__ of ContributorCaseSubmission (red highlight)
+    # ---------------------------------------------------------------
+    def test_case_submission_str(self):
+        disease = Disease.objects.create(name="Malaria", level_of_alertness=1)
+        loc = Location.objects.create(
+            city="Depok",
+            province="Jawa Barat",
+            latitude=0,
+            longitude=0
+        )
+        submission = ContributorCaseSubmission.objects.create(
+            gender="M",
+            age=22,
+            city="Depok",
+            status="biasa",
+            severity="insiden",
+            disease=disease,
+            location=loc,
+            created_by=self.user_admin
+        )
+        self.assertEqual(
+            str(submission),
+            "Malaria - Depok (PENDING)"
+        )
+
+    # ---------------------------------------------------------------
+    # __str__ of ContributorApprovalRole (red highlight)
+    # ---------------------------------------------------------------
+    def test_approval_role_str(self):
+        ar = ContributorApprovalRole.objects.create(role=self.role_curator)
+        self.assertEqual(str(ar), "CURATOR approver")
+
+    # ---------------------------------------------------------------
+    # allowed_role_names() - both branches (yellow + red)
+    # ---------------------------------------------------------------
+    def test_allowed_role_names_when_records_exist(self):
+        ContributorApprovalRole.objects.create(role=self.role_curator)
+        ContributorApprovalRole.objects.create(role=self.role_admin)
+
+        allowed = ContributorApprovalRole.allowed_role_names()
+        self.assertEqual(allowed, {"CURATOR", "ADMIN"})
+
+    def test_allowed_role_names_when_no_records(self):
+        ContributorApprovalRole.objects.all().delete()
+
+        allowed = ContributorApprovalRole.allowed_role_names()
+        # DEFAULT_ROLE_NAMES = ("CURATOR", "ADMIN")
+        self.assertEqual(allowed, {"CURATOR", "ADMIN"})
+
+    # ---------------------------------------------------------------
+    # user_is_approver() - both branches
+    # ---------------------------------------------------------------
+    def test_user_is_approver_when_no_role(self):
+        self.assertFalse(ContributorApprovalRole.user_is_approver(self.user_no_role))
+
+    def test_user_is_approver_when_role_not_allowed(self):
+        # contributor role is not by default allowed
+        self.assertFalse(ContributorApprovalRole.user_is_approver(
+            User.objects.create(
+                name="X",
+                email="x@example.com",
+                password="pwd",
+                role="CONTRIBUTOR"
+            )
+        ))
+
+    def test_user_is_approver_when_role_allowed(self):
+        ContributorApprovalRole.objects.create(role=self.role_curator)
+        self.assertTrue(ContributorApprovalRole.user_is_approver(self.user_curator))
+
+    # ---------------------------------------------------------------
+    # set_allowed_roles() - tests entry + deletion logic (yellow zone)
+    # ---------------------------------------------------------------
+    def test_set_allowed_roles_creates_and_removes_roles(self):
+        # Initially only CURATOR is stored
+        ContributorApprovalRole.objects.create(role=self.role_curator)
+
+        # Set allowed roles to only ADMIN
+        ContributorApprovalRole.set_allowed_roles([self.role_admin])
+
+        # Only ADMIN should remain
+        result = list(
+            ContributorApprovalRole.objects.values_list("role__name", flat=True)
+        )
+        self.assertEqual(result, ["ADMIN"])
+
+    def test_set_allowed_roles_adds_missing_roles(self):
+        ContributorApprovalRole.objects.all().delete()
+
+        ContributorApprovalRole.set_allowed_roles([self.role_curator, self.role_admin])
+
+        names = set(
+            ContributorApprovalRole.objects.values_list("role__name", flat=True)
+        )
+        self.assertEqual(names, {"CURATOR", "ADMIN"})
+
+    def test_set_allowed_roles_only_creates_missing(self):
+        """
+        Ensure that set_allowed_roles() only creates ContributorApprovalRole
+        entries for roles NOT already present in 'existing'.
+        """
+
+        # Existing record: CURATOR is already in DB
+        ContributorApprovalRole.objects.create(role=self.role_curator)
+
+        # Now call set_allowed_roles with 2 roles:
+        # - CURATOR  (already exists -> SHOULD NOT create)
+        # - ADMIN    (missing -> SHOULD create)
+        ContributorApprovalRole.set_allowed_roles([self.role_curator, self.role_admin])
+
+        # Fetch results
+        saved_roles = list(
+            ContributorApprovalRole.objects.values_list("role__name", flat=True)
+        )
+
+        # Expected:
+        # CURATOR stays (not recreated)
+        # ADMIN is newly created
+        self.assertCountEqual(saved_roles, ["CURATOR", "ADMIN"])
+
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework import serializers
+
+from contributor_feature.serializers import (
+    ContributorCaseReadSerializer,
+    ContributorCaseWriteSerializer,
+    ContributorCaseReviewSerializer,
+    ContributorApprovalRoleUpdateSerializer,
+)
+from contributor_feature.models import ContributorCaseSubmission
+from pt_backend.models import Disease, Location, Role, User
+from curator_feature.serializers import LocationByNameSerializer, NewsInlineWriteSerializer
+
+from datetime import datetime
+
+
+class ContributorSerializerLogicTests(TestCase):
+    def setUp(self):
+        self.role1 = Role.objects.create(name="CURATOR")
+        self.role2 = Role.objects.create(name="ADMIN")
+
+        self.user = User.objects.create(
+            name="tester",
+            email="t@example.com",
+            password="pwd",
+            role="CURATOR",
+        )
+
+        Location.objects.create(
+            city="Jakarta",
+            province="DKI",
+            latitude=0.0,
+            longitude=0.0,
+        )
+
+        self.write_base = {
+            "gender": "M",
+            "age": 22,
+            "city": "Jakarta",
+            "status": "biasa",
+            "severity": "insiden",
+        }
+
+    # ---------------------------------------------------------
+    # _resolve_disease_id Tests
+    # ---------------------------------------------------------
+    def test_resolve_disease_missing(self):
+        ser = ContributorCaseWriteSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser._resolve_disease_id(None)
+
+    def test_resolve_disease_blank(self):
+        ser = ContributorCaseWriteSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser._resolve_disease_id("   ")
+
+    def test_resolve_disease_existing(self):
+        d = Disease.objects.create(name="Flu", level_of_alertness=1)
+        ser = ContributorCaseWriteSerializer()
+        result = ser._resolve_disease_id("flu")
+        self.assertEqual(result, d.id)
+
+    def test_resolve_disease_create_new(self):
+        ser = ContributorCaseWriteSerializer()
+        result = ser._resolve_disease_id("NewVirus")
+        self.assertTrue(Disease.objects.filter(name="NewVirus").exists())
+
+    # ---------------------------------------------------------
+    # _resolve_location tests
+    # ---------------------------------------------------------
+    def test_resolve_location_missing_payload(self):
+        ser = ContributorCaseWriteSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser._resolve_location(None)
+
+    def test_resolve_location_valid(self):
+        ser = ContributorCaseWriteSerializer()
+        data = {"city": "Jakarta"}
+        loc = ser._resolve_location(data)
+        self.assertIsInstance(loc, Location)
+
+    # ---------------------------------------------------------
+    # _normalize_news_payload tests
+    # ---------------------------------------------------------
+    def test_normalize_news_missing(self):
+        ser = ContributorCaseWriteSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser._normalize_news_payload(None)
+
+    def test_normalize_news_valid(self):
+        ser = ContributorCaseWriteSerializer()
+        data = {
+            "portal": "Portal",
+            "title": "News",
+            "type": "Article",
+            "content": "Body",
+            "url": "https://example.com",
+            "author": "John",
+            "date_published": timezone.now(),
+            "img_url": "https://example.com/img.jpg",
+        }
+        result = ser._normalize_news_payload(data)
+        self.assertIn("title", result)
+
+    # ---------------------------------------------------------
+    # update() tests
+    # ---------------------------------------------------------
+    def test_update_disease_location_news(self):
+        old_disease = Disease.objects.create(name="OldX", level_of_alertness=1)
+        loc = Location.objects.get(city="Jakarta")
+
+        instance = ContributorCaseSubmission.objects.create(
+            gender="M",
+            age=22,
+            city="Jakarta",
+            status="biasa",
+            severity="insiden",
+            disease=old_disease,
+            location=loc,
+            created_by=self.user,
+        )
+
+        new_loc_payload = {"city": "Jakarta"}  # valid LocationByNameSerializer input
+        new_news_payload = {
+            "portal": "Portal",
+            "title": "Updated",
+            "type": "Article",
+            "content": "Content",
+            "url": "https://news.com",
+            "author": "A",
+            "date_published": timezone.now(),
+            "img_url": "https://img.com",
+        }
+
+        ser = ContributorCaseWriteSerializer()
+        validated = {
+            "disease": "NewDisease",
+            "location": new_loc_payload,
+            "news": new_news_payload,
+            "city": "Depok",
+        }
+
+        updated = ser.update(instance, validated)
+
+        # disease updated
+        self.assertEqual(updated.disease.name, "NewDisease")
+        # location updated
+        self.assertEqual(updated.location.city.lower(), "jakarta")
+        # news updated
+        self.assertIn("title", updated.get_news_payload())
+        # normal field updated
+        self.assertEqual(updated.city, "Depok")
+
+    # ---------------------------------------------------------
+    # ContributorCaseReviewSerializer.validate
+    # ---------------------------------------------------------
+    def test_review_reject_without_note(self):
+        ser = ContributorCaseReviewSerializer(data={"action": "reject", "note": ""})
+        with self.assertRaises(serializers.ValidationError):
+            ser.is_valid(raise_exception=True)
+
+    def test_review_approve_without_note(self):
+        ser = ContributorCaseReviewSerializer(data={"action": "approve", "note": ""})
+        self.assertTrue(ser.is_valid())
+
+    def test_review_reject_with_note(self):
+        ser = ContributorCaseReviewSerializer(data={"action": "reject", "note": "ok"})
+        self.assertTrue(ser.is_valid())
+
+    # ---------------------------------------------------------
+    # ContributorApprovalRoleUpdateSerializer.validate_roles
+    # ---------------------------------------------------------
+    def test_validate_roles_blank(self):
+        ser = ContributorApprovalRoleUpdateSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser.validate_roles([" "])
+
+    def test_validate_roles_duplicate(self):
+        ser = ContributorApprovalRoleUpdateSerializer()
+        Role.objects.create(name="Tester")
+        result = ser.validate_roles(["Tester", "tester"])
+        self.assertEqual(result, ["Tester"])
+
+    def test_validate_roles_not_found(self):
+        ser = ContributorApprovalRoleUpdateSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser.validate_roles(["DoesNotExist"])
+
+    def test_validate_roles_success(self):
+        ser = ContributorApprovalRoleUpdateSerializer()
+        Role.objects.create(name="A")
+        Role.objects.create(name="B")
+        result = ser.validate_roles(["A", "B"])
+        self.assertEqual(set(result), {"A", "B"})
+
+    def test_update_only_disease(self):
+        instance = ContributorCaseSubmission.objects.create(
+            gender="M", age=20, city="A", status="biasa",
+            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1), 
+            location=Location.objects.first(), created_by=self.user
+        )
+
+        ser = ContributorCaseWriteSerializer()
+        updated = ser.update(instance, {"disease": "NewX"})
+
+        self.assertEqual(updated.disease.name, "NewX")
+
+
+    def test_update_only_location(self):
+        old = Location.objects.get(city="Jakarta")
+        instance = ContributorCaseSubmission.objects.create(
+            gender="M", age=20, city="A", status="biasa",
+            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1),
+            location=old, created_by=self.user
+        )
+
+        ser = ContributorCaseWriteSerializer()
+        updated = ser.update(instance, {"location": {"city": "Jakarta"}})
+
+        self.assertEqual(updated.location.city.lower(), "jakarta")
+
+
+    def test_update_only_news(self):
+        instance = ContributorCaseSubmission.objects.create(
+            gender="M", age=20, city="A", status="biasa",
+            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1),
+            location=Location.objects.first(), created_by=self.user
+        )
+
+        news = {
+            "portal": "P",
+            "title": "T",
+            "type": "Article",
+            "content": "C",
+            "url": "https://x.com",
+            "author": "A",
+            "date_published": timezone.now(),
+            "img_url": "https://img.com"
+        }
+
+        ser = ContributorCaseWriteSerializer()
+        updated = ser.update(instance, {"news": news})
+
+        self.assertIn("title", updated.get_news_payload())
+
+    def test_validate_roles_cleaned_empty_final_branch(self):
+        """
+        Directly call the validator with an empty list to cover:
+        if not cleaned: raise ValidationError("Provide at least one valid role.")
+        """
+        ser = ContributorApprovalRoleUpdateSerializer()
+        with self.assertRaises(serializers.ValidationError):
+            ser.validate_roles([])
+
