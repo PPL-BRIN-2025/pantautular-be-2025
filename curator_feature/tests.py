@@ -13,11 +13,13 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers, status
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied, ValidationError as DRFValidationError
 from rest_framework.test import APIClient, APIRequestFactory, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -1803,6 +1805,20 @@ class ContributorSubmissionAPITests(TestCase):
         self.sub1.refresh_from_db()
         self.assertEqual(self.sub1.status, "APPROVED")
 
+    def test_curator_can_request_revision_with_note(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        payload = {"status": "NEED_REVISION", "note": "lengkapi data demografi"}
+
+        res = self.client.patch(url, payload, format="json")
+        self.assertEqual(res.status_code, 200)
+
+        self.sub1.refresh_from_db()
+        self.assertEqual(self.sub1.status, "NEED_REVISION")
+
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertEqual(latest.title, "Submission NEED_REVISION")
+        self.assertEqual(latest.note, payload["note"])
+
     def test_invalid_status_returns_400(self):
         url = self.BASE_STATUS.format(id=self.sub1.id)
         res = self.client.patch(url, {"status": "NOT_VALID"}, format="json")
@@ -1877,6 +1893,17 @@ class ContributorSubmissionServiceTests(TestCase):
         res = self.service.list(status="APPROVED")
         self.assertEqual(len(res), 1)
 
+    def test_list_filters_need_revision_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save()
+
+        results = self.service.list(status="NEED_REVISION")
+        self.assertEqual(len(results), 1)
+
+    def test_list_invalid_status_raises_validation_error(self):
+        with self.assertRaises(ValidationError):
+            self.service.list(status="NOT_A_STATUS")
+
     def test_get_success(self):
         found = self.service.get(self.sub.id)
         self.assertEqual(found.id, self.sub.id)
@@ -1889,6 +1916,70 @@ class ContributorSubmissionServiceTests(TestCase):
         )
         self.assertEqual(updated.status, "REJECTED")
         self.assertTrue(CuratorDataLog.objects.filter(data_id=self.sub.id).exists())
+
+    def test_update_status_supports_revision_and_logs_note(self):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="NEED_REVISION",
+            reviewer=self.curator,
+            note="butuh bukti laboratorium",
+        )
+
+        self.assertEqual(updated.status, "NEED_REVISION")
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertIn("NEED_REVISION", latest.title)
+        self.assertEqual(latest.note, "butuh bukti laboratorium")
+
+    def test_update_status_requires_curator_role(self):
+        non_curator = type("User", (), {"role": "CONTRIBUTOR"})()
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=non_curator,
+            )
+
+    def test_update_status_rejects_invalid_new_status(self):
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="BOGUS",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_terminal_submission(self):
+        self.sub.status = "APPROVED"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="REJECTED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_requires_reviewable_state(self):
+        # simulate unexpected legacy status to cover branch
+        self.sub.status = "LEGACY_STATE"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_same_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="NEED_REVISION",
+                reviewer=self.curator,
+            )
 
     @patch("curator_feature.services.log_curator_action", side_effect=Exception("boom"))
     def test_update_status_log_failure_does_not_crash(self, mock_log):
@@ -1971,3 +2062,36 @@ class ContributorSubmissionViewExceptionTests(TestCase):
 
         self.assertEqual(res.status_code, 500)
 
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFPermissionDenied("forbidden"))
+    def test_status_update_handles_permission_denied(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CONTRIBUTOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("forbidden", res.data.get("detail", "").lower())
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFValidationError({"status": "bad"}))
+    def test_status_update_handles_validation_error(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CURATOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("status", res.data)

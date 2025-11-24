@@ -436,9 +436,11 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
     def patch(self, request, id):
         # Extract new status safely
         new_status = request.data.get("status")
+        note = request.data.get("note", "")
 
         # Basic validation
-        if new_status not in ["APPROVED", "REJECTED", "NEED_REVISION"]:
+        allowed_statuses = ContributorSubmissionService.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}
+        if new_status not in allowed_statuses:
             return Response(
                 {"error": "Invalid status"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -449,6 +451,7 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
                 submission_id=id,
                 new_status=new_status,
                 reviewer=request.user,
+                note=note,
             )
 
         except PermissionDenied as exc:
