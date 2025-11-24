@@ -2104,3 +2104,120 @@ class ContributorSubmissionViewExceptionTests(TestCase):
 
         self.assertEqual(res.status_code, 400)
         self.assertIn("status", res.data)
+        
+# ============================================================
+# CONTRIBUTOR SUBMISSION – NEW FIELDS & MARK-SEEN TESTS
+# ============================================================
+
+class ContributorSubmissionNewFieldsTests(TestCase):
+    def test_model_defaults(self):
+        """Ensure new fields have correct default values."""
+        sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="Title",
+            content="Content",
+            submitted_by="alice",
+        )
+
+        self.assertFalse(sub.has_unseen_update)
+        self.assertIsNone(sub.last_notified_status)
+        self.assertIsNotNone(sub.created_at)
+        self.assertIsNone(sub.reviewed_at)
+
+
+class ContributorSubmissionSerializerNewFieldsTests(TestCase):
+    def test_list_serializer_includes_hasUnseenUpdate(self):
+        sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="T",
+            content="C",
+            submitted_by="alice",
+            has_unseen_update=True,
+        )
+
+        from curator_feature.serializers import ContributorSubmissionListSerializer
+        data = ContributorSubmissionListSerializer(sub).data
+
+        self.assertIn("hasUnseenUpdate", data)
+        self.assertTrue(data["hasUnseenUpdate"])
+
+    def test_detail_serializer_includes_lastNotifiedStatus(self):
+        sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="T",
+            content="C",
+            submitted_by="alice",
+            has_unseen_update=True,
+            last_notified_status="REJECTED",
+        )
+
+        from curator_feature.serializers import ContributorSubmissionDetailSerializer
+        data = ContributorSubmissionDetailSerializer(sub).data
+
+        self.assertTrue(data["hasUnseenUpdate"])
+        self.assertEqual(data["lastNotifiedStatus"], "REJECTED")
+
+
+class ContributorSubmissionServiceFlagTests(TestCase):
+    def setUp(self):
+        self.service = ContributorSubmissionService()
+        self.curator = PtUser.objects.create(
+            id=1234,
+            name="Curator",
+            email="c@example.com",
+            password="x",
+            role="CURATOR",
+        )
+        self.sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="X",
+            content="Y",
+            submitted_by="bob",
+        )
+
+    def test_status_update_sets_unseen_and_notified_fields(self):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="APPROVED",
+            reviewer=self.curator,
+        )
+
+        self.assertTrue(updated.has_unseen_update)
+        self.assertEqual(updated.last_notified_status, "APPROVED")
+
+
+class ContributorSubmissionMarkSeenAPI(TestCase):
+    """
+    Covers PATCH /submissions/<id>/mark-seen/
+    """
+    def setUp(self):
+        self.client = APIClient()
+        self.user = PtUser.objects.create(
+            name="Curator",
+            email="c@example.com",
+            password="x",
+            role="CURATOR",
+        )
+        token = RefreshToken.for_user(self.user).access_token
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        self.sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="A",
+            content="B",
+            submitted_by="alice",
+            has_unseen_update=True,
+        )
+
+    def test_mark_seen_resets_flag(self):
+        url = f"/curator-feature/submissions/{self.sub.id}/mark-seen/"
+        res = self.client.patch(url, format="json")
+
+        self.assertEqual(res.status_code, 200)
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.has_unseen_update)
+
+    def test_mark_seen_404_when_not_found(self):
+        url = "/curator-feature/submissions/00000000-0000-0000-0000-000000000000/mark-seen/"
+        res = self.client.patch(url, format="json")
+        self.assertEqual(res.status_code, 404)
