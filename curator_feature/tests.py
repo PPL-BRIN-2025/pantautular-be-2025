@@ -13,12 +13,13 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers, status
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied, ValidationError as DRFValidationError
 from rest_framework.test import APIClient, APIRequestFactory, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -2061,3 +2062,36 @@ class ContributorSubmissionViewExceptionTests(TestCase):
 
         self.assertEqual(res.status_code, 500)
 
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFPermissionDenied("forbidden"))
+    def test_status_update_handles_permission_denied(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CONTRIBUTOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("forbidden", res.data.get("detail", "").lower())
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFValidationError({"status": "bad"}))
+    def test_status_update_handles_validation_error(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CURATOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("status", res.data)
