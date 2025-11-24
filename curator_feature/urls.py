@@ -10,7 +10,10 @@ from curator_feature.views import (
     CuratorCaseDetailView,
     DiseaseListCreateView,
     CuratorDiseaseListCreateView,
-    CuratorDataLogListCreateAPIView,  
+    CuratorDataLogListCreateAPIView,
+    ContributorSubmissionListView,
+    ContributorSubmissionDetailView,
+    ContributorSubmissionStatusUpdateView
 )
 
 urlpatterns = [
@@ -30,4 +33,10 @@ urlpatterns = [
 
     # --- Curator audit logs endpoint ---
     path("api/curator/audit-logs/", CuratorDataLogListCreateAPIView.as_view(), name="curator_audit_logs"),
+    # contributor submissions for review
+    path("submissions/", ContributorSubmissionListView.as_view(), name="curator-submission-list"),
+    path("submissions/<uuid:id>/", ContributorSubmissionDetailView.as_view(), name="curator-submission-detail"),
+    path("submissions/<uuid:id>/status/", ContributorSubmissionStatusUpdateView.as_view(), name="curator-submission-status"),
+    path("curator/submissions/<uuid:id>/status/", ContributorSubmissionStatusUpdateView.as_view(), name="curator-submission-status-alias",
+    ),
 ]

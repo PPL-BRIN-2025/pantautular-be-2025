@@ -6,11 +6,14 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache as default_cache
-from django.db import DatabaseError, transaction
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.db import DatabaseError, transaction, models
+from django.db.models import Q
 from django.utils import timezone
 
-from curator_feature.models import DashboardDownloadEvent, DownloadLog
+from curator_feature.models import DashboardDownloadEvent, DownloadLog, ContributorSubmission
 from curator_feature.value_objects import ClientMetadata
+from curator_feature.audittrail import log_curator_action
 from pt_backend.repositories import CaseRepository
 from pt_backend.services import CacheService, CaseService, CasesFilterService
 from pt_backend.statistics.coordinator import StatisticsCoordinator
@@ -393,3 +396,76 @@ def log_curator_edit(*, user, data_id, title=None, note=None):
         last_edited=timezone.now(),
         note=note or "",
     )
+
+
+
+
+class ContributorSubmissionService:
+    """Service layer to encapsulate submission business logic."""
+
+    VALID_STATUSES = {choice[0] for choice in ContributorSubmission.STATUS_CHOICES}
+    TERMINAL_STATUSES = {"APPROVED", "REJECTED"}
+    REVIEWABLE_STATUSES = {"WAITING_FOR_APPROVAL", "NEED_REVISION"}
+
+    # SAFE LIST QUERYING
+    def list(self, *, search=None, status=None):
+        qs = ContributorSubmission.objects.all()
+
+        if search:
+            qs = qs.filter(
+                Q(title__icontains=search) | Q(submitted_by__icontains=search)
+            )
+
+        if status:
+            if status not in self.VALID_STATUSES:
+                raise ValidationError({"status": "Invalid status filter."})
+            qs = qs.filter(status=status)
+
+        return qs.order_by("-created_at")
+
+    # SAFE GET
+    def get(self, submission_id):
+        try:
+            return ContributorSubmission.objects.get(id=submission_id)
+        except ObjectDoesNotExist:
+            raise ValidationError({"id": "Submission not found."})
+
+    # UPDATE STATUS WITH RBAC + VALIDATION
+    @transaction.atomic
+    def update_status(self, *, submission_id, new_status, reviewer, note: Optional[str] = None):
+        if reviewer.role != "CURATOR":
+            raise ValidationError({"role": "Only CURATOR can review submissions."})
+
+        if new_status not in self.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}:
+            raise ValidationError({"status": "Invalid status provided."})
+
+        sub = self.get(submission_id)
+
+        # enforce workflow transitions
+        if sub.status in self.TERMINAL_STATUSES:
+            raise ValidationError({"status": "Submission has been finalized and cannot be changed."})
+
+        if sub.status not in self.REVIEWABLE_STATUSES:
+            raise ValidationError({"status": "Submission is not in a reviewable state."})
+
+        if sub.status == new_status:
+            raise ValidationError({"status": "Submission already has the requested status."})
+
+        sub.status = new_status
+        sub.reviewed_at = timezone.now()
+        sub.save(update_fields=["status", "reviewed_at"])
+
+        # audit log (safe)
+        try:
+            audit_note = note or f"Contributor submission reviewed: {new_status}"
+            log_curator_action(
+                user=reviewer,
+                data_id=sub.id,
+                title=f"Submission {new_status}",
+                note=audit_note,
+            )
+        except Exception:
+            # never crash status update because of audit log failure
+            logger.exception("audit log failed during submission review")
+
+        return sub

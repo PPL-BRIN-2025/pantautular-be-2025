@@ -104,3 +104,40 @@ class DashboardDownloadEvent(models.Model):
         created = self.created_at.isoformat() if self.created_at else "unknown"
         return f"{self.get_metric_display()} ({self.file_format}) @ {created}"
     
+
+class ContributorSubmission(models.Model):
+    STATUS_CHOICES = [
+        ("WAITING_FOR_APPROVAL", "Waiting for Approval"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+        ("NEED_REVISION", "Need Revision"),
+    ]
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    title = models.CharField(max_length=255)
+    content = models.TextField(blank=True, default="")
+    submitted_by = models.CharField(max_length=150)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="WAITING_FOR_APPROVAL")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "contributor_submissions"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["submitted_by"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["title"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        # prevent updates to title/content after review
+        if self.pk:
+            old = ContributorSubmission.objects.filter(pk=self.pk).first()
+            if old and old.status != "WAITING_FOR_APPROVAL":
+                raise ValueError("Reviewed submissions cannot be modified.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Contributor submissions cannot be deleted (audit requirement).")

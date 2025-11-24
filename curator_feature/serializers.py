@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import CuratorDataLog, DashboardDownloadEvent, DownloadLog
+from .models import CuratorDataLog, DashboardDownloadEvent, DownloadLog, ContributorSubmission
 from curator_feature.value_objects import ChartFilters
 from pt_backend.models import Case, Disease, Location, News
 
@@ -319,3 +319,22 @@ class CaseReadSerializer(serializers.ModelSerializer):
             "news",
             "batch",      # ✅ NEW
         ]
+
+
+class ContributorSubmissionListSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="submitted_by", read_only=True)
+
+    class Meta:
+        model = ContributorSubmission
+        fields = ("id", "title", "status", "username", "created_at")
+
+
+class ContributorSubmissionDetailSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="submitted_by", read_only=True)
+
+    class Meta:
+        model = ContributorSubmission
+        fields = (
+            "id", "title", "content", "status",
+            "username", "created_at", "reviewed_at",
+        )

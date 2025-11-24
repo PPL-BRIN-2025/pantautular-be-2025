@@ -13,15 +13,17 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
+from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import serializers, status
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied, ValidationError as DRFValidationError
 from rest_framework.test import APIClient, APIRequestFactory, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from curator_feature.models import CuratorDataLog, DashboardDownloadEvent, DownloadLog
+from curator_feature.models import CuratorDataLog, DashboardDownloadEvent, DownloadLog, ContributorSubmission, CuratorDataLog
 from curator_feature.permissions import IsCuratorRole
 from pt_backend.models import Case, Disease, Location, News, User as PtUser
 
@@ -33,12 +35,15 @@ from curator_feature.serializers import (
     DownloadLogRequestSerializer,
     DownloadLogResponseSerializer,
 )
-from curator_feature.services import ChartDataService, DashboardDownloadEventService, DownloadLogService
+from curator_feature.services import ChartDataService, DashboardDownloadEventService, DownloadLogService, ContributorSubmissionService
 from curator_feature.views import (
     ChartDataAPIView,
     DashboardDownloadEventAPIView,
     DownloadLogAPIView,
     ChartsSimpleView,
+    ContributorSubmissionListView,
+    ContributorSubmissionStatusUpdateView,
+
 )
 from curator_feature.value_objects import ClientMetadata
 
@@ -1708,3 +1713,385 @@ class CaseReadSerializerTests(SimpleTestCase):
     def test_get_batch_handles_missing_batch(self):
         serializer = CaseReadSerializer()
         self.assertIsNone(serializer.get_batch(SimpleNamespace(batch=None)))
+
+
+# CONTRIBUTOR SUBMISSION API TESTS
+import uuid
+from unittest.mock import patch, MagicMock
+
+class ContributorSubmissionAPITests(TestCase):
+    BASE_LIST   = "/curator-feature/submissions/"
+    BASE_DETAIL = "/curator-feature/submissions/{id}/"
+    BASE_STATUS = "/curator-feature/submissions/{id}/status/"
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # users
+        self.curator = PtUser.objects.create(
+            id=1001,
+            name="Curator One",
+            email="curator@example.com",
+            password="x",
+            role="CURATOR",
+        )
+        self.non_curator = PtUser.objects.create(
+            id=2002,
+            name="Contributor",
+            email="contrib@example.com",
+            password="x",
+            role="CONTRIBUTOR",
+        )
+
+        # authenticate as curator
+        token = RefreshToken.for_user(self.curator).access_token
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        # seed submissions
+        self.sub1 = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="Kasus A",
+            content="Isi A",
+            submitted_by="userA",
+            status="WAITING_FOR_APPROVAL",
+        )
+        self.sub2 = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="Kasus B",
+            content="Isi B",
+            submitted_by="userB",
+            status="APPROVED",
+        )
+
+    # ------------------
+    # LIST TESTS
+    # ------------------
+    def test_list_submissions_ok(self):
+        res = self.client.get(self.BASE_LIST)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 2)
+        self.assertIn("title", res.data[0])
+
+    def test_list_submissions_filter_by_status(self):
+        res = self.client.get(self.BASE_LIST, {"status": "APPROVED"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]["status"], "APPROVED")
+
+    def test_list_submissions_search(self):
+        res = self.client.get(self.BASE_LIST, {"search": "Kasus A"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data), 1)
+        self.assertEqual(res.data[0]["title"], "Kasus A")
+
+    # ------------------
+    # DETAIL TEST
+    # ------------------
+    def test_retrieve_submission(self):
+        url = self.BASE_DETAIL.format(id=self.sub1.id)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["id"], str(self.sub1.id))
+        self.assertEqual(res.data["title"], "Kasus A")
+
+    # ------------------
+    # STATUS UPDATE TESTS
+    # ------------------
+    def test_curator_can_update_status(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        res = self.client.patch(url, {"status": "APPROVED"}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+        self.sub1.refresh_from_db()
+        self.assertEqual(self.sub1.status, "APPROVED")
+
+    def test_curator_can_request_revision_with_note(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        payload = {"status": "NEED_REVISION", "note": "lengkapi data demografi"}
+
+        res = self.client.patch(url, payload, format="json")
+        self.assertEqual(res.status_code, 200)
+
+        self.sub1.refresh_from_db()
+        self.assertEqual(self.sub1.status, "NEED_REVISION")
+
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertEqual(latest.title, "Submission NEED_REVISION")
+        self.assertEqual(latest.note, payload["note"])
+
+    def test_invalid_status_returns_400(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        res = self.client.patch(url, {"status": "NOT_VALID"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_status_update_creates_audit_log(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        self.client.patch(url, {"status": "REJECTED"}, format="json")
+
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertEqual(latest.title, "Submission REJECTED")
+        self.assertEqual(str(latest.data_id), str(self.sub1.id))
+
+    # ------------------
+    # PERMISSIONS TESTS
+    # ------------------
+    def test_non_curator_cannot_update_status(self):
+        token = RefreshToken.for_user(self.non_curator).access_token
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        res = self.client.patch(url, {"status": "APPROVED"}, format="json")
+
+        self.assertEqual(res.status_code, 403)
+
+    def test_anonymous_cannot_access(self):
+        anon = APIClient()
+        res = anon.get(self.BASE_LIST)
+        self.assertEqual(res.status_code, 401)
+
+    # ------------------
+    # IMMUTABILITY TESTS
+    # ------------------
+    def test_reviewed_submission_cannot_be_modified(self):
+        self.sub1.status = "APPROVED"
+        self.sub1.reviewed_at = timezone.now()
+        self.sub1.save()
+
+        self.sub1.title = "Edited Title"
+        with self.assertRaises(ValueError):
+            self.sub1.save()
+
+    def test_submission_cannot_be_deleted(self):
+        with self.assertRaises(ValueError):
+            self.sub1.delete()
+
+
+# ============================================================
+# SERVICE TESTS
+# ============================================================
+
+class ContributorSubmissionServiceTests(TestCase):
+    def setUp(self):
+        self.service = ContributorSubmissionService()
+        self.curator = PtUser.objects.create(
+            id=4444, name="Curator X", email="cx@example.com", password="x", role="CURATOR"
+        )
+        self.sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="Sub",
+            content="C",
+            submitted_by="tester",
+        )
+
+    def test_list_filters_by_search(self):
+        res = self.service.list(search="Sub")
+        self.assertEqual(len(res), 1)
+
+    def test_list_filters_by_status(self):
+        self.sub.status = "APPROVED"
+        self.sub.save()
+        res = self.service.list(status="APPROVED")
+        self.assertEqual(len(res), 1)
+
+    def test_list_filters_need_revision_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save()
+
+        results = self.service.list(status="NEED_REVISION")
+        self.assertEqual(len(results), 1)
+
+    def test_list_invalid_status_raises_validation_error(self):
+        with self.assertRaises(ValidationError):
+            self.service.list(status="NOT_A_STATUS")
+
+    def test_get_success(self):
+        found = self.service.get(self.sub.id)
+        self.assertEqual(found.id, self.sub.id)
+
+    def test_update_status_updates_and_logs(self):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="REJECTED",
+            reviewer=self.curator,
+        )
+        self.assertEqual(updated.status, "REJECTED")
+        self.assertTrue(CuratorDataLog.objects.filter(data_id=self.sub.id).exists())
+
+    def test_update_status_supports_revision_and_logs_note(self):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="NEED_REVISION",
+            reviewer=self.curator,
+            note="butuh bukti laboratorium",
+        )
+
+        self.assertEqual(updated.status, "NEED_REVISION")
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertIn("NEED_REVISION", latest.title)
+        self.assertEqual(latest.note, "butuh bukti laboratorium")
+
+    def test_update_status_requires_curator_role(self):
+        non_curator = type("User", (), {"role": "CONTRIBUTOR"})()
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=non_curator,
+            )
+
+    def test_update_status_rejects_invalid_new_status(self):
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="BOGUS",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_terminal_submission(self):
+        self.sub.status = "APPROVED"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="REJECTED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_requires_reviewable_state(self):
+        # simulate unexpected legacy status to cover branch
+        self.sub.status = "LEGACY_STATE"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_same_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="NEED_REVISION",
+                reviewer=self.curator,
+            )
+
+    @patch("curator_feature.services.log_curator_action", side_effect=Exception("boom"))
+    def test_update_status_log_failure_does_not_crash(self, mock_log):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="APPROVED",
+            reviewer=self.curator,
+        )
+        self.assertEqual(updated.status, "APPROVED")
+
+
+# ============================================================
+# SERIALIZER TESTS
+# ============================================================
+
+class ContributorSubmissionSerializerTests(TestCase):
+    def test_list_serializer_fields(self):
+        sub = ContributorSubmission(
+            id=uuid.uuid4(),
+            title="A",
+            content="C",
+            submitted_by="u1",
+            status="WAITING_FOR_APPROVAL",
+        )
+
+        from curator_feature.serializers import ContributorSubmissionListSerializer
+        data = ContributorSubmissionListSerializer(sub).data
+
+        self.assertIn("username", data)
+        self.assertEqual(data["username"], "u1")
+        self.assertEqual(data["title"], "A")
+
+    def test_detail_serializer_fields(self):
+        sub = ContributorSubmission(
+            id=uuid.uuid4(),
+            title="Detail",
+            content="C",
+            submitted_by="u2",
+            status="APPROVED",
+        )
+
+        from curator_feature.serializers import ContributorSubmissionDetailSerializer
+        data = ContributorSubmissionDetailSerializer(sub).data
+
+        self.assertEqual(data["username"], "u2")
+        self.assertIn("content", data)
+
+
+# ============================================================
+# VIEW EXCEPTION TESTS
+# ============================================================
+
+class ContributorSubmissionViewExceptionTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionListView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionListView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.list", side_effect=Exception("boom"))
+    def test_list_view_handles_error(self, mock_service, *_):
+        req = self.factory.get("/curator/submissions/")
+        req.user = MagicMock(role="CURATOR")
+
+        res = ContributorSubmissionListView.as_view()(req)
+        self.assertEqual(res.status_code, 500)
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=Exception("boom"))
+    def test_status_update_handles_error(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CURATOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 500)
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFPermissionDenied("forbidden"))
+    def test_status_update_handles_permission_denied(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CONTRIBUTOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("forbidden", res.data.get("detail", "").lower())
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status", side_effect=DRFValidationError({"status": "bad"}))
+    def test_status_update_handles_validation_error(self, mock_service, *_):
+        req = self.factory.patch(
+            "/curator/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json"
+        )
+        req.user = MagicMock(role="CURATOR")
+
+        from curator_feature.views import ContributorSubmissionStatusUpdateView
+        res = ContributorSubmissionStatusUpdateView.as_view()(req, id="uuid")
+
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("status", res.data)

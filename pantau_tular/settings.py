@@ -52,6 +52,13 @@ SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
 _secret_keys_env = [item.strip() for item in os.getenv("SECRET_API_KEYS", "").split(",") if item.strip()]
 SECRET_API_KEYS = tuple(dict.fromkeys([SECRET_API_KEY, *_secret_keys_env]))
+NEWS_DEFAULT_IMAGE_URL = os.getenv(
+    "NEWS_DEFAULT_IMAGE_URL",
+    "https://cdn.pantautular.com/assets/news-default.jpg",
+)
+NEWS_API_BASE_URL = os.getenv("NEWS_API_BASE_URL", "")
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
+NEWS_API_TIMEOUT = int(os.getenv("NEWS_API_TIMEOUT", "10"))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
@@ -115,9 +122,11 @@ INSTALLED_APPS = [
     'django_prometheus',
     'authentication',
     'rest_framework_simplejwt',
-    'admin_feature', 
+    'admin_feature',
     'curator_feature',
     'expert_user_feature',
+    'news_feature',
+    'contributor_feature',
 
 ]
 

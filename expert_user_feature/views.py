@@ -252,7 +252,6 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     """
     POST /expert-feature/experts/cases/upload-csv/
     Upload CSV to create CaseUploadBatch entries and cases owned by the user.
-    Upload CSV → create CaseUploadBatch and Cases tagged with created_by=user.
     Sekalian: sync mirror ExpertDataset & rows + catat audit log.
     """
     parser_classes = [MultiPartParser]
@@ -268,6 +267,7 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
     def post(self, request):
         upload = request.FILES.get("file")
         user_id = getattr(request.user, "id", None)
+
         if not upload:
             log_event("expert.csv.upload.missing_file", status="invalid", user_id=user_id)
             return self._error_response("file", "CSV file is required.")
@@ -283,21 +283,27 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             threshold_ms=getattr(settings, "EXPERT_CSV_UPLOAD_SLOW_THRESHOLD_MS", 1500),
             **context,
         ):
+            # ---- decode and validate file once ----
             try:
                 raw = upload.read().decode("utf-8-sig")
-            except UnicodeDecodeError:
+            except UnicodeDecodeError as e:
+                logger.exception("CSV decode failed: %s", e)
                 log_event("expert.csv.upload.decode_failed", status="invalid", **context)
-                return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")  # pragma: no cover
+                return self._error_response("file", "Unable to decode CSV file. Please use UTF-8.")
+            except Exception as e:  # pragma: no cover
+                logger.exception("Unexpected decode error: %s", e)
+                log_event("expert.csv.upload.decode_error", status="error", **context)
+                return self._error_response("file", f"Error reading file: {e}")
 
             if not raw.strip():
                 log_event("expert.csv.upload.empty", status="invalid", **context)
-                return self._error_response("file", "CSV file is empty.")  # pragma: no cover
+                return self._error_response("file", "CSV file is empty.")
 
             reader = csv.DictReader(io.StringIO(raw))
             headers = reader.fieldnames
             if not headers:
                 log_event("expert.csv.upload.header_missing", status="invalid", **context)
-                return self._error_response("file", "CSV header row is missing.")  # pragma: no cover
+                return self._error_response("file", "CSV header row is missing.")
 
             normalized = {h.strip() for h in headers if h}
             missing = self.REQUIRED_COLUMNS - normalized
@@ -308,19 +314,21 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
                     missing=",".join(sorted(missing)),
                     **context,
                 )
-                return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")  # pragma: no cover
+                return self._error_response("file", f"Missing columns: {', '.join(sorted(missing))}")
 
             rows = list(reader)
-            validated_serializers = []
+
+            # ---- validate each row first ----
             row_errors = []
+            validated_payloads = []
             for row_number, row in enumerate(rows, start=2):
-                serializer = CaseWriteSerializer(data=self._convert(row))
+                payload = self._convert(row)
+                serializer = CaseWriteSerializer(data=payload)
                 try:
                     serializer.is_valid(raise_exception=True)
+                    validated_payloads.append(payload)
                 except ValidationError as exc:
                     row_errors.append({"row": row_number, "errors": exc.detail})
-                    continue
-                validated_serializers.append(serializer)
 
             if row_errors:
                 log_event(
@@ -329,30 +337,44 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
                     errors=len(row_errors),
                     **context,
                 )
-                return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
+                return Response({"errors": row_errors}, status=status.HTTP_400_BAD_REQUEST)
 
-            batch = CaseUploadBatch.objects.create(uploaded_by=request.user, filename=upload.name)
+            # ---- create batch and cases atomically ----
+            batch = CaseUploadBatch.objects.create(
+                uploaded_by=request.user,
+                filename=upload.name
+            )
+
             created_cases = []
             try:
                 with transaction.atomic():
-                    for serializer in validated_serializers:
-                        case = serializer.save(created_by=request.user, batch=batch)
+                    for payload in validated_payloads:
+                        s = CaseWriteSerializer(data=payload)
+                        s.is_valid(raise_exception=True)
+                        case = s.save(created_by=request.user, batch=batch)
                         created_cases.append(case)
             except ValidationError as exc:
                 batch.delete()
                 log_event("expert.csv.upload.validation_failed", status="invalid", **context)
-                return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
-            except Exception:
+                return Response({"errors": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
                 batch.delete()
-                logger.exception("CSV upload failed; rolling back")
+                logger.exception("CSV upload failed: %s", e)
                 log_event("expert.csv.upload.failed", status="error", **context)
-                return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)  # pragma: no cover
+                return Response({"message": "Failed to import CSV"}, status=status.HTTP_400_BAD_REQUEST)
 
+            # ---- optional sync dataset ----
             try:
-                build_or_refresh_dataset_from_batch(batch, created_cases)
+                # support both possible signatures
+                try:
+                    build_or_refresh_dataset_from_batch(batch, created_cases)
+                except TypeError:
+                    build_or_refresh_dataset_from_batch(batch)
             except Exception:
                 logger.exception("Failed to sync expert dataset from batch %s", batch.id)
+                log_event("expert.csv.upload.sync_failed", status="error", batch_id=str(batch.id), **context)
 
+            # ---- audit (non-blocking) ----
             try:
                 log_expert_action(
                     request.user,
@@ -369,37 +391,23 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
             created_cases=len(created_cases),
             batch_id=str(batch.id),
             **context,
-        )  # pragma: no cover - integration exercised in staging
-        return Response({"batch_id": str(batch.id), "created": len(created_cases)}, status=status.HTTP_201_CREATED)  # pragma: no cover
+        )
+        return Response(
+            {"batch_id": str(batch.id), "created": len(created_cases)},
+            status=status.HTTP_201_CREATED,
+        )
 
+    # ---- helpers ----
     def _error_response(self, field: str, message: str, status_code: int = status.HTTP_400_BAD_REQUEST):
         return Response({"errors": {field: [message]}}, status=status_code)
 
-    def _flatten_error_detail(self, detail):
-        if isinstance(detail, dict):
-            return "; ".join(f"{key}: {self._flatten_error_detail(value)}" for key, value in detail.items())
-        if isinstance(detail, (list, tuple)):
-            return ", ".join(self._flatten_error_detail(item) for item in detail)
-        return str(detail)
-
-    @staticmethod
-    def _clean_decimal(value):
-        if value is None:
-            return None
-        cleaned = value.strip() if isinstance(value, str) else value
-        if cleaned in ("", None):
-            return None
-        return cleaned
-
-    def _convert(self, row):
-        def clean(value: str | None) -> str:
+    def _convert(self, row: dict):
+        """Safely normalize and clean a CSV row into CaseWriteSerializer payload."""
+        def clean(value):
             if value is None:
-                return ""
-            return str(value).strip()
-
-        def optional(value: str | None):
-            cleaned = clean(value)
-            return cleaned or None
+                return None
+            v = str(value).strip()
+            return v if v else None
 
         disease_name = clean(row.get("disease"))
         disease_obj, _ = Disease.objects.get_or_create(
@@ -408,14 +416,14 @@ class ExpertCaseCSVUploadView(ExpertBaseView, APIView):
         )
 
         city = clean(row.get("location_city")) or clean(row.get("city"))
-        province = optional(row.get("location_province"))
-        latitude = self._clean_decimal(row.get("location_latitude"))
-        longitude = self._clean_decimal(row.get("location_longitude"))
+        province = clean(row.get("location_province"))
+        latitude = clean(row.get("location_latitude"))
+        longitude = clean(row.get("location_longitude"))
 
         location_data = {"city": city, "province": province}
-        if latitude is not None:
+        if latitude:
             location_data["latitude"] = latitude
-        if longitude is not None:
+        if longitude:
             location_data["longitude"] = longitude
 
         return {

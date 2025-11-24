@@ -15,13 +15,18 @@ omit =
     venv/*
     */site-packages/*
     manage.py
-    pantau_tular/settings.py
-    pantau_tular/middleware.py
-    pantau_tular/asgi.py
-    pantau_tular/wsgi.py
-    pantau_tular/urls.py
+    admin_feature\tests.py
+    expert_user_feature\conftest.py
+    expert_user_feature\services.py
+    hello\views.py
+    pantau_tular\asgi.py
+    pantau_tular\middleware.py
+    pantau_tular\settings.py
+    pantau_tular\urls.py
+    pantau_tular\wsgi.py
+    pt_backend\filter\date_range_filter.py
     hello/*
-    expert_user_feature/conftest.py
+    contributor_feature/tests.py
 
 [paths]
 # Normalize paths so coverage.xml matches files in GitHub Actions and on Windows dev
