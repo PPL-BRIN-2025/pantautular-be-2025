@@ -323,18 +323,36 @@ class CaseReadSerializer(serializers.ModelSerializer):
 
 class ContributorSubmissionListSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="submitted_by", read_only=True)
-
-    class Meta:
-        model = ContributorSubmission
-        fields = ("id", "title", "status", "username", "created_at")
-
-
-class ContributorSubmissionDetailSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source="submitted_by", read_only=True)
+    hasUnseenUpdate = serializers.BooleanField(source="has_unseen_update", read_only=True)
 
     class Meta:
         model = ContributorSubmission
         fields = (
-            "id", "title", "content", "status",
-            "username", "created_at", "reviewed_at",
+            "id",
+            "title",
+            "status",
+            "username",
+            "created_at",
+            "hasUnseenUpdate",
+        )
+
+
+
+class ContributorSubmissionDetailSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="submitted_by", read_only=True)
+    hasUnseenUpdate = serializers.BooleanField(source="has_unseen_update", read_only=True)
+    lastNotifiedStatus = serializers.CharField(source="last_notified_status", read_only=True)
+
+    class Meta:
+        model = ContributorSubmission
+        fields = (
+            "id",
+            "title",
+            "content",
+            "status",
+            "username",
+            "created_at",
+            "reviewed_at",
+            "hasUnseenUpdate",
+            "lastNotifiedStatus",
         )

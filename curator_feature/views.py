@@ -481,3 +481,18 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
             ContributorSubmissionDetailSerializer(updated).data,
             status=status.HTTP_200_OK,
         )
+
+class ContributorSubmissionMarkSeenView(_CuratorBaseView, APIView):
+    service = ContributorSubmissionService()
+
+    def patch(self, request, id):
+        try:
+            sub = self.service.get(id)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=404)
+
+        # reset flags
+        sub.has_unseen_update = False
+        sub.save(update_fields=["has_unseen_update"])
+
+        return Response({"seen": True}, status=200)

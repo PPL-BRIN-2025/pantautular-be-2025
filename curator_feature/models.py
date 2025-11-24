@@ -119,6 +119,9 @@ class ContributorSubmission(models.Model):
     submitted_by = models.CharField(max_length=150)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="WAITING_FOR_APPROVAL")
 
+    has_unseen_update = models.BooleanField(default=False)
+    last_notified_status = models.CharField(max_length=30, blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
 

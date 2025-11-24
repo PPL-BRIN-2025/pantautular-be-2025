@@ -13,7 +13,8 @@ from curator_feature.views import (
     CuratorDataLogListCreateAPIView,
     ContributorSubmissionListView,
     ContributorSubmissionDetailView,
-    ContributorSubmissionStatusUpdateView
+    ContributorSubmissionStatusUpdateView,
+    ContributorSubmissionMarkSeenView,
 )
 
 urlpatterns = [
@@ -37,6 +38,6 @@ urlpatterns = [
     path("submissions/", ContributorSubmissionListView.as_view(), name="curator-submission-list"),
     path("submissions/<uuid:id>/", ContributorSubmissionDetailView.as_view(), name="curator-submission-detail"),
     path("submissions/<uuid:id>/status/", ContributorSubmissionStatusUpdateView.as_view(), name="curator-submission-status"),
-    path("curator/submissions/<uuid:id>/status/", ContributorSubmissionStatusUpdateView.as_view(), name="curator-submission-status-alias",
-    ),
+    path("curator/submissions/<uuid:id>/status/", ContributorSubmissionStatusUpdateView.as_view(), name="curator-submission-status-alias"),
+    path("submissions/<uuid:id>/mark-seen/", ContributorSubmissionMarkSeenView.as_view(), name="submission-mark-seen"),
 ]
