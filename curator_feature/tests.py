@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -1898,6 +1899,10 @@ class ContributorSubmissionServiceTests(TestCase):
         results = self.service.list(status="NEED_REVISION")
         self.assertEqual(len(results), 1)
 
+    def test_list_invalid_status_raises_validation_error(self):
+        with self.assertRaises(ValidationError):
+            self.service.list(status="NOT_A_STATUS")
+
     def test_get_success(self):
         found = self.service.get(self.sub.id)
         self.assertEqual(found.id, self.sub.id)
@@ -1923,6 +1928,57 @@ class ContributorSubmissionServiceTests(TestCase):
         latest = CuratorDataLog.objects.latest("id")
         self.assertIn("NEED_REVISION", latest.title)
         self.assertEqual(latest.note, "butuh bukti laboratorium")
+
+    def test_update_status_requires_curator_role(self):
+        non_curator = type("User", (), {"role": "CONTRIBUTOR"})()
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=non_curator,
+            )
+
+    def test_update_status_rejects_invalid_new_status(self):
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="BOGUS",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_terminal_submission(self):
+        self.sub.status = "APPROVED"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="REJECTED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_requires_reviewable_state(self):
+        # simulate unexpected legacy status to cover branch
+        self.sub.status = "LEGACY_STATE"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="APPROVED",
+                reviewer=self.curator,
+            )
+
+    def test_update_status_rejects_same_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save(update_fields=["status"])
+
+        with self.assertRaises(ValidationError):
+            self.service.update_status(
+                submission_id=self.sub.id,
+                new_status="NEED_REVISION",
+                reviewer=self.curator,
+            )
 
     @patch("curator_feature.services.log_curator_action", side_effect=Exception("boom"))
     def test_update_status_log_failure_does_not_crash(self, mock_log):
