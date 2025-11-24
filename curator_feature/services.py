@@ -403,11 +403,9 @@ def log_curator_edit(*, user, data_id, title=None, note=None):
 class ContributorSubmissionService:
     """Service layer to encapsulate submission business logic."""
 
-    VALID_STATUSES = {
-        "WAITING_FOR_APPROVAL",
-        "APPROVED",
-        "REJECTED",
-    }
+    VALID_STATUSES = {choice[0] for choice in ContributorSubmission.STATUS_CHOICES}
+    TERMINAL_STATUSES = {"APPROVED", "REJECTED"}
+    REVIEWABLE_STATUSES = {"WAITING_FOR_APPROVAL", "NEED_REVISION"}
 
     # SAFE LIST QUERYING
     def list(self, *, search=None, status=None):
@@ -434,18 +432,24 @@ class ContributorSubmissionService:
 
     # UPDATE STATUS WITH RBAC + VALIDATION
     @transaction.atomic
-    def update_status(self, *, submission_id, new_status, reviewer):
+    def update_status(self, *, submission_id, new_status, reviewer, note: Optional[str] = None):
         if reviewer.role != "CURATOR":
             raise ValidationError({"role": "Only CURATOR can review submissions."})
 
-        if new_status not in self.VALID_STATUSES:
+        if new_status not in self.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}:
             raise ValidationError({"status": "Invalid status provided."})
 
         sub = self.get(submission_id)
 
-        # prevent re-reviewing
-        if sub.status != "WAITING_FOR_APPROVAL":
-            raise ValidationError({"status": "Submission has already been reviewed and is immutable."})
+        # enforce workflow transitions
+        if sub.status in self.TERMINAL_STATUSES:
+            raise ValidationError({"status": "Submission has been finalized and cannot be changed."})
+
+        if sub.status not in self.REVIEWABLE_STATUSES:
+            raise ValidationError({"status": "Submission is not in a reviewable state."})
+
+        if sub.status == new_status:
+            raise ValidationError({"status": "Submission already has the requested status."})
 
         sub.status = new_status
         sub.reviewed_at = timezone.now()
@@ -453,11 +457,12 @@ class ContributorSubmissionService:
 
         # audit log (safe)
         try:
+            audit_note = note or f"Contributor submission reviewed: {new_status}"
             log_curator_action(
                 user=reviewer,
                 data_id=sub.id,
                 title=f"Submission {new_status}",
-                note=f"Contributor submission reviewed: {new_status}",
+                note=audit_note,
             )
         except Exception:
             # never crash status update because of audit log failure
