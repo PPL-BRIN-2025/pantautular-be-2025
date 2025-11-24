@@ -2,7 +2,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.permissions import SAFE_METHODS
 from authentication.permissions import IsTokenAuthenticated
 
-ALLOWED_ROLES = {"CURATOR", "ADMIN", "EXP_USER"}  # adjust if needed
+ALLOWED_ROLES = {"CURATOR", "ADMIN"}  # only curator/admin can manage
 
 class IsCuratorRole(BasePermission):
     """
