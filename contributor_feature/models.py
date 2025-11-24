@@ -11,7 +11,7 @@ def _default_news_payload():
     return {}
 
 
-class ContributorCaseSubmission(models.Model): # pragma: no cover
+class ContributorCaseSubmission(models.Model):
     class ReviewState(models.TextChoices):
         PENDING = "PENDING", "Pending"
         APPROVED = "APPROVED", "Approved"
@@ -140,7 +140,7 @@ class ContributorCaseSubmission(models.Model): # pragma: no cover
         return parsed
 
 
-class ContributorApprovalRole(models.Model): # pragma: no cover
+class ContributorApprovalRole(models.Model): 
     DEFAULT_ROLE_NAMES = ("CURATOR", "ADMIN")
 
     role = models.OneToOneField(
