@@ -377,3 +377,27 @@ sentry_sdk.init(
     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
     send_default_pii=True,
 )
+
+### --- Admin Monitoring → Sentry --- ###
+ADMIN_MONITORING_SEND_TO_SENTRY = True
+ADMIN_MONITORING_SEND_SUCCESS_TO_SENTRY = True  # optional
+
+
+### --- Sentry Setup --- ###
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN", ""),
+    integrations=[
+        DjangoIntegration(),
+        LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.WARNING,
+        ),
+    ],
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+    environment=os.getenv("SENTRY_ENVIRONMENT", "local"),
+)
