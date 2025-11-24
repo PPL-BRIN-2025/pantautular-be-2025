@@ -2104,14 +2104,13 @@ class ContributorSubmissionViewExceptionTests(TestCase):
 
         self.assertEqual(res.status_code, 400)
         self.assertIn("status", res.data)
-        
+
 # ============================================================
 # CONTRIBUTOR SUBMISSION – NEW FIELDS & MARK-SEEN TESTS
 # ============================================================
 
 class ContributorSubmissionNewFieldsTests(TestCase):
     def test_model_defaults(self):
-        """Ensure new fields have correct default values."""
         sub = ContributorSubmission.objects.create(
             id=uuid.uuid4(),
             title="Title",
@@ -2120,8 +2119,11 @@ class ContributorSubmissionNewFieldsTests(TestCase):
         )
 
         self.assertFalse(sub.has_unseen_update)
-        self.assertIsNone(sub.last_notified_status)
+
+        self.assertEqual("", sub.last_notified_status)
+
         self.assertIsNotNone(sub.created_at)
+
         self.assertIsNone(sub.reviewed_at)
 
 
