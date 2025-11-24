@@ -1803,6 +1803,20 @@ class ContributorSubmissionAPITests(TestCase):
         self.sub1.refresh_from_db()
         self.assertEqual(self.sub1.status, "APPROVED")
 
+    def test_curator_can_request_revision_with_note(self):
+        url = self.BASE_STATUS.format(id=self.sub1.id)
+        payload = {"status": "NEED_REVISION", "note": "lengkapi data demografi"}
+
+        res = self.client.patch(url, payload, format="json")
+        self.assertEqual(res.status_code, 200)
+
+        self.sub1.refresh_from_db()
+        self.assertEqual(self.sub1.status, "NEED_REVISION")
+
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertEqual(latest.title, "Submission NEED_REVISION")
+        self.assertEqual(latest.note, payload["note"])
+
     def test_invalid_status_returns_400(self):
         url = self.BASE_STATUS.format(id=self.sub1.id)
         res = self.client.patch(url, {"status": "NOT_VALID"}, format="json")
@@ -1877,6 +1891,13 @@ class ContributorSubmissionServiceTests(TestCase):
         res = self.service.list(status="APPROVED")
         self.assertEqual(len(res), 1)
 
+    def test_list_filters_need_revision_status(self):
+        self.sub.status = "NEED_REVISION"
+        self.sub.save()
+
+        results = self.service.list(status="NEED_REVISION")
+        self.assertEqual(len(results), 1)
+
     def test_get_success(self):
         found = self.service.get(self.sub.id)
         self.assertEqual(found.id, self.sub.id)
@@ -1889,6 +1910,19 @@ class ContributorSubmissionServiceTests(TestCase):
         )
         self.assertEqual(updated.status, "REJECTED")
         self.assertTrue(CuratorDataLog.objects.filter(data_id=self.sub.id).exists())
+
+    def test_update_status_supports_revision_and_logs_note(self):
+        updated = self.service.update_status(
+            submission_id=self.sub.id,
+            new_status="NEED_REVISION",
+            reviewer=self.curator,
+            note="butuh bukti laboratorium",
+        )
+
+        self.assertEqual(updated.status, "NEED_REVISION")
+        latest = CuratorDataLog.objects.latest("id")
+        self.assertIn("NEED_REVISION", latest.title)
+        self.assertEqual(latest.note, "butuh bukti laboratorium")
 
     @patch("curator_feature.services.log_curator_action", side_effect=Exception("boom"))
     def test_update_status_log_failure_does_not_crash(self, mock_log):
