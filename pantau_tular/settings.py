@@ -10,12 +10,21 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+except ImportError:  # pragma: no cover - optional dependency
+    sentry_sdk = None
+    DjangoIntegration = None
+    LoggingIntegration = None
 try:
     from csp.constants import SELF
 except ImportError:
@@ -27,6 +36,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv()
 
 TESTING = any(arg.lower() == "test" for arg in sys.argv)
+RUNNING_TESTS = (
+    os.environ.get("PYTEST_CURRENT_TEST")
+    or os.environ.get("DJANGO_TEST", "").lower() in {"1", "true"}
+    or any(arg in {"test", "testserver", "pytest"} for arg in sys.argv)
+)
 
 
 # Quick-start development settings - unsuitable for production
@@ -67,6 +81,29 @@ ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
     "localhost,127.0.0.1,.up.railway.app,.koyeb.app"
 ).split(",")
+
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", os.getenv("ENVIRONMENT", "development"))
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.15"))
+SENTRY_PROFILES_SAMPLE_RATE = float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0"))
+SENTRY_SEND_DEFAULT_PII = os.getenv("SENTRY_SEND_DEFAULT_PII", "false").lower() == "true"
+
+SPATIAL_COMPARISON_SLOW_THRESHOLD_MS = float(os.getenv("SPATIAL_COMPARISON_SLOW_THRESHOLD_MS", "1200"))
+EXPERT_CSV_UPLOAD_SLOW_THRESHOLD_MS = float(os.getenv("EXPERT_CSV_UPLOAD_SLOW_THRESHOLD_MS", "1500"))
+EXPERT_CSV_DOWNLOAD_SLOW_THRESHOLD_MS = float(os.getenv("EXPERT_CSV_DOWNLOAD_SLOW_THRESHOLD_MS", "1200"))
+
+DJANGO_LOG_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO").upper()
+
+if SENTRY_DSN and not RUNNING_TESTS and sentry_sdk and DjangoIntegration and LoggingIntegration:
+    sentry_logging = LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration(), sentry_logging],
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        profiles_sample_rate=SENTRY_PROFILES_SAMPLE_RATE,
+        environment=SENTRY_ENVIRONMENT,
+        send_default_pii=SENTRY_SEND_DEFAULT_PII,
+    )
 
 # Application definition
 
@@ -166,12 +203,6 @@ else:
     }
 
 # Force lightweight SQLite DB when executing automated tests (manage.py test / pytest)
-RUNNING_TESTS = (
-    os.environ.get("PYTEST_CURRENT_TEST")
-    or os.environ.get("DJANGO_TEST", "").lower() in {"1", "true"}
-    or any(arg in {"test", "testserver", "pytest"} for arg in sys.argv)
-)
-
 if RUNNING_TESTS:
     DATABASES = {
         'default': {
@@ -316,3 +347,66 @@ if 'test' in sys.argv:
     MIGRATION_MODULES = {
         'curator_feature': None,  # ⛔ skip all migrations for this app
     }
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "pantau_tular.logging_utils.StructuredJsonFormatter",
+        },
+        "verbose": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+        },
+        "console_plain": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "django": {"handlers": ["console"], "level": DJANGO_LOG_LEVEL, "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "pantautular": {"handlers": ["console"], "level": DJANGO_LOG_LEVEL, "propagate": False},
+        "pantautular.monitoring": {"handlers": ["console"], "level": DJANGO_LOG_LEVEL, "propagate": False},
+        "": {"handlers": ["console"], "level": DJANGO_LOG_LEVEL},
+    },
+}
+
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://75ea48f40117233b7607823bd0dff12f@o4510417563484160.ingest.us.sentry.io/4510417585242112",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
+
+### --- Admin Monitoring → Sentry --- ###
+ADMIN_MONITORING_SEND_TO_SENTRY = True
+ADMIN_MONITORING_SEND_SUCCESS_TO_SENTRY = True  # optional
+
+
+### --- Sentry Setup --- ###
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN", ""),
+    integrations=[
+        DjangoIntegration(),
+        LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.WARNING,
+        ),
+    ],
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+    environment=os.getenv("SENTRY_ENVIRONMENT", "local"),
+)

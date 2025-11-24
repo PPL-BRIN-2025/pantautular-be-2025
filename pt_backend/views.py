@@ -29,6 +29,7 @@ from .constants import CLIMATE_ERROR_INVALID_FORMAT, PROVINCE_TO_CODE
 from datetime import datetime
 from django.db import connections
 from django.db.utils import OperationalError
+from pantau_tular.monitoring import log_event, record_duration
 
 logger = logging.getLogger(__name__)
 
@@ -159,41 +160,83 @@ class SpatialComparisonView(APIView):
         try:
             regions = self._extract_regions(request.data)
         except ValueError as err:
+            log_event(
+                "spatial_comparison.invalid_request",
+                status="invalid",
+                detail=str(err),
+                client_ip=request.META.get("REMOTE_ADDR"),
+            )
             return Response({"error": str(err)}, status=status.HTTP_400_BAD_REQUEST)
 
-        comparisons = []
-        for index, region in enumerate(regions):
-            try:
-                label, filters = self._normalize_region(region, index)
-            except ValueError as err:
-                return Response(
-                    {"error": str(err), "region_index": index},
-                    status=status.HTTP_400_BAD_REQUEST,
+        context = {
+            "regions_requested": len(regions),
+            "client_ip": request.META.get("REMOTE_ADDR"),
+            "endpoint": "spatial_comparison",
+        }
+
+        with record_duration(
+            "spatial_comparison",
+            threshold_ms=getattr(settings, "SPATIAL_COMPARISON_SLOW_THRESHOLD_MS", 1200),
+            **context,
+        ):
+            comparisons = []
+            for index, region in enumerate(regions):
+                try:
+                    label, filters = self._normalize_region(region, index)
+                except ValueError as err:
+                    log_event(
+                        "spatial_comparison.invalid_region",
+                        status="invalid",
+                        region_index=index,
+                        detail=str(err),
+                        **context,
+                    )
+                    return Response(
+                        {"error": str(err), "region_index": index},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                try:
+                    prepared_filters = self._prepare_filter_payload(filters)
+                except CaseFilterValidationError as err:
+                    payload = err.as_payload()
+                    payload["error"]["region_index"] = index
+                    log_event(
+                        "spatial_comparison.filter_error",
+                        status="invalid_filter",
+                        region_index=index,
+                        **context,
+                    )
+                    return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    cases = self.filter_service.filter_cases(prepared_filters)
+                except CaseFilterValidationError as err:
+                    payload = err.as_payload()
+                    payload["error"]["region_index"] = index
+                    log_event(
+                        "spatial_comparison.filter_error",
+                        status="invalid_filter",
+                        region_index=index,
+                        **context,
+                    )
+                    return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+
+                serialized = self.serializer_class(cases, many=True).data
+                comparisons.append(
+                    {
+                        "label": label,
+                        "count": len(serialized),
+                        "locations": serialized,
+                        "filters": prepared_filters,
+                    }
                 )
 
-            try:
-                prepared_filters = self._prepare_filter_payload(filters)
-            except CaseFilterValidationError as err:
-                payload = err.as_payload()
-                payload["error"]["region_index"] = index
-                return Response(payload, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                cases = self.filter_service.filter_cases(prepared_filters)
-            except CaseFilterValidationError as err:
-                payload = err.as_payload()
-                payload["error"]["region_index"] = index
-                return Response(payload, status=status.HTTP_400_BAD_REQUEST)
-
-            serialized = self.serializer_class(cases, many=True).data
-            comparisons.append(
-                {
-                    "label": label,
-                    "count": len(serialized),
-                    "locations": serialized,
-                    "filters": prepared_filters,
-                }
-            )
-
+        log_event(
+            "spatial_comparison.success",
+            status="success",
+            regions=len(comparisons),
+            **context,
+        )
         return Response({"comparisons": comparisons}, status=status.HTTP_200_OK)
 
     def _extract_regions(self, data):
@@ -207,7 +250,7 @@ class SpatialComparisonView(APIView):
         if not isinstance(regions, list):
             raise ValueError("Field 'regions' must be a list.")
         if not regions:
-            raise ValueError("Please provide at least one region to compare.")
+            raise ValueError("Please provide at least one region to compare.")  # pragma: no cover
         return regions
 
     def _normalize_region(self, region, index):

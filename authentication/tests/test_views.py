@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from django.urls import reverse
 from rest_framework.test import APIClient
 import os
@@ -111,7 +111,8 @@ class LoginAPIViewTests(TestCase):
         self.assertEqual(response.data['detail'], 'Login successful')
         mock_auth_service_instance.login.assert_called_once_with(
             email='test@example.com', 
-            password='Password123!' # NOSONAR – test data, not a real secret
+            password='Password123!', # NOSONAR – test data, not a real secret
+            request=ANY
         )
 
     @patch('authentication.views.AuthService')
@@ -187,5 +188,6 @@ class LoginAPIViewTests(TestCase):
         self.assertEqual(response.data['detail'], lockout_message)
         mock_auth_service_instance.login.assert_called_once_with(
             email='test@example.com', 
-            password='Password123!' # NOSONAR – test data, not a real secret
+            password='Password123!', # NOSONAR – test data, not a real secret
+            request=ANY
         )
