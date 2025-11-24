@@ -368,3 +368,12 @@ LOGGING = {
         "": {"handlers": ["console"], "level": DJANGO_LOG_LEVEL},
     },
 }
+
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://75ea48f40117233b7607823bd0dff12f@o4510417563484160.ingest.us.sentry.io/4510417585242112",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
