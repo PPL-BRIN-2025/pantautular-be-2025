@@ -1406,6 +1406,15 @@ class PermissionCoverageTests(TestCase):
         perm = IsCuratorRole()
         self.assertFalse(perm.has_permission(request, None))
 
+    def test_is_curator_role_allows_admin_but_denies_other_roles(self):
+        """Admin permitted; other non-curator roles (e.g., EXP_USER) denied."""
+        perm = IsCuratorRole()
+        admin_req = SimpleNamespace(user=SimpleNamespace(role="ADMIN"))
+        exp_req = SimpleNamespace(user=SimpleNamespace(role="EXP_USER"))
+
+        self.assertTrue(perm.has_permission(admin_req, None))
+        self.assertFalse(perm.has_permission(exp_req, None))
+
     def test_readonly_or_curator_allows_safe_methods(self):
         """Covers lines 22–23: safe methods return True."""
         request = self.factory.get("/dummy")
