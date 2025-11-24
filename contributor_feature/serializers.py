@@ -10,7 +10,7 @@ from curator_feature.serializers import (
 from .models import ContributorCaseSubmission
 
 
-class ContributorCaseWriteSerializer(serializers.ModelSerializer): # pragma: no cover
+class ContributorCaseWriteSerializer(serializers.ModelSerializer):
     disease = serializers.CharField(write_only=True, required=False)
     location = LocationByNameSerializer(write_only=True, required=False)
     news = NewsInlineWriteSerializer(write_only=True, required=False)
@@ -97,7 +97,7 @@ class ContributorCaseWriteSerializer(serializers.ModelSerializer): # pragma: no 
         return instance
 
 
-class ContributorCaseReadSerializer(serializers.ModelSerializer): # pragma: no cover
+class ContributorCaseReadSerializer(serializers.ModelSerializer):
     disease_name = serializers.CharField(source="disease.name", read_only=True)
     location = LocationSerializer(read_only=True)
     news = serializers.SerializerMethodField()
@@ -148,7 +148,7 @@ class ContributorCaseReadSerializer(serializers.ModelSerializer): # pragma: no c
         return self._serialize_user(obj.created_by)
 
 
-class ContributorCaseReviewSerializer(serializers.Serializer): # pragma: no cover
+class ContributorCaseReviewSerializer(serializers.Serializer):
     ACTION_CHOICES = ("approve", "reject")
 
     action = serializers.ChoiceField(choices=ACTION_CHOICES)
@@ -164,7 +164,7 @@ class ContributorCaseReviewSerializer(serializers.Serializer): # pragma: no cove
         return attrs
 
 
-class ContributorApprovalRoleUpdateSerializer(serializers.Serializer): # pragma: no cover
+class ContributorApprovalRoleUpdateSerializer(serializers.Serializer):
     roles = serializers.ListField(
         child=serializers.CharField(max_length=150),
         allow_empty=False,

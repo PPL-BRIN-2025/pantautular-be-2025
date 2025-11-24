@@ -19,12 +19,12 @@ from .serializers import (
 )
 
 
-class ContributorBaseView(generics.GenericAPIView): # pragma: no cover
+class ContributorBaseView(generics.GenericAPIView): 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsContributorRole]
 
 
-class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIView): # pragma: no cover
+class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIView): 
     serializer_class = ContributorCaseReadSerializer
     queryset = ContributorCaseSubmission.objects.select_related(
         "disease", "location", "created_by", "reviewed_by"
@@ -57,13 +57,13 @@ class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIV
         return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDestroyAPIView): # pragma: no cover
+class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDestroyAPIView): 
     queryset = ContributorCaseSubmission.objects.select_related(
         "disease", "location", "created_by", "reviewed_by"
     )
     lookup_field = "id"
 
-    def get_serializer_class(self):
+    def get_serializer_class(self): # pragma: no cover
         if self.request.method in ("PUT", "PATCH"):
             return ContributorCaseWriteSerializer
         return ContributorCaseReadSerializer
@@ -78,7 +78,7 @@ class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDest
         user = self.request.user
         return submission.created_by_id == user.id or ContributorApprovalRole.user_is_approver(user)
 
-    def perform_update(self, serializer):
+    def perform_update(self, serializer):  # pragma: no cover
         submission = serializer.instance
         user = self.request.user
         if not submission.is_pending and not ContributorApprovalRole.user_is_approver(user):
@@ -87,7 +87,7 @@ class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDest
             raise PermissionDenied("Only the author or reviewers may edit this submission.")
         serializer.save(updated_by=user)
 
-    def perform_destroy(self, instance):
+    def perform_destroy(self, instance): # pragma: no cover
         user = self.request.user
         if instance.created_by_id != user.id:
             raise PermissionDenied("Only the author may delete this submission.")
@@ -96,7 +96,7 @@ class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDest
         instance.delete()
 
 
-class ContributorCaseReviewView(APIView): # pragma: no cover
+class ContributorCaseReviewView(APIView): 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsContributorApproverRole]
 
@@ -178,7 +178,7 @@ class ContributorCaseReviewView(APIView): # pragma: no cover
         return submission
 
 
-class ContributorApprovalRoleView(APIView): # pragma: no cover
+class ContributorApprovalRoleView(APIView): 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminAuthenticated]
 
