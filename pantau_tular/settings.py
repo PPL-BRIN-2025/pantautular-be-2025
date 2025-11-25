@@ -65,8 +65,9 @@ DISABLE_API_KEY_FOR_FILTERS = os.getenv(
 
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,.up.railway.app,.koyeb.app"
+    "localhost,127.0.0.1,.up.railway.app,.koyeb.app,prometheus,web,db"
 ).split(",")
+
 
 # Application definition
 
