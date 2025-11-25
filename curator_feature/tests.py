@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from uuid import uuid4
 from unittest.mock import patch
-
+from unittest import mock
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
 from django.core.exceptions import ValidationError, PermissionDenied
@@ -22,7 +22,6 @@ from rest_framework import serializers, status
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied, ValidationError as DRFValidationError
 from rest_framework.test import APIClient, APIRequestFactory, APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-
 from curator_feature.models import CuratorDataLog, DashboardDownloadEvent, DownloadLog, ContributorSubmission, CuratorDataLog
 from curator_feature.permissions import IsCuratorRole
 from pt_backend.models import Case, Disease, Location, News, User as PtUser
@@ -37,6 +36,7 @@ from curator_feature.serializers import (
 )
 from curator_feature.services import ChartDataService, DashboardDownloadEventService, DownloadLogService, ContributorSubmissionService
 from curator_feature.views import (
+    _CuratorBaseView,
     ChartDataAPIView,
     DashboardDownloadEventAPIView,
     DownloadLogAPIView,
@@ -2187,11 +2187,15 @@ class ContributorSubmissionServiceFlagTests(TestCase):
         self.assertTrue(updated.has_unseen_update)
         self.assertEqual(updated.last_notified_status, "APPROVED")
 
+    
+
+
 
 class ContributorSubmissionMarkSeenAPI(TestCase):
     """
     Covers PATCH /submissions/<id>/mark-seen/
     """
+
     def setUp(self):
         self.client = APIClient()
         self.user = PtUser.objects.create(
@@ -2212,14 +2216,41 @@ class ContributorSubmissionMarkSeenAPI(TestCase):
         )
 
     def test_mark_seen_resets_flag(self):
+        """Happy path: flag True -> reset to False & 200."""
         url = f"/curator-feature/submissions/{self.sub.id}/mark-seen/"
         res = self.client.patch(url, format="json")
 
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.sub.refresh_from_db()
         self.assertFalse(self.sub.has_unseen_update)
 
     def test_mark_seen_404_when_not_found(self):
         url = "/curator-feature/submissions/00000000-0000-0000-0000-000000000000/mark-seen/"
         res = self.client.patch(url, format="json")
-        self.assertEqual(res.status_code, 404)
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("Submission not found", str(res.data))
+
+    def test_mark_seen_internal_error_returns_500(self):
+        url = f"/curator-feature/submissions/{self.sub.id}/mark-seen/"
+
+        with mock.patch(
+            "curator_feature.views.ContributorSubmission.objects.get"
+        ) as mocked_get:
+            mocked_get.side_effect = RuntimeError("boom")
+
+            res = self.client.patch(url, format="json")
+
+        self.assertEqual(res.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(res.data.get("detail"), "Internal error.")
+
+    def test_mark_seen_when_flag_already_false_does_not_change(self):
+        self.sub.has_unseen_update = False
+        self.sub.save(update_fields=["has_unseen_update"])
+
+        url = f"/curator-feature/submissions/{self.sub.id}/mark-seen/"
+        res = self.client.patch(url, format="json")
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.sub.refresh_from_db()
+        self.assertFalse(self.sub.has_unseen_update)
