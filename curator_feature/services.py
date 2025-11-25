@@ -453,7 +453,9 @@ class ContributorSubmissionService:
 
         sub.status = new_status
         sub.reviewed_at = timezone.now()
-        sub.save(update_fields=["status", "reviewed_at"])
+        sub.has_unseen_update = True
+        sub.last_notified_status = new_status
+        sub.save(update_fields=["status", "reviewed_at", "has_unseen_update", "last_notified_status"])
 
         # audit log (safe)
         try:
