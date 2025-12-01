@@ -178,9 +178,8 @@ class NewsNormalizer:
 
     @staticmethod
     def coerce_optional_text(value: Optional[str]) -> str:
-        if value is None:
-            return ""
-        return str(value).strip()
+        # Optional variant keeps the same contract but delegates to avoid divergent trimming logic.
+        return NewsNormalizer.coerce_text(value)
 
 
 class NewsArticleAssembler:
