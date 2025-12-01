@@ -4,6 +4,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from news_feature.models import NewsArticle
 from news_feature.services.fetcher import (
+    ArticlePersistencePlan,
     ExternalNewsClient,
     NewsIngestor,
     NewsPayload,
@@ -373,3 +374,45 @@ class GetExistingArticlesTests(TestCase):
 
         self.assertEqual(result["external"]["ext-existing"], article)
         self.assertEqual(result["url"]["https://example.com/existing"], article)
+
+
+class IngestorBackcompatUnitTests(SimpleTestCase):
+    def setUp(self):
+        self.ingestor = NewsIngestor()
+
+    def test_match_existing_accepts_legacy_dict_mapping(self):
+        payload_with_external = NewsPayload(
+            title="t",
+            summary="s",
+            source_url="https://example.com/one",
+            source_name="Source",
+            thumbnail_url="",
+            published_at=datetime(2025, 1, 1, tzinfo=dt_timezone.utc),
+            external_id="ext-legacy",
+        )
+        payload_without_external = NewsPayload(
+            title="t2",
+            summary="s2",
+            source_url="https://example.com/two",
+            source_name="Source",
+            thumbnail_url="",
+            published_at=datetime(2025, 1, 2, tzinfo=dt_timezone.utc),
+            external_id="",
+        )
+
+        legacy_article = object()
+        legacy_by_url = object()
+        legacy_mapping = {
+            "external": {"ext-legacy": legacy_article},
+            "url": {"https://example.com/two": legacy_by_url},
+        }
+
+        self.assertIs(self.ingestor._match_existing(legacy_mapping, payload_with_external), legacy_article)
+        self.assertIs(self.ingestor._match_existing(legacy_mapping, payload_without_external), legacy_by_url)
+
+    def test_store_articles_returns_early_for_empty_plan(self):
+        plan = ArticlePersistencePlan.empty()
+
+        result = self.ingestor._store_articles(plan)
+
+        self.assertEqual(result, [])
