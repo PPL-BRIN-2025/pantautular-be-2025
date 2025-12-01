@@ -1,55 +1,80 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Optional
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Iterable, List, Mapping, Optional, Sequence, Union
 
 from django.db.models import Q, QuerySet
-from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from news_feature.constants import CURATED_TYPE_KEYWORDS
+from news_feature.services.normalization import NewsNormalizer
 
-def filter_news(qs: QuerySet, params: dict) -> QuerySet:
+
+@dataclass(frozen=True)
+class NewsFilterParams:
+    search: str = ""
+    sources: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    curated_only: bool = False
+    from_date: Optional[datetime] = None
+    to_date: Optional[datetime] = None
+    has_image: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Optional[Mapping[str, Any]] = None) -> "NewsFilterParams":
+        data = data or {}
+        return cls(
+            search=_clean_str(_get_param(data, "search")),
+            sources=tuple(_parse_csv(_get_param(data, "source"))),
+            tags=tuple(_parse_csv(_get_param(data, "tags"))),
+            curated_only=_to_bool(_get_param(data, "curated_only")),
+            from_date=_parse_datetime(_get_param(data, "from_date")),
+            to_date=_parse_datetime(_get_param(data, "to_date")),
+            has_image=_to_bool(_get_param(data, "has_image")),
+        )
+
+
+def build_filter_params(data: Optional[Mapping[str, Any]] = None) -> NewsFilterParams:
+    return NewsFilterParams.from_dict(data)
+
+
+def filter_news(qs: QuerySet, params: Union[NewsFilterParams, Mapping[str, Any], None]) -> QuerySet:
     """
     Apply query-parameter-driven filters to a NewsArticle queryset.
     """
-    search_term = _clean_str(params.get("search"))
-    if search_term:
-        qs = qs.filter(
-            Q(title__icontains=search_term) | Q(content__icontains=search_term)
-        )
+    parsed = params if isinstance(params, NewsFilterParams) else NewsFilterParams.from_dict(params)
 
-    sources = _parse_csv(params.get("source"))
-    if sources:
-        qs = qs.filter(portal__in=sources)
+    if parsed.search:
+        qs = qs.filter(Q(title__icontains=parsed.search) | Q(content__icontains=parsed.search))
 
-    tags = _parse_csv(params.get("tags"))
-    if tags:
+    if parsed.sources:
+        qs = qs.filter(portal__in=parsed.sources)
+
+    if parsed.tags:
         tag_filter = Q()
-        for tag in tags:
+        for tag in parsed.tags:
             tag_filter |= Q(type__iexact=tag)
         qs = qs.filter(tag_filter)
 
-    if _to_bool(params.get("curated_only")):
+    if parsed.curated_only:
         curated_filter = Q()
         for keyword in CURATED_TYPE_KEYWORDS:
             curated_filter |= Q(type__iexact=keyword)
         qs = qs.filter(curated_filter)
 
-    from_date = _parse_datetime(params.get("from_date"))
-    if from_date:
-        qs = qs.filter(date_published__gte=from_date)
+    if parsed.from_date:
+        qs = qs.filter(date_published__gte=parsed.from_date)
 
-    to_date = _parse_datetime(params.get("to_date"))
-    if to_date:
-        qs = qs.filter(date_published__lte=to_date)
+    if parsed.to_date:
+        qs = qs.filter(date_published__lte=parsed.to_date)
 
-    if _to_bool(params.get("has_image")):
+    if parsed.has_image:
         qs = qs.exclude(Q(img_url__isnull=True) | Q(img_url__exact=""))
 
     return qs
 
 
-def _parse_csv(value: Optional[str]) -> List[str]:
+def _parse_csv(value: Optional[Union[str, Sequence[str]]]) -> List[str]:
     if not value:
         return []
     if isinstance(value, (list, tuple)):
@@ -60,20 +85,8 @@ def _parse_csv(value: Optional[str]) -> List[str]:
     return parsed
 
 
-def _parse_datetime(value) -> Optional[timezone.datetime]:
-    if isinstance(value, timezone.datetime):
-        dt = value
-    elif value:
-        dt = parse_datetime(str(value))
-    else:
-        return None
-
-    if dt is None:
-        return None
-
-    if timezone.is_naive(dt):
-        dt = timezone.make_aware(dt, timezone.get_current_timezone())
-    return dt
+def _parse_datetime(value) -> Optional[datetime]:
+    return NewsNormalizer.parse_datetime(value)
 
 
 def _to_bool(value) -> bool:
@@ -90,3 +103,15 @@ def _clean_str(value: Optional[str]) -> str:
     if not isinstance(value, str):
         return ""
     return value.strip()
+
+
+def _get_param(data: Mapping[str, Any], key: str) -> Any:
+    getter = getattr(data, "getlist", None)
+    if callable(getter):
+        values = getter(key)
+        if not values:
+            return None
+        if len(values) == 1:
+            return values[0]
+        return values
+    return data.get(key)

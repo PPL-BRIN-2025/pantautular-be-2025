@@ -1,11 +1,14 @@
 from datetime import datetime, timezone as dt_timezone
 import uuid
 
+from django.http import QueryDict
 from django.test import SimpleTestCase, TestCase
 
 from pt_backend.models import Case, Disease, Location, News
 
 from news_feature.services.filtering import (
+    NewsFilterParams,
+    build_filter_params,
     filter_news,
     _parse_csv,
     _parse_datetime,
@@ -121,6 +124,15 @@ class FilterNewsTests(TestCase):
         qs = filter_news(News.objects.all(), params)
         self.assertCountEqual(qs, [self.article_3])
 
+    def test_filter_accepts_dataclass_instance(self):
+        params = NewsFilterParams(
+            search="policy",
+            tags=("kurasi",),
+            curated_only=True,
+        )
+        qs = filter_news(News.objects.all(), params)
+        self.assertCountEqual(qs, [self.article_3])
+
 
 class FilterHelperTests(SimpleTestCase):
     def test_parse_csv_handles_lists(self):
@@ -145,3 +157,25 @@ class FilterHelperTests(SimpleTestCase):
         self.assertFalse(_to_bool(None))
         self.assertTrue(_to_bool(5))
         self.assertFalse(_to_bool(0))
+
+
+class FilterParamsTests(SimpleTestCase):
+    def test_build_filter_params_handles_querydict(self):
+        query = QueryDict("source=Kompas&source=Detik&tags=Kurasi&tags=Health&curated_only=true&has_image=1")
+        query = query.copy()
+        query["from_date"] = datetime(2025, 1, 1, tzinfo=dt_timezone.utc).isoformat()
+        query["to_date"] = datetime(2025, 1, 31, tzinfo=dt_timezone.utc).isoformat()
+
+        params = build_filter_params(query)
+
+        self.assertEqual(params.sources, ("Kompas", "Detik"))
+        self.assertEqual(params.tags, ("Kurasi", "Health"))
+        self.assertTrue(params.curated_only)
+        self.assertTrue(params.has_image)
+        self.assertEqual(params.from_date, datetime(2025, 1, 1, tzinfo=dt_timezone.utc))
+        self.assertEqual(params.to_date, datetime(2025, 1, 31, tzinfo=dt_timezone.utc))
+
+    def test_default_params_when_none_passed(self):
+        params = build_filter_params(None)
+        self.assertEqual(params.search, "")
+        self.assertFalse(params.curated_only)
