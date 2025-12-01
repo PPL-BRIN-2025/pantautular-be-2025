@@ -6,6 +6,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .audittrail import log_contributor_submission_action
+
 from authentication.permissions import IsAdminAuthenticated, IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
 from pt_backend.models import Case, News
@@ -19,12 +21,12 @@ from .serializers import (
 )
 
 
-class ContributorBaseView(generics.GenericAPIView): 
+class ContributorBaseView(generics.GenericAPIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsContributorRole]
 
 
-class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIView): 
+class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIView):
     serializer_class = ContributorCaseReadSerializer
     queryset = ContributorCaseSubmission.objects.select_related(
         "disease", "location", "created_by", "reviewed_by"
@@ -38,6 +40,7 @@ class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIV
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
+        # non-approver cuma boleh lihat kontribusi sendiri
         if not ContributorApprovalRole.user_is_approver(user):
             qs = qs.filter(created_by=user)
 
@@ -49,21 +52,39 @@ class ContributorCaseListCreateView(ContributorBaseView, generics.ListCreateAPIV
     def create(self, request, *args, **kwargs):
         serializer = ContributorCaseWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        submission = serializer.save(created_by=request.user, updated_by=request.user)
+        submission = serializer.save(
+            created_by=request.user,
+            updated_by=request.user,
+        )
+
+        try:
+            log_contributor_submission_action(
+                user=request.user,
+                submission=submission,
+                action="create",
+            )
+        except Exception:
+            pass
+
         read_serializer = ContributorCaseReadSerializer(
-            submission, context=self.get_serializer_context()
+            submission,
+            context=self.get_serializer_context(),
         )
         headers = self.get_success_headers(read_serializer.data)
-        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(
+            read_serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
 
 
-class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDestroyAPIView): 
+class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDestroyAPIView):
     queryset = ContributorCaseSubmission.objects.select_related(
         "disease", "location", "created_by", "reviewed_by"
     )
     lookup_field = "id"
 
-    def get_serializer_class(self): # pragma: no cover
+    def get_serializer_class(self):  # pragma: no cover 
         if self.request.method in ("PUT", "PATCH"):
             return ContributorCaseWriteSerializer
         return ContributorCaseReadSerializer
@@ -76,27 +97,60 @@ class ContributorCaseDetailView(ContributorBaseView, generics.RetrieveUpdateDest
 
     def _can_access(self, submission):
         user = self.request.user
-        return submission.created_by_id == user.id or ContributorApprovalRole.user_is_approver(user)
+        # penulis boleh akses; approver (CURATOR/ADMIN) juga boleh
+        return (
+            submission.created_by_id == user.id
+            or ContributorApprovalRole.user_is_approver(user)
+        )
 
-    def perform_update(self, serializer):  # pragma: no cover
+    def perform_update(self, serializer):  # pragma: no cover (kalau mau di-cover, hapus pragma dan pakai test di bawah)
         submission = serializer.instance
         user = self.request.user
-        if not submission.is_pending and not ContributorApprovalRole.user_is_approver(user):
-            raise PermissionDenied("Only reviewers may edit processed submissions.")
-        if submission.created_by_id != user.id and not ContributorApprovalRole.user_is_approver(user):
-            raise PermissionDenied("Only the author or reviewers may edit this submission.")
-        serializer.save(updated_by=user)
+        is_approver = ContributorApprovalRole.user_is_approver(user)
 
-    def perform_destroy(self, instance): # pragma: no cover
+        if not submission.is_pending and not is_approver:
+            raise PermissionDenied("Only reviewers may edit processed submissions.")
+        if submission.created_by_id != user.id and not is_approver:
+            raise PermissionDenied("Only the author or reviewers may edit this submission.")
+
+        updated = serializer.save(updated_by=user)
+
+        # optional audit trail
+        try:
+            log_contributor_submission_action(
+                user=user,
+                submission=updated,
+                action="update",
+            )
+        except Exception:
+            pass
+
+    def perform_destroy(self, instance):  # pragma: no cover (sama seperti di atas)
         user = self.request.user
-        if instance.created_by_id != user.id:
-            raise PermissionDenied("Only the author may delete this submission.")
+        is_author = instance.created_by_id == user.id
+        is_approver = ContributorApprovalRole.user_is_approver(user)
+
         if not instance.is_pending:
             raise PermissionDenied("Reviewed submissions cannot be deleted.")
+
+        if not (is_author or is_approver):
+            raise PermissionDenied(
+                "Only the author or reviewers may delete this submission."
+            )
+
+        try:
+            log_contributor_submission_action(
+                user=user,
+                submission=instance,
+                action="delete",
+            )
+        except Exception:
+            pass
+
         instance.delete()
 
 
-class ContributorCaseReviewView(APIView): 
+class ContributorCaseReviewView(APIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsContributorApproverRole]
 
@@ -120,7 +174,8 @@ class ContributorCaseReviewView(APIView):
             submission = self._reject_submission(submission, request.user, note)
 
         data = ContributorCaseReadSerializer(
-            submission, context={"request": request}
+            submission,
+            context={"request": request},
         ).data
         return Response(data, status=status.HTTP_200_OK)
 
@@ -157,6 +212,18 @@ class ContributorCaseReviewView(APIView):
                     "updated_at",
                 ]
             )
+
+        # optional audit trail
+        try:
+            log_contributor_submission_action(
+                user=reviewer,
+                submission=submission,
+                action="approve",
+                note=note or "",
+            )
+        except Exception:
+            pass
+
         return submission
 
     def _reject_submission(self, submission, reviewer, note):
@@ -175,10 +242,22 @@ class ContributorCaseReviewView(APIView):
                 "updated_at",
             ]
         )
+
+        # optional audit trail
+        try:
+            log_contributor_submission_action(
+                user=reviewer,
+                submission=submission,
+                action="reject",
+                note=note or "",
+            )
+        except Exception:
+            pass
+
         return submission
 
 
-class ContributorApprovalRoleView(APIView): 
+class ContributorApprovalRoleView(APIView):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminAuthenticated]
 
