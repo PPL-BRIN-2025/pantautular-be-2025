@@ -522,4 +522,14 @@ class IngestorCoverageUnitTests(SimpleTestCase):
         payload_missing = self._payload(external_id="no-hit", source_url="https://example.com/legacy")
         self.assertEqual(self.ingestor._match_existing(legacy, payload_missing), "from-url")
 
-   
+    def test_update_article_from_payload_calls_assembler(self):
+        article = object()
+        payload = self._payload()
+
+        self.ingestor._update_article_from_payload(article, payload)
+
+        self.assertEqual(self.assembler.apply_calls, [(article, payload)])
+
+    def test_coerce_helpers_trim_and_normalize(self):
+        self.assertEqual(self.ingestor._coerce_text("  hello "), "hello")
+        self.assertEqual(self.ingestor._coerce_optional_text(None), "")
