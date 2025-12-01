@@ -1,14 +1,31 @@
 from datetime import datetime
-
-from django.urls import reverse
-from django.utils import timezone
-from rest_framework import status
-from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from django.test import TestCase
-from contributor_feature.views import ContributorCaseDetailView, ContributorCaseListCreateView
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework import serializers, status
+from rest_framework.test import APIClient
 
+from contributor_feature.audittrail import (
+    log_action,
+    log_contributor_submission_action,
+)
 from contributor_feature.models import ContributorApprovalRole, ContributorCaseSubmission
+from contributor_feature.serializers import (
+    ContributorCaseReadSerializer,
+    ContributorCaseWriteSerializer,
+    ContributorCaseReviewSerializer,
+    ContributorApprovalRoleUpdateSerializer,
+)
+from contributor_feature.views import (
+    ContributorCaseDetailView,
+    ContributorCaseListCreateView,
+)
+from curator_feature.serializers import (
+    LocationByNameSerializer,
+    NewsInlineWriteSerializer,
+)
 from pt_backend.models import Case, Disease, Location, News, Role, User
 
 
@@ -407,21 +424,6 @@ class ContributorApprovalRoleLogicTests(TestCase):
         # ADMIN is newly created
         self.assertCountEqual(saved_roles, ["CURATOR", "ADMIN"])
 
-from django.test import TestCase
-from django.utils import timezone
-from rest_framework import serializers
-
-from contributor_feature.serializers import (
-    ContributorCaseReadSerializer,
-    ContributorCaseWriteSerializer,
-    ContributorCaseReviewSerializer,
-    ContributorApprovalRoleUpdateSerializer,
-)
-from contributor_feature.models import ContributorCaseSubmission
-from pt_backend.models import Disease, Location, Role, User
-from curator_feature.serializers import LocationByNameSerializer, NewsInlineWriteSerializer
-
-from datetime import datetime
 
 
 class ContributorSerializerLogicTests(TestCase):
@@ -605,9 +607,14 @@ class ContributorSerializerLogicTests(TestCase):
 
     def test_update_only_disease(self):
         instance = ContributorCaseSubmission.objects.create(
-            gender="M", age=20, city="A", status="biasa",
-            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1), 
-            location=Location.objects.first(), created_by=self.user
+            gender="M",
+            age=20,
+            city="A",
+            status="biasa",
+            severity="insiden",
+            disease=Disease.objects.create(name="Old", level_of_alertness=1),
+            location=Location.objects.first(),
+            created_by=self.user,
         )
 
         ser = ContributorCaseWriteSerializer()
@@ -615,13 +622,17 @@ class ContributorSerializerLogicTests(TestCase):
 
         self.assertEqual(updated.disease.name, "NewX")
 
-
     def test_update_only_location(self):
         old = Location.objects.get(city="Jakarta")
         instance = ContributorCaseSubmission.objects.create(
-            gender="M", age=20, city="A", status="biasa",
-            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1),
-            location=old, created_by=self.user
+            gender="M",
+            age=20,
+            city="A",
+            status="biasa",
+            severity="insiden",
+            disease=Disease.objects.create(name="Old", level_of_alertness=1),
+            location=old,
+            created_by=self.user,
         )
 
         ser = ContributorCaseWriteSerializer()
@@ -629,12 +640,16 @@ class ContributorSerializerLogicTests(TestCase):
 
         self.assertEqual(updated.location.city.lower(), "jakarta")
 
-
     def test_update_only_news(self):
         instance = ContributorCaseSubmission.objects.create(
-            gender="M", age=20, city="A", status="biasa",
-            severity="insiden", disease=Disease.objects.create(name="Old", level_of_alertness=1),
-            location=Location.objects.first(), created_by=self.user
+            gender="M",
+            age=20,
+            city="A",
+            status="biasa",
+            severity="insiden",
+            disease=Disease.objects.create(name="Old", level_of_alertness=1),
+            location=Location.objects.first(),
+            created_by=self.user,
         )
 
         news = {
@@ -645,7 +660,7 @@ class ContributorSerializerLogicTests(TestCase):
             "url": "https://x.com",
             "author": "A",
             "date_published": timezone.now(),
-            "img_url": "https://img.com"
+            "img_url": "https://img.com",
         }
 
         ser = ContributorCaseWriteSerializer()
@@ -661,6 +676,7 @@ class ContributorSerializerLogicTests(TestCase):
         ser = ContributorApprovalRoleUpdateSerializer()
         with self.assertRaises(serializers.ValidationError):
             ser.validate_roles([])
+
 
 class ContributorViewLogicTests(TestCase):
     def setUp(self):
@@ -698,13 +714,33 @@ class ContributorViewLogicTests(TestCase):
             longitude=100.0,
         )
 
+        # payload dasar untuk create tests
+        self.base_payload = {
+            "gender": "m",
+            "age": 30,
+            "city": "Jakarta",
+            "status": "biasa",
+            "severity": "insiden",
+            "disease": self.disease.name,
+            "location": {"city": "Jakarta"},
+            "news": {
+                "portal": "Portal",
+                "title": "Case News",
+                "type": "Article",
+                "content": "Content",
+                "url": "https://example.com/news",
+                "author": "Reporter",
+                "date_published": timezone.now().isoformat(),
+                "img_url": "https://example.com/img.jpg",
+            },
+        }
+
     def _auth(self, user):
         self.client.force_authenticate(user=user)
 
     # ----------------------------------------------------------------------
     # get_serializer_class()
     # ----------------------------------------------------------------------
-
     def test_list_uses_read_serializer(self):
         self._auth(self.contributor)
         url = reverse("contributor-case-list")
@@ -724,19 +760,30 @@ class ContributorViewLogicTests(TestCase):
     # ----------------------------------------------------------------------
     # get_queryset()
     # ----------------------------------------------------------------------
-
     def test_queryset_filters_created_by_for_non_approver(self):
         # Created by curator (not visible to contributor)
         ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.curator, updated_by=self.curator
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.curator,
+            updated_by=self.curator,
         )
         # Created by contributor (visible)
         visible = ContributorCaseSubmission.objects.create(
-            gender="m", age=2, city="B", status="y", severity="y",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor
+            gender="m",
+            age=2,
+            city="B",
+            status="y",
+            severity="y",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
         )
 
         self._auth(self.contributor)
@@ -746,13 +793,18 @@ class ContributorViewLogicTests(TestCase):
         ids = [obj["id"] for obj in response.data]
         self.assertEqual(ids, [str(visible.id)])
 
-
     def test_queryset_state_filter(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="PENDING"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
         )
 
         self._auth(self.curator)
@@ -762,20 +814,27 @@ class ContributorViewLogicTests(TestCase):
         ids = [obj["id"] for obj in response.data]
         self.assertIn(str(sub.id), ids)
 
-
     # ----------------------------------------------------------------------
     # get_object() access control
     # ----------------------------------------------------------------------
-
     def test_get_object_denied_for_non_author_non_approver(self):
         other = User.objects.create(
-            name="X", email="x@x.com", password="pwd", role="CONTRIBUTOR"
+            name="X",
+            email="x@x.com",
+            password="pwd",
+            role="CONTRIBUTOR",
         )
 
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
         )
 
         self._auth(other)
@@ -783,16 +842,39 @@ class ContributorViewLogicTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
 
+    def test_get_object_allowed_for_approver(self):
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+        )
+
+        self._auth(self.curator)  # curator = approver default
+        url = reverse("contributor-case-detail", args=[sub.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
     # ----------------------------------------------------------------------
     # perform_update()
     # ----------------------------------------------------------------------
-
     def test_update_rejected_for_non_approver_on_processed(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="APPROVED"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="APPROVED",
         )
 
         self._auth(self.contributor)
@@ -802,10 +884,16 @@ class ContributorViewLogicTests(TestCase):
 
     def test_update_rejected_for_non_author_non_approver(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="PENDING"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
         )
 
         self._auth(self.admin)  # admin is NOT approver unless configured
@@ -815,10 +903,16 @@ class ContributorViewLogicTests(TestCase):
 
     def test_update_success_by_author(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="PENDING"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
         )
 
         self._auth(self.contributor)
@@ -832,13 +926,18 @@ class ContributorViewLogicTests(TestCase):
     # ----------------------------------------------------------------------
     # perform_destroy()
     # ----------------------------------------------------------------------
-
     def test_delete_denied_non_author(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="PENDING"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
         )
 
         self._auth(self.admin)
@@ -848,10 +947,16 @@ class ContributorViewLogicTests(TestCase):
 
     def test_delete_denied_if_not_pending(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="APPROVED"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="APPROVED",
         )
 
         self._auth(self.contributor)
@@ -861,10 +966,16 @@ class ContributorViewLogicTests(TestCase):
 
     def test_delete_success(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="PENDING"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
         )
 
         self._auth(self.contributor)
@@ -875,13 +986,18 @@ class ContributorViewLogicTests(TestCase):
     # ----------------------------------------------------------------------
     # ReviewView — pending check
     # ----------------------------------------------------------------------
-
     def test_review_denied_if_not_pending(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
-            state="APPROVED"
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="APPROVED",
         )
 
         self._auth(self.curator)
@@ -894,19 +1010,26 @@ class ContributorViewLogicTests(TestCase):
     # ----------------------------------------------------------------------
     # Approve_submission() — news or no news
     # ----------------------------------------------------------------------
-
     def test_approve_without_news_does_not_create_news(self):
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
             news_payload={},
-            state="PENDING"
+            state="PENDING",
         )
 
         self._auth(self.curator)
         url = reverse("contributor-case-review", args=[sub.id])
-        response = self.client.post(url, {"action": "approve", "note": "ok"}, format="json")
+        response = self.client.post(
+            url, {"action": "approve", "note": "ok"}, format="json"
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(News.objects.count(), 0)
@@ -920,20 +1043,28 @@ class ContributorViewLogicTests(TestCase):
             "url": "http://x.com",
             "author": "A",
             "date_published": timezone.now().isoformat(),
-            "img_url": "http://x.com/i.jpg"
+            "img_url": "http://x.com/i.jpg",
         }
 
         sub = ContributorCaseSubmission.objects.create(
-            gender="m", age=1, city="A", status="x", severity="x",
-            disease=self.disease, location=self.location,
-            created_by=self.contributor, updated_by=self.contributor,
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
             news_payload=payload,
-            state="PENDING"
+            state="PENDING",
         )
 
         self._auth(self.curator)
         url = reverse("contributor-case-review", args=[sub.id])
-        response = self.client.post(url, {"action": "approve", "note": "ok"}, format="json")
+        response = self.client.post(
+            url, {"action": "approve", "note": "ok"}, format="json"
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(News.objects.count(), 1)
@@ -941,7 +1072,6 @@ class ContributorViewLogicTests(TestCase):
     # ----------------------------------------------------------------------
     # Approver roles GET
     # ----------------------------------------------------------------------
-
     def test_get_approver_roles(self):
         self._auth(self.admin)
         url = reverse("contributor-approver-roles")
@@ -949,7 +1079,183 @@ class ContributorViewLogicTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("roles", response.data)
-        
+
+    # Audit trail error handling on views (create / approve / reject / update / delete)
+    # ----------------------------------------------------------------------
+    @patch("contributor_feature.views.log_contributor_submission_action")
+    def test_create_swallow_audittrail_errors(self, mock_log):
+        mock_log.side_effect = RuntimeError("boom")
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-list")
+        resp = self.client.post(url, self.base_payload, format="json")
+
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(ContributorCaseSubmission.objects.count(), 1)
+
+    @patch("contributor_feature.views.log_contributor_submission_action")
+    def test_approve_swallow_audittrail_errors(self, mock_log):
+        mock_log.side_effect = RuntimeError("audittrail boom")
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m",
+            age=1,
+            city="A",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-review", args=[sub.id])
+        resp = self.client.post(
+            url, {"action": "approve", "note": "ok"}, format="json"
+        )
+
+        # tetap sukses → branch except Exception (approve) ke-cover
+        self.assertEqual(resp.status_code, 200)
+        sub.refresh_from_db()
+        self.assertEqual(sub.state, ContributorCaseSubmission.ReviewState.APPROVED)
+
+    @patch("contributor_feature.views.log_contributor_submission_action")
+    def test_reject_swallow_audittrail_errors(self, mock_log):
+        mock_log.side_effect = RuntimeError("audittrail boom")
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m",
+            age=2,
+            city="B",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
+        )
+
+        self._auth(self.curator)
+        url = reverse("contributor-case-review", args=[sub.id])
+        resp = self.client.post(
+            url, {"action": "reject", "note": "not ok"}, format="json"
+        )
+
+      
+        self.assertEqual(resp.status_code, 200)
+        sub.refresh_from_db()
+        self.assertEqual(sub.state, ContributorCaseSubmission.ReviewState.REJECTED)
+
+    @patch("contributor_feature.views.log_contributor_submission_action")
+    def test_update_swallow_audittrail_errors(self, mock_log):
+        mock_log.side_effect = RuntimeError("boom")
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m",
+            age=3,
+            city="C",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        resp = self.client.patch(url, {"city": "NewCity2"}, format="json")
+
+        self.assertEqual(resp.status_code, 200)
+        sub.refresh_from_db()
+        self.assertEqual(sub.city, "NewCity2")
+
+    @patch("contributor_feature.views.log_contributor_submission_action")
+    def test_delete_swallow_audittrail_errors(self, mock_log):
+        mock_log.side_effect = RuntimeError("boom")
+
+        sub = ContributorCaseSubmission.objects.create(
+            gender="m",
+            age=4,
+            city="D",
+            status="x",
+            severity="x",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.contributor,
+            updated_by=self.contributor,
+            state="PENDING",
+        )
+
+        self._auth(self.contributor)
+        url = reverse("contributor-case-detail", args=[sub.id])
+        resp = self.client.delete(url)
+
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(
+            ContributorCaseSubmission.objects.filter(id=sub.id).exists()
+        )
 
 
 
+class AuditTrailTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create(
+            name="Auditor",
+            email="audit@example.com",
+            password="pwd",
+            role="CURATOR",
+        )
+        self.disease = Disease.objects.create(name="Flu", level_of_alertness=1)
+        self.location = Location.objects.create(
+            city="Jakarta",
+            province="DKI",
+            latitude=0.0,
+            longitude=0.0,
+        )
+        self.submission = ContributorCaseSubmission.objects.create(
+            gender="M",
+            age=30,
+            city="Jakarta",
+            status="biasa",
+            severity="insiden",
+            disease=self.disease,
+            location=self.location,
+            created_by=self.user,
+        )
+
+    def test_log_action_ok(self):
+        # happy path
+        with patch("contributor_feature.audittrail.logger") as mock_logger:
+            log_action(
+                user=self.user,
+                scope="test_scope",
+                action="create",
+                payload={"foo": "bar"},
+            )
+        mock_logger.info.assert_called_once()
+
+    def test_log_action_swallow_logger_errors(self):
+        with patch("contributor_feature.audittrail.logger") as mock_logger:
+            mock_logger.info.side_effect = RuntimeError("boom")
+            log_action(
+                user=self.user,
+                scope="test_scope",
+                action="create",
+                payload={"foo": "bar"},
+            )  # no error
+
+    def test_log_contributor_submission_action_calls_log_action(self):
+        with patch("contributor_feature.audittrail.log_action") as mock_log_action:
+            log_contributor_submission_action(
+                user=self.user,
+                submission=self.submission,
+                action="create",
+                note="note",
+                extra={"extra": "x"},
+            )
+        mock_log_action.assert_called_once()
