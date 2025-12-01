@@ -1,7 +1,10 @@
+from django.contrib.auth.hashers import make_password
 from django.core.management import call_command
 from django.test import TestCase
 
-from pt_backend.models import Case, News
+from pt_backend.models import Case, News, User
+
+from news_feature.management.commands.seed_news_articles import Command, SEED_USER_EMAIL
 
 
 class SeedNewsArticlesCommandTests(TestCase):
@@ -19,3 +22,17 @@ class SeedNewsArticlesCommandTests(TestCase):
             3,
             "Command should be idempotent on repeated runs.",
         )
+
+    def test_ensure_case_resets_non_placeholder_password(self):
+        user = User.objects.create(
+            email=SEED_USER_EMAIL,
+            name="Seeder",
+            role="CURATOR",
+            password=make_password("not-placeholder"),
+        )
+        command = Command()
+
+        command._ensure_case()
+
+        user.refresh_from_db()
+        self.assertTrue(user.password.startswith("!"))
