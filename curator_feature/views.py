@@ -395,12 +395,17 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 class ContributorSubmissionListView(_CuratorBaseView, generics.ListAPIView):
+    """
+    GET /submissions/
+      ?search=<optional text>
+      ?status=<optional status>
+    """
     serializer_class = ContributorSubmissionListSerializer
     service = ContributorSubmissionService()
 
     def get_queryset(self):
-        search = self.request.query_params.get("search")
-        status_param = self.request.query_params.get("status")
+        search = (self.request.query_params.get("search") or "").strip()
+        status_param = (self.request.query_params.get("status") or "").strip() or None
 
         try:
             return self.service.list(search=search, status=status_param)
@@ -414,32 +419,32 @@ class ContributorSubmissionListView(_CuratorBaseView, generics.ListAPIView):
 # ============================================================
 
 class ContributorSubmissionDetailView(_CuratorBaseView, generics.RetrieveAPIView):
+    """
+    GET /submissions/<id>/
+    """
     queryset = ContributorSubmission.objects.all()
     serializer_class = ContributorSubmissionDetailSerializer
     lookup_field = "id"
 
 
 # ============================================================
-# STATUS UPDATE VIEW
+# STATUS UPDATE VIEW (APPROVE / REJECT / REVISION)
 # ============================================================
 
 class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
     """
     PATCH /submissions/<id>/status/
-
-    Includes parser_classes → prevents DRF from failing with 415 Unsupported Media Type
-    when RequestFactory sends no content-type.
     """
     parser_classes = [JSONParser, FormParser, MultiPartParser]
     service = ContributorSubmissionService()
 
     def patch(self, request, id):
-        # Extract new status safely
-        new_status = request.data.get("status")
-        note = request.data.get("note", "")
-
-        # Basic validation
-        allowed_statuses = ContributorSubmissionService.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}
+        raw_status = request.data.get("status") or ""
+        new_status = str(raw_status).strip().upper()
+        note = (request.data.get("note") or "").strip()
+        allowed_statuses = (
+            ContributorSubmissionService.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}
+        )
         if new_status not in allowed_statuses:
             return Response(
                 {"error": "Invalid status"},
@@ -462,37 +467,56 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
             )
 
         except ValidationError as exc:
-            # Any validation error from service layer
             return Response(
                 exc.detail,
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         except Exception:
-            # THIS IS WHAT THE LAST FAILING TEST EXPECTS → return 500
+            # Fallback 500 
             logger.exception("Error updating contributor submission status id=%s", id)
             return Response(
                 {"detail": "Internal error while updating submission status."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Success
-        return Response(
-            ContributorSubmissionDetailSerializer(updated).data,
-            status=status.HTTP_200_OK,
-        )
+        data = ContributorSubmissionDetailSerializer(updated).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
+# ============================================================
+# MARK SEEN VIEW (KONTRIBUTOR SUDAH LIHAT UPDATE)
+# ============================================================
 
 class ContributorSubmissionMarkSeenView(_CuratorBaseView, APIView):
+    """
+    PATCH /submissions/<id>/mark-seen/
+    """
     service = ContributorSubmissionService()
 
     def patch(self, request, id):
         try:
-            sub = self.service.get(id)
-        except Exception as exc:
-            return Response({"detail": str(exc)}, status=404)
+            # query model directly so we know exactly what exception we get
+            sub = ContributorSubmission.objects.get(id=id)
+        except ContributorSubmission.DoesNotExist:
+            # clean 404 when submission doesn't exist
+            return Response(
+                {"detail": "Submission not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception:
+            # any other unexpected error → 500
+            logger.exception(
+                "Error fetching submission for mark-seen id=%s", id
+            )
+            return Response(
+                {"detail": "Internal error."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        # reset flags
-        sub.has_unseen_update = False
-        sub.save(update_fields=["has_unseen_update"])
+        # reset flag only if it was previously True
+        if sub.has_unseen_update:
+            sub.has_unseen_update = False
+            sub.save(update_fields=["has_unseen_update"])
 
-        return Response({"seen": True}, status=200)
+        return Response({"seen": True}, status=status.HTTP_200_OK)
