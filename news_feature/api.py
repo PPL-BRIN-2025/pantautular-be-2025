@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from pt_backend.models import News
 
 from news_feature.serializers import NewsArticleSerializer
-from news_feature.services.filtering import filter_news
+from news_feature.services.filtering import build_filter_params, filter_news
 
 
 class NewsPagination(pagination.PageNumberPagination):
@@ -31,13 +31,5 @@ class NewsArticleViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         base_qs = News.objects.all().order_by("-date_published")
-        params = {
-            "search": self.request.query_params.get("search"),
-            "source": self.request.query_params.get("source"),
-            "tags": self.request.query_params.get("tags"),
-            "curated_only": self.request.query_params.get("curated_only"),
-            "from_date": self.request.query_params.get("from_date"),
-            "to_date": self.request.query_params.get("to_date"),
-            "has_image": self.request.query_params.get("has_image"),
-        }
+        params = build_filter_params(self.request.query_params)
         return filter_news(base_qs, params)
