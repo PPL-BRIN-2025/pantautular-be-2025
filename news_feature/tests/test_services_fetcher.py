@@ -4,7 +4,10 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from news_feature.models import NewsArticle
 from news_feature.services.fetcher import (
+    ArticlePersistenceExecutor,
     ArticlePersistencePlan,
+    ArticlePlanBuilder,
+    ExistingArticleIndex,
     ExternalNewsClient,
     NewsIngestor,
     NewsPayload,
@@ -416,3 +419,107 @@ class IngestorBackcompatUnitTests(SimpleTestCase):
         result = self.ingestor._store_articles(plan)
 
         self.assertEqual(result, [])
+
+
+class StubAssembler:
+    def __init__(self):
+        self.build_calls = []
+        self.apply_calls = []
+        self.next_article = object()
+
+    def build(self, payload):
+        self.build_calls.append(payload)
+        return {"article": payload.external_id or payload.source_url}
+
+    def apply(self, article, payload):
+        self.apply_calls.append((article, payload))
+
+
+class StubRepository:
+    def __init__(self):
+        self.saved = []
+        self.updated = []
+
+    def build_index(self, normalized_items):
+        return ExistingArticleIndex.empty()
+
+    def save_new(self, articles):
+        self.saved.extend(articles)
+        return list(articles)
+
+    def update_existing(self, articles):
+        self.updated.extend(articles)
+        return list(articles)
+
+
+class IngestorCoverageUnitTests(SimpleTestCase):
+    def setUp(self):
+        self.assembler = StubAssembler()
+        self.repository = StubRepository()
+        self.ingestor = NewsIngestor(
+            client=FakeClient([]),
+            assembler=self.assembler,
+            repository=self.repository,
+            plan_builder=ArticlePlanBuilder(self.assembler),
+            persister=ArticlePersistenceExecutor(self.repository),
+        )
+
+    def _payload(self, **overrides):
+        base = {
+            "title": "Coverage",
+            "summary": "S",
+            "source_url": "https://example.com/coverage",
+            "source_name": "Source",
+            "thumbnail_url": "",
+            "published_at": datetime(2025, 1, 1, tzinfo=dt_timezone.utc),
+            "external_id": "ext-coverage",
+        }
+        base.update(overrides)
+        return NewsPayload(**base)
+
+    def test_build_article_uses_custom_assembler(self):
+        payload = self._payload()
+        result = self.ingestor._build_article(payload)
+
+        self.assertEqual(result, {"article": "ext-coverage"})
+        self.assertEqual(self.assembler.build_calls, [payload])
+
+    def test_save_and_update_articles_delegate_to_repository(self):
+        articles = ["new-a", "new-b"]
+        updated = ["update-a"]
+
+        self.assertEqual(self.ingestor._save_new_articles(articles), articles)
+        self.assertEqual(self.repository.saved, articles)
+
+        self.assertEqual(self.ingestor._update_existing_articles(updated), updated)
+        self.assertEqual(self.repository.updated, updated)
+
+    def test_match_existing_prefers_index_and_legacy_dict(self):
+        class Index(ExistingArticleIndex):
+            def __init__(self):
+                super().__init__()
+                self.called = False
+
+            def match(self, payload):
+                self.called = True
+                return "indexed"
+
+        index = Index()
+        payload = self._payload()
+        self.assertEqual(self.ingestor._match_existing(index, payload), "indexed")
+        self.assertTrue(index.called)
+
+        legacy = {
+            "external": {"ext-legacy": "from-external"},
+            "url": {"https://example.com/legacy": "from-url"},
+        }
+        payload_ext = self._payload(external_id="ext-legacy", source_url="https://example.com/legacy")
+        self.assertEqual(self.ingestor._match_existing(legacy, payload_ext), "from-external")
+
+        payload_url = self._payload(external_id="", source_url="https://example.com/legacy")
+        self.assertEqual(self.ingestor._match_existing(legacy, payload_url), "from-url")
+
+        payload_missing = self._payload(external_id="no-hit", source_url="https://example.com/legacy")
+        self.assertEqual(self.ingestor._match_existing(legacy, payload_missing), "from-url")
+
+   
