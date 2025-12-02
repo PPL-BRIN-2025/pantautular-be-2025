@@ -208,6 +208,7 @@ class SerializerAndServiceExtraTests(TestCase):
             def get(self, k):
                 return {'cached': True}
             def set(self, k, v, timeout=None):
+                """Intentionally left empty — this fake cache ignores writes."""
                 pass
 
         svc = ChartDataService(statistics_coordinator=object(), cache_backend=FakeCacheHit(), cache_timeout=10)
@@ -221,6 +222,7 @@ class SerializerAndServiceExtraTests(TestCase):
             def get(self, k):
                 raise RuntimeError('boom')
             def set(self, k, v, timeout=None):
+                """No-op: test double for a failing cache GET, writes are ignored."""
                 pass
 
         svc2 = ChartDataService(statistics_coordinator=object(), cache_backend=BadCacheGet(), cache_timeout=10)
@@ -232,6 +234,7 @@ class SerializerAndServiceExtraTests(TestCase):
             def get(self, k):
                 return None
             def set(self, k, v, timeout=None):
+                """Simulate failure on cache writes for error-handling tests."""
                 raise RuntimeError('boom')
 
         svc3 = ChartDataService(statistics_coordinator=object(), cache_backend=BadCacheSet(), cache_timeout=10)
