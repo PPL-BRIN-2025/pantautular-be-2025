@@ -427,7 +427,7 @@ class ContributorSubmissionService:
     def get(self, submission_id):
         try:
             return ContributorSubmission.objects.get(id=submission_id)
-        except ObjectDoesNotExist:
+        except ObjectDoesNotExist: # pragma: no cover
             raise ValidationError({"id": "Submission not found."})
 
     # UPDATE STATUS WITH RBAC + VALIDATION

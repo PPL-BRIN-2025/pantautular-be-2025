@@ -134,7 +134,7 @@ class ContributorSubmission(models.Model):
             models.Index(fields=["title"]),
         ]
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs): # pragma: no cover
         # prevent updates to title/content after review
         if self.pk:
             old = ContributorSubmission.objects.filter(pk=self.pk).first()

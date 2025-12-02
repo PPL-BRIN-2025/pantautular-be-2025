@@ -295,6 +295,7 @@ class DownloadLogAPIViewTests(APITestCase):
         response = client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=False)
     def test_logging_disabled_returns_accepted(self):
         payload = {
             "username": "KuratorA",
@@ -390,6 +391,7 @@ class DashboardDownloadEventAPIViewTests(APITestCase):
         payload.update(overrides)
         return payload
 
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=False)
     def test_logging_disabled_returns_accepted(self):
         response = self.client.post(self.url, data=self._payload(), format="json")
 
