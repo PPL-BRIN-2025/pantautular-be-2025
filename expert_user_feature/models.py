@@ -54,7 +54,7 @@ class ExpertDataLog(models.Model):
     title = models.CharField(max_length=255)              # "upload csv", "delete batch", "create case", "update case"
     last_edited = models.DateTimeField(auto_now_add=True)
     submitted_by = models.CharField(max_length=150)       # username/email
-    note = models.TextField(null=True, blank=True)        # filename, counts, dsb
+    note = models.TextField(blank=True, default="")    # filename, counts, dsb
 
     class Meta:
         db_table = "expert_feature_datalog"
