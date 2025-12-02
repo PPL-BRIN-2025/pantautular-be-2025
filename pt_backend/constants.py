@@ -1,128 +1,212 @@
-# Map of Indonesian province names to ISO 3166-2 codes
+# ============================
+# Province Name Constants
+# ============================
+
+ACEH = "Aceh"
+BALI = "Bali"
+BANGKA_BELITUNG = "Bangka Belitung"
+BANTEN = "Banten"
+BENGKULU = "Bengkulu"
+DI_YOGYAKARTA = "DI Yogyakarta"
+DKI_JAKARTA = "DKI Jakarta"
+GORONTALO = "Gorontalo"
+JAMBI = "Jambi"
+JAWA_BARAT = "Jawa Barat"
+JAWA_TENGAH = "Jawa Tengah"
+JAWA_TIMUR = "Jawa Timur"
+KALBAR = "Kalimantan Barat"
+KALSEL = "Kalimantan Selatan"
+KALTENG = "Kalimantan Tengah"
+KALTIM = "Kalimantan Timur"
+KALTARA = "Kalimantan Utara"
+KEPRI = "Kepulauan Riau"
+LAMPUNG = "Lampung"
+MALUKU = "Maluku"
+MALUKU_UTARA = "Maluku Utara"
+NTB = "Nusa Tenggara Barat"
+NTT = "Nusa Tenggara Timur"
+PAPUA = "Papua"
+PAPUA_BARAT = "Papua Barat"
+PAPUA_BARAT_DAYA = "Papua Barat Daya"
+PAPUA_PEGUNUNGAN = "Papua Pegunungan"
+PAPUA_SELATAN = "Papua Selatan"
+PAPUA_TENGAH = "Papua Tengah"
+RIAU = "Riau"
+SULBAR = "Sulawesi Barat"
+SULSEL = "Sulawesi Selatan"
+SULTENG = "Sulawesi Tengah"
+SULTRA = "Sulawesi Tenggara"
+SULUT = "Sulawesi Utara"
+SUMBAR = "Sumatera Barat"
+SUMSEL = "Sumatera Selatan"
+SUMUT = "Sumatera Utara"
+
+
+# ============================
+# Province -> ISO 3166-2 Codes
+# ============================
+
 PROVINCE_TO_CODE = {
-    'Aceh': 'ID-AC',
-    'Bali': 'ID-BA',
-    'Bangka Belitung': 'ID-BB',
-    'Banten': 'ID-BT',
-    'Bengkulu': 'ID-BE',
-    'DI Yogyakarta': 'ID-YO',
-    'DKI Jakarta': 'ID-JK',
-    'Gorontalo': 'ID-GO',
-    'Jambi': 'ID-JA',
-    'Jawa Barat': 'ID-JB',
-    'Jawa Tengah': 'ID-JT',
-    'Jawa Timur': 'ID-JI',
-    'Kalimantan Barat': 'ID-KB',
-    'Kalimantan Selatan': 'ID-KS',
-    'Kalimantan Tengah': 'ID-KT',
-    'Kalimantan Timur': 'ID-KI',
-    'Kalimantan Utara': 'ID-KU',
-    'Kepulauan Riau': 'ID-KR',
-    'Lampung': 'ID-LA',
-    'Maluku': 'ID-MA',
-    'Maluku Utara': 'ID-MU',
-    'Nusa Tenggara Barat': 'ID-NB',
-    'Nusa Tenggara Timur': 'ID-NT',
-    'Papua': 'ID-PA',
-    'Papua Barat': 'ID-PB',
-    'Papua Barat Daya': 'ID-PD',
-    'Papua Pegunungan': 'ID-PP',
-    'Papua Selatan': 'ID-PS',
-    'Papua Tengah': 'ID-PT',
-    'Riau': 'ID-RI',
-    'Sulawesi Barat': 'ID-SR',
-    'Sulawesi Selatan': 'ID-SN',
-    'Sulawesi Tengah': 'ID-ST',
-    'Sulawesi Tenggara': 'ID-SG',
-    'Sulawesi Utara': 'ID-SA',
-    'Sumatera Barat': 'ID-SB',
-    'Sumatera Selatan': 'ID-SS',
-    'Sumatera Utara': 'ID-SU'
+    ACEH: "ID-AC",
+    BALI: "ID-BA",
+    BANGKA_BELITUNG: "ID-BB",
+    BANTEN: "ID-BT",
+    BENGKULU: "ID-BE",
+    DI_YOGYAKARTA: "ID-YO",
+    DKI_JAKARTA: "ID-JK",
+    GORONTALO: "ID-GO",
+    JAMBI: "ID-JA",
+    JAWA_BARAT: "ID-JB",
+    JAWA_TENGAH: "ID-JT",
+    JAWA_TIMUR: "ID-JI",
+    KALBAR: "ID-KB",
+    KALSEL: "ID-KS",
+    KALTENG: "ID-KT",
+    KALTIM: "ID-KI",
+    KALTARA: "ID-KU",
+    KEPRI: "ID-KR",
+    LAMPUNG: "ID-LA",
+    MALUKU: "ID-MA",
+    MALUKU_UTARA: "ID-MU",
+    NTB: "ID-NB",
+    NTT: "ID-NT",
+    PAPUA: "ID-PA",
+    PAPUA_BARAT: "ID-PB",
+    PAPUA_BARAT_DAYA: "ID-PD",
+    PAPUA_PEGUNUNGAN: "ID-PP",
+    PAPUA_SELATAN: "ID-PS",
+    PAPUA_TENGAH: "ID-PT",
+    RIAU: "ID-RI",
+    SULBAR: "ID-SR",
+    SULSEL: "ID-SN",
+    SULTENG: "ID-ST",
+    SULTRA: "ID-SG",
+    SULUT: "ID-SA",
+    SUMBAR: "ID-SB",
+    SUMSEL: "ID-SS",
+    SUMUT: "ID-SU"
 }
+
+
+# ============================
+# Aliases (all referencing constants)
+# ============================
 
 PROVINCE_ALIASES = {
-    'aceh': 'Aceh',
-    'nanggroe aceh darussalam': 'Aceh',
-    'bali': 'Bali',
-    'bangka belitung': 'Bangka Belitung',
-    'bangka-belitung': 'Bangka Belitung',
-    'kepulauan bangka belitung': 'Bangka Belitung',
-    'kep. bangka belitung': 'Bangka Belitung',
-    'bangka belitung islands': 'Bangka Belitung',
-    'banten': 'Banten',
-    'bengkulu': 'Bengkulu',
-    'di yogyakarta': 'DI Yogyakarta',
-    'daerah istimewa yogyakarta': 'DI Yogyakarta',
-    'd.i. yogyakarta': 'DI Yogyakarta',
-    'diy': 'DI Yogyakarta',
-    'special region of yogyakarta': 'DI Yogyakarta',
-    'special region of jogjakarta': 'DI Yogyakarta',
-    'dki jakarta': 'DKI Jakarta',
-    'dki jakarta raya': 'DKI Jakarta',
-    'daerah khusus ibukota jakarta': 'DKI Jakarta',
-    'jakarta': 'DKI Jakarta',
-    'special capital region of jakarta': 'DKI Jakarta',
-    'gorontalo': 'Gorontalo',
-    'jambi': 'Jambi',
-    'jawa barat': 'Jawa Barat',
-    'west java': 'Jawa Barat',
-    'jawa tengah': 'Jawa Tengah',
-    'central java': 'Jawa Tengah',
-    'jawa timur': 'Jawa Timur',
-    'east java': 'Jawa Timur',
-    'kalimantan barat': 'Kalimantan Barat',
-    'west kalimantan': 'Kalimantan Barat',
-    'kalimantan selatan': 'Kalimantan Selatan',
-    'south kalimantan': 'Kalimantan Selatan',
-    'kalimantan tengah': 'Kalimantan Tengah',
-    'central kalimantan': 'Kalimantan Tengah',
-    'kalimantan timur': 'Kalimantan Timur',
-    'east kalimantan': 'Kalimantan Timur',
-    'kalimantan utara': 'Kalimantan Utara',
-    'north kalimantan': 'Kalimantan Utara',
-    'kepulauan riau': 'Kepulauan Riau',
-    'riau islands': 'Kepulauan Riau',
-    'lampung': 'Lampung',
-    'maluku': 'Maluku',
-    'maluku utara': 'Maluku Utara',
-    'north maluku': 'Maluku Utara',
-    'nusa tenggara barat': 'Nusa Tenggara Barat',
-    'west nusa tenggara': 'Nusa Tenggara Barat',
-    'nusa tenggara timur': 'Nusa Tenggara Timur',
-    'east nusa tenggara': 'Nusa Tenggara Timur',
-    'papua': 'Papua',
-    'papua barat': 'Papua Barat',
-    'west papua': 'Papua Barat',
-    'papua barat daya': 'Papua Barat Daya',
-    'southwest papua': 'Papua Barat Daya',
-    'papua pegunungan': 'Papua Pegunungan',
-    'highland papua': 'Papua Pegunungan',
-    'highlands papua': 'Papua Pegunungan',
-    'papua selatan': 'Papua Selatan',
-    'south papua': 'Papua Selatan',
-    'papua tengah': 'Papua Tengah',
-    'central papua': 'Papua Tengah',
-    'riau': 'Riau',
-    'sulawesi barat': 'Sulawesi Barat',
-    'west sulawesi': 'Sulawesi Barat',
-    'sulawesi selatan': 'Sulawesi Selatan',
-    'south sulawesi': 'Sulawesi Selatan',
-    'sulawesi tengah': 'Sulawesi Tengah',
-    'central sulawesi': 'Sulawesi Tengah',
-    'sulawesi tenggara': 'Sulawesi Tenggara',
-    'southeast sulawesi': 'Sulawesi Tenggara',
-    'sulawesi utara': 'Sulawesi Utara',
-    'north sulawesi': 'Sulawesi Utara',
-    'sumatera barat': 'Sumatera Barat',
-    'west sumatra': 'Sumatera Barat',
-    'sumatera selatan': 'Sumatera Selatan',
-    'south sumatra': 'Sumatera Selatan',
-    'sumatera utara': 'Sumatera Utara',
-    'north sumatra': 'Sumatera Utara',
+    "aceh": ACEH,
+    "nanggroe aceh darussalam": ACEH,
+
+    "bali": BALI,
+
+    "bangka belitung": BANGKA_BELITUNG,
+    "bangka-belitung": BANGKA_BELITUNG,
+    "kepulauan bangka belitung": BANGKA_BELITUNG,
+    "kep. bangka belitung": BANGKA_BELITUNG,
+    "bangka belitung islands": BANGKA_BELITUNG,
+
+    "banten": BANTEN,
+    "bengkulu": BENGKULU,
+
+    "di yogyakarta": DI_YOGYAKARTA,
+    "daerah istimewa yogyakarta": DI_YOGYAKARTA,
+    "d.i. yogyakarta": DI_YOGYAKARTA,
+    "diy": DI_YOGYAKARTA,
+    "special region of yogyakarta": DI_YOGYAKARTA,
+    "special region of jogjakarta": DI_YOGYAKARTA,
+
+    "dki jakarta": DKI_JAKARTA,
+    "jakarta": DKI_JAKARTA,
+
+    "gorontalo": GORONTALO,
+    "jambi": JAMBI,
+
+    "jawa barat": JAWA_BARAT,
+    "west java": JAWA_BARAT,
+
+    "jawa tengah": JAWA_TENGAH,
+    "central java": JAWA_TENGAH,
+
+    "jawa timur": JAWA_TIMUR,
+    "east java": JAWA_TIMUR,
+
+    "kalimantan barat": KALBAR,
+    "west kalimantan": KALBAR,
+
+    "kalimantan selatan": KALSEL,
+    "south kalimantan": KALSEL,
+
+    "kalimantan tengah": KALTENG,
+    "central kalimantan": KALTENG,
+
+    "kalimantan timur": KALTIM,
+    "east kalimantan": KALTIM,
+
+    "kalimantan utara": KALTARA,
+    "north kalimantan": KALTARA,
+
+    "kepulauan riau": KEPRI,
+    "riau islands": KEPRI,
+
+    "lampung": LAMPUNG,
+
+    "maluku": MALUKU,
+    "maluku utara": MALUKU_UTARA,
+    "north maluku": MALUKU_UTARA,
+
+    "nusa tenggara barat": NTB,
+    "west nusa tenggara": NTB,
+
+    "nusa tenggara timur": NTT,
+    "east nusa tenggara": NTT,
+
+    "papua": PAPUA,
+    "papua barat": PAPUA_BARAT,
+    "west papua": PAPUA_BARAT,
+
+    "papua barat daya": PAPUA_BARAT_DAYA,
+
+    "papua pegunungan": PAPUA_PEGUNUNGAN,
+    "highland papua": PAPUA_PEGUNUNGAN,
+    "highlands papua": PAPUA_PEGUNUNGAN,
+
+    "papua selatan": PAPUA_SELATAN,
+    "south papua": PAPUA_SELATAN,
+
+    "papua tengah": PAPUA_TENGAH,
+    "central papua": PAPUA_TENGAH,
+
+    "riau": RIAU,
+
+    "sulawesi barat": SULBAR,
+    "west sulawesi": SULBAR,
+
+    "sulawesi selatan": SULSEL,
+    "south sulawesi": SULSEL,
+
+    "sulawesi tengah": SULTENG,
+    "central sulawesi": SULTENG,
+
+    "sulawesi tenggara": SULTRA,
+    "southeast sulawesi": SULTRA,
+
+    "sulawesi utara": SULUT,
+    "north sulawesi": SULUT,
+
+    "sumatera barat": SUMBAR,
+    "west sumatra": SUMBAR,
+
+    "sumatera selatan": SUMSEL,
+    "south sumatra": SUMSEL,
+
+    "sumatera utara": SUMUT,
+    "north sumatra": SUMUT,
 }
 
-# Climate data validation error messages
+
+# ============================
+# Error message constants
+# ============================
+
 CLIMATE_ERROR_INVALID_FORMAT = "Invalid data format"
 CLIMATE_ERROR_MISSING_PROVINCE = "Missing province field"
-CLIMATE_ERROR_INVALID_VALUE = "Invalid value type" 
-
+CLIMATE_ERROR_INVALID_VALUE = "Invalid value type"
