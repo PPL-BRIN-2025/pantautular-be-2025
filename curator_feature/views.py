@@ -19,6 +19,8 @@ from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
 from pt_backend.authentication import APIKeyAuthentication
 
+CHART_FETCH_ERROR = {"message": "Failed to fetch chart data"}
+
 from curator_feature.serializers import (
     # charts/download
     ChartDataFiltersSerializer,
@@ -64,7 +66,7 @@ class ChartsSimpleView(APIView):
         except Exception:
             logger.exception("Unable to retrieve chart data from pt_backend")
             return Response(
-                {"message": "Failed to fetch chart data"},
+                CHART_FETCH_ERROR,
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
@@ -87,7 +89,7 @@ class ChartDataAPIView(APIView):
         except Exception:
             logger.exception("Unable to retrieve chart data")
             return Response(
-                {"message": "Failed to fetch chart data"},
+                CHART_FETCH_ERROR,
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
@@ -107,7 +109,7 @@ class ChartDataAPIView(APIView):
         except Exception:
             logger.exception("Unable to retrieve chart data with filters")
             return Response(
-                {"message": "Failed to fetch chart data"},
+                CHART_FETCH_ERROR,
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
