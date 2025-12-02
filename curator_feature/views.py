@@ -1,22 +1,20 @@
+# curator_feature/views.py
 import logging
 
 from django.conf import settings
-from django.shortcuts import render  # if unused, you can remove later
-import logging
-
-from django.conf import settings
-from django.shortcuts import render  # if unused, you can remove later
 from django.db.models import Q
+from django.shortcuts import render
+from django.core.exceptions import ValidationError as DjangoValidationError
 
-from rest_framework.exceptions import ValidationError, PermissionDenied, APIException
 from rest_framework import generics, status
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.exceptions import ValidationError, PermissionDenied, APIException
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.authentication import SessionAuthentication, BasicAuthentication
-from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
-from curator_feature.audittrail import log_curator_action
 
+from curator_feature.audittrail import log_curator_action
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
 from pt_backend.authentication import APIKeyAuthentication
@@ -30,9 +28,8 @@ from curator_feature.serializers import (
     # curator cases
     CaseWriteSerializer,
     CaseReadSerializer,
-    # audit logs
+    # audit logs + submissions
     CuratorDataLogSerializer,
-    ContributorSubmission,
     ContributorSubmissionListSerializer,
     ContributorSubmissionDetailSerializer,
 )
@@ -41,13 +38,11 @@ from curator_feature.services import (
     ChartDataService,
     DashboardDownloadEventService,
     DownloadLogService,
-    ContributorSubmissionService
+    ContributorSubmissionService,
 )
 from curator_feature.value_objects import ClientMetadata
 from pt_backend.models import Case
 from .permissions import IsCuratorRole
-
-# models for audit logs
 from .models import CuratorDataLog, BackendCase, ContributorSubmission
 
 logger = logging.getLogger(__name__)
@@ -68,7 +63,10 @@ class ChartsSimpleView(APIView):
             payload = self.service.get_chart_data()
         except Exception:
             logger.exception("Unable to retrieve chart data from pt_backend")
-            return Response({"message": "Failed to fetch chart data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"message": "Failed to fetch chart data"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -98,7 +96,10 @@ class ChartDataAPIView(APIView):
         serializer = self.request_serializer_class(data=request.data)
         if not serializer.is_valid():
             logger.debug("Invalid chart data filters: %s", serializer.errors)
-            return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"errors": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         filters = serializer.to_filters()
         try:
@@ -128,7 +129,10 @@ class DownloadLogAPIView(APIView):
         serializer = self.request_serializer_class(data=request.data)
         if not serializer.is_valid():
             logger.debug("Invalid download log payload: %s", serializer.errors)
-            return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"errors": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         payload = serializer.validated_data
 
@@ -200,9 +204,14 @@ class DiseaseListCreateView(generics.ListCreateAPIView):
     curator role (enforced by ReadOnlyOrCurator permission). Otherwise POST
     will be denied while GET remains public.
     """
+
     serializer_class = DiseaseSerializer
     # Accept JWT or session-based auth so both token and logged-in users can POST
-    authentication_classes = [CustomJWTAuthentication, SessionAuthentication, BasicAuthentication]
+    authentication_classes = [
+        CustomJWTAuthentication,
+        SessionAuthentication,
+        BasicAuthentication,
+    ]
 
     def get_permissions(self):
         # For safe methods allow everyone; for unsafe methods enforce curator checks
@@ -235,9 +244,12 @@ class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
     )
 
     def get_serializer_class(self):
-        return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+        return (
+            CaseReadSerializer
+            if self.request.method == "GET"
+            else CaseWriteSerializer
+        )
 
-    # === NEW: catat ke audit log saat CREATE ===
     def perform_create(self, serializer):
         instance = serializer.save()
         try:
@@ -248,12 +260,12 @@ class CuratorCaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
                 note="Data created by curator.",
             )
         except Exception:
-            # jangan ganggu flow utama kalau logging gagal
             logger.exception("audit-log create failed for case %s", instance.id)
 
 
-
-class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIView):
+class CuratorCaseDetailView(
+    _CuratorBaseView, generics.RetrieveUpdateDestroyAPIView
+):
     lookup_field = "id"
     queryset = (
         Case.objects.select_related("disease", "location")
@@ -262,10 +274,12 @@ class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIV
     )
 
     def get_serializer_class(self):
-        # GET returns read serializer; PATCH/PUT use write serializer
-        return CaseReadSerializer if self.request.method == "GET" else CaseWriteSerializer
+        return (
+            CaseReadSerializer
+            if self.request.method == "GET"
+            else CaseWriteSerializer
+        )
 
-    # === NEW: catat ke audit log saat UPDATE ===
     def perform_update(self, serializer):
         instance = serializer.save()
         try:
@@ -278,20 +292,21 @@ class CuratorCaseDetailView(_CuratorBaseView, generics.RetrieveUpdateDestroyAPIV
         except Exception:
             logger.exception("audit-log update failed for case %s", instance.id)
 
-    # === NEW: catat ke audit log saat DELETE ===
     def perform_destroy(self, instance):
         try:
             log_curator_action(
                 user=self.request.user,
                 data_id=instance.id,
-                title=(getattr(instance, "severity", None) or getattr(instance, "status", None) or "Deleted"),
+                title=(
+                    getattr(instance, "severity", None)
+                    or getattr(instance, "status", None)
+                    or "Deleted"
+                ),
                 note="Data deleted by curator.",
             )
         except Exception:
             logger.exception("audit-log delete failed for case %s", instance.id)
-        # lanjut hapus data
         super().perform_destroy(instance)
-
 
 
 class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView):
@@ -300,6 +315,7 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
     Uses the `DiseaseSerializer` defined in `curator_feature.serializers` and
     enforces curator-level permissions via `_CuratorBaseView`.
     """
+
     serializer_class = DiseaseSerializer
 
     def get_queryset(self):
@@ -314,7 +330,7 @@ class CuratorDiseaseListCreateView(_CuratorBaseView, generics.ListCreateAPIView)
 # ===============================
 class CuratorDataLogListCreateAPIView(APIView):
     authentication_classes = [CustomJWTAuthentication, SessionAuthentication]
-    permission_classes = [IsTokenAuthenticated, IsCuratorRole] 
+    permission_classes = [IsTokenAuthenticated, IsCuratorRole]
 
     def get(self, request):
         # pagination
@@ -325,7 +341,10 @@ class CuratorDataLogListCreateAPIView(APIView):
                 return d
 
         page = max(1, _i(request.query_params.get("page", 1), 1))
-        page_size = max(1, min(100, _i(request.query_params.get("pageSize", 10), 10)))
+        page_size = max(
+            1,
+            min(100, _i(request.query_params.get("pageSize", 10), 10)),
+        )
 
         # filters
         search = (request.query_params.get("search") or "").strip()
@@ -376,8 +395,9 @@ class CuratorDataLogListCreateAPIView(APIView):
             except BackendCase.DoesNotExist:
                 pass
 
-        payload["submittedBy"] = getattr(request.user, "username", "") or getattr(
-            request.user, "email", ""
+        payload["submittedBy"] = (
+            getattr(request.user, "username", "")
+            or getattr(request.user, "email", "")
         )
         ser = CuratorDataLogSerializer(data=payload)
         if ser.is_valid():
@@ -386,14 +406,9 @@ class CuratorDataLogListCreateAPIView(APIView):
         return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-logger = logging.getLogger(__name__)
-
-
 # ============================================================
-# LIST VIEW
+# MARK SEEN VIEW (KONTRIBUTOR SUDAH LIHAT UPDATE)
 # ============================================================
-
 class ContributorSubmissionListView(_CuratorBaseView, generics.ListAPIView):
     """
     GET /submissions/
@@ -404,19 +419,16 @@ class ContributorSubmissionListView(_CuratorBaseView, generics.ListAPIView):
     service = ContributorSubmissionService()
 
     def get_queryset(self):
-        search = (self.request.query_params.get("search") or "").strip()
+        search = (self.request.query_params.get("search") or "").strip() or None
         status_param = (self.request.query_params.get("status") or "").strip() or None
 
         try:
             return self.service.list(search=search, status=status_param)
         except Exception:
             logger.exception("Unable to retrieve contributor submissions")
+            # DRF returns HTTP 500 for APIException (matches test_list_view_handles_error)
             raise APIException("Unable to retrieve contributor submissions.")
 
-
-# ============================================================
-# DETAIL VIEW
-# ============================================================
 
 class ContributorSubmissionDetailView(_CuratorBaseView, generics.RetrieveAPIView):
     """
@@ -430,7 +442,6 @@ class ContributorSubmissionDetailView(_CuratorBaseView, generics.RetrieveAPIView
 # ============================================================
 # STATUS UPDATE VIEW (APPROVE / REJECT / REVISION)
 # ============================================================
-
 class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
     """
     PATCH /submissions/<id>/status/
@@ -458,23 +469,24 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
                 reviewer=request.user,
                 note=note,
             )
-
         except PermissionDenied as exc:
-            # RBAC violation (non-curator)
             return Response(
                 {"detail": str(exc)},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
-        except ValidationError as exc:
-            return Response(
-                exc.detail,
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+        except (ValidationError, DjangoValidationError) as exc:
+            detail = getattr(exc, "detail", None)
+            if detail is None:
+                detail = (
+                    getattr(exc, "message_dict", None)
+                    or getattr(exc, "messages", None)
+                    or str(exc)
+                )
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
-            # Fallback 500 
-            logger.exception("Error updating contributor submission status id=%s", id)
+            logger.exception(
+                "Error updating contributor submission status id=%s", id
+            )
             return Response(
                 {"detail": "Internal error while updating submission status."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -487,36 +499,40 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
 # ============================================================
 # MARK SEEN VIEW (KONTRIBUTOR SUDAH LIHAT UPDATE)
 # ============================================================
-
-class ContributorSubmissionMarkSeenView(_CuratorBaseView, APIView):
+class ContributorSubmissionMarkSeenView(APIView):
     """
     PATCH /submissions/<id>/mark-seen/
+
+    Dipanggil oleh KONTRIBUTOR untuk menandai bahwa update status
+    pada submission ini sudah dibaca.
     """
-    service = ContributorSubmissionService()
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsTokenAuthenticated]
 
     def patch(self, request, id):
+        # cari submission
         try:
-            # query model directly so we know exactly what exception we get
             sub = ContributorSubmission.objects.get(id=id)
         except ContributorSubmission.DoesNotExist:
-            # clean 404 when submission doesn't exist
             return Response(
                 {"detail": "Submission not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         except Exception:
-            # any other unexpected error → 500
-            logger.exception(
-                "Error fetching submission for mark-seen id=%s", id
-            )
+            logger.exception("Error fetching submission for mark-seen id=%s", id)
             return Response(
                 {"detail": "Internal error."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # reset flag only if it was previously True
+        # Identity check is not enforced here; authenticated contributors can mark as seen.
+
         if sub.has_unseen_update:
             sub.has_unseen_update = False
             sub.save(update_fields=["has_unseen_update"])
 
         return Response({"seen": True}, status=status.HTTP_200_OK)
+
+
+
+

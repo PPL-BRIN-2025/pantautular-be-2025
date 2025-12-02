@@ -2254,3 +2254,106 @@ class ContributorSubmissionMarkSeenAPI(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.sub.refresh_from_db()
         self.assertFalse(self.sub.has_unseen_update)
+
+
+# --- EXTRA COVERAGE FOR CONTRIBUTOR SUBMISSION VIEWS ---
+
+import uuid
+from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
+
+from django.test import TestCase, RequestFactory
+from rest_framework import status
+
+from curator_feature.views import (
+    ContributorSubmissionStatusUpdateView,
+    ContributorSubmissionMarkSeenView,
+)
+from curator_feature.models import ContributorSubmission
+
+
+class ContributorSubmissionStatusUpdateViewSuccessTests(TestCase):
+    """
+    Covers success branch of ContributorSubmissionStatusUpdateView
+    (lines 460–461: serializer + Response 200).
+    """
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionDetailSerializer")
+    @patch("curator_feature.views.ContributorSubmissionService.update_status")
+    def test_success_response_uses_serializer_data(
+        self,
+        mock_update_status,
+        mock_detail_serializer,
+        *_,
+    ):
+        # simulate PATCH /submissions/<id>/status/
+        request = self.factory.patch(
+            "/curator-feature/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json",
+        )
+        # minimal user with curator role
+        request.user = SimpleNamespace(role="CURATOR")
+
+        # service returns some "updated" object
+        updated_obj = MagicMock()
+        mock_update_status.return_value = updated_obj
+
+        # serializer returns specific data
+        serializer_instance = MagicMock()
+        serializer_instance.data = {"id": "uuid", "status": "APPROVED"}
+        mock_detail_serializer.return_value = serializer_instance
+
+        response = ContributorSubmissionStatusUpdateView.as_view()(request, id="uuid")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"id": "uuid", "status": "APPROVED"})
+
+        mock_update_status.assert_called_once_with(
+            submission_id="uuid",
+            new_status="APPROVED",
+            reviewer=request.user,
+            note="",
+        )
+        mock_detail_serializer.assert_called_once_with(updated_obj)
+
+
+class ContributorSubmissionMarkSeenViewUnitTests(TestCase):
+    """
+    Covers happy path of ContributorSubmissionMarkSeenView
+    (flag di-reset & response 200).
+    """
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionMarkSeenView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionMarkSeenView, "permission_classes", [])
+    def test_happy_path_resets_flag_and_returns_seen_true(self, *_):
+        sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="X",
+            content="Y",
+            submitted_by="alice",
+            has_unseen_update=True,
+        )
+
+        request = self.factory.patch(
+            f"/curator-feature/submissions/{sub.id}/mark-seen/",
+            content_type="application/json",
+        )
+        # user boleh apa aja, yang penting ada (karena auth & permission dipatch jadi kosong)
+        request.user = SimpleNamespace(username="alice", email="alice@example.com")
+
+        response = ContributorSubmissionMarkSeenView.as_view()(request, id=str(sub.id))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"seen": True})
+
+        sub.refresh_from_db()
+        self.assertFalse(sub.has_unseen_update)

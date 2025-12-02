@@ -398,8 +398,6 @@ def log_curator_edit(*, user, data_id, title=None, note=None):
     )
 
 
-
-
 class ContributorSubmissionService:
     """Service layer to encapsulate submission business logic."""
 
@@ -407,57 +405,100 @@ class ContributorSubmissionService:
     TERMINAL_STATUSES = {"APPROVED", "REJECTED"}
     REVIEWABLE_STATUSES = {"WAITING_FOR_APPROVAL", "NEED_REVISION"}
 
-    # SAFE LIST QUERYING
-    def list(self, *, search=None, status=None):
-        qs = ContributorSubmission.objects.all()
-
-        if search:
-            qs = qs.filter(
-                Q(title__icontains=search) | Q(submitted_by__icontains=search)
-            )
-
-        if status:
-            if status not in self.VALID_STATUSES:
-                raise ValidationError({"status": "Invalid status filter."})
-            qs = qs.filter(status=status)
-
-        return qs.order_by("-created_at")
-
-    # SAFE GET
     def get(self, submission_id):
+        """
+        Ambil satu submission berdasarkan id.
+        Dipakai di service tests & update_status().
+        """
         try:
             return ContributorSubmission.objects.get(id=submission_id)
-        except ObjectDoesNotExist:
-            raise ValidationError({"id": "Submission not found."})
+        except ContributorSubmission.DoesNotExist as exc:
+            raise ObjectDoesNotExist(
+                f"Submission with id={submission_id} not found"
+            ) from exc
 
-    # UPDATE STATUS WITH RBAC + VALIDATION
+    def list(self, *, search: Optional[str] = None, status: Optional[str] = None):
+        """
+        List submissions dengan optional filtering:
+        - search: cari di title / submitted_by / content
+        - status: harus salah satu dari VALID_STATUSES, kalau tidak -> ValidationError
+
+        Dipakai oleh:
+        - ContributorSubmissionServiceTests (unit tests)
+        - ContributorSubmissionListView.get_queryset()
+        """
+        qs = ContributorSubmission.objects.all().order_by("-created_at")
+
+        # filter by status kalau dikasih
+        if status:
+            normalized_status = str(status).strip().upper()
+            if normalized_status not in self.VALID_STATUSES:
+                # ini yang dites di test_list_invalid_status_raises_validation_error
+                raise ValidationError({"status": "Invalid status filter."})
+            qs = qs.filter(status=normalized_status)
+
+        # filter by search kalau dikasih
+        if search:
+            term = search.strip()
+            if term:
+                qs = qs.filter(
+                    Q(title__icontains=term)
+                    | Q(submitted_by__icontains=term)
+                    | Q(content__icontains=term)
+                )
+
+        return qs
+
     @transaction.atomic
-    def update_status(self, *, submission_id, new_status, reviewer, note: Optional[str] = None):
-        if reviewer.role != "CURATOR":
-            raise ValidationError({"role": "Only CURATOR can review submissions."})
+    def update_status(
+        self,
+        *,
+        submission_id,
+        new_status,
+        reviewer,
+        note: Optional[str] = None,
+    ):
+        # ✅ hanya CURATOR atau ADMIN yang boleh review
+        role = str(getattr(reviewer, "role", "") or "").upper()
+        if role not in {"CURATOR", "ADMIN"}:
+            raise ValidationError(
+                {"role": "Only CURATOR or ADMIN can review submissions."}
+            )
 
         if new_status not in self.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}:
             raise ValidationError({"status": "Invalid status provided."})
 
         sub = self.get(submission_id)
 
-        # enforce workflow transitions
         if sub.status in self.TERMINAL_STATUSES:
-            raise ValidationError({"status": "Submission has been finalized and cannot be changed."})
+            raise ValidationError(
+                {"status": "Submission has been finalized and cannot be changed."}
+            )
 
         if sub.status not in self.REVIEWABLE_STATUSES:
-            raise ValidationError({"status": "Submission is not in a reviewable state."})
+            raise ValidationError(
+                {"status": "Submission is not in a reviewable state."}
+            )
 
         if sub.status == new_status:
-            raise ValidationError({"status": "Submission already has the requested status."})
+            raise ValidationError(
+                {"status": "Submission already has the requested status."}
+            )
 
         sub.status = new_status
         sub.reviewed_at = timezone.now()
         sub.has_unseen_update = True
         sub.last_notified_status = new_status
-        sub.save(update_fields=["status", "reviewed_at", "has_unseen_update", "last_notified_status"])
+        sub.save(
+            update_fields=[
+                "status",
+                "reviewed_at",
+                "has_unseen_update",
+                "last_notified_status",
+            ]
+        )
 
-        # audit log (safe)
+        # audit log (safe, jangan sampe nge-crash kalau gagal)
         try:
             audit_note = note or f"Contributor submission reviewed: {new_status}"
             log_curator_action(
@@ -467,7 +508,6 @@ class ContributorSubmissionService:
                 note=audit_note,
             )
         except Exception:
-            # never crash status update because of audit log failure
             logger.exception("audit log failed during submission review")
 
         return sub
