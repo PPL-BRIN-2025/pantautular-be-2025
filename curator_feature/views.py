@@ -50,6 +50,10 @@ from .permissions import IsCuratorRole
 # models for audit logs
 from .models import CuratorDataLog, BackendCase, ContributorSubmission
 
+# === Error message constants ===
+ERROR_FAILED_FETCH_CHART_DATA = "Failed to fetch chart data"
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +72,7 @@ class ChartsSimpleView(APIView):
             payload = self.service.get_chart_data()
         except Exception:
             logger.exception("Unable to retrieve chart data from pt_backend")
-            return Response({"message": "Failed to fetch chart data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"message": ERROR_FAILED_FETCH_CHART_DATA}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -89,7 +93,7 @@ class ChartDataAPIView(APIView):
         except Exception:
             logger.exception("Unable to retrieve chart data")
             return Response(
-                {"message": "Failed to fetch chart data"},
+                {"message": ERROR_FAILED_FETCH_CHART_DATA},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
@@ -106,7 +110,7 @@ class ChartDataAPIView(APIView):
         except Exception:
             logger.exception("Unable to retrieve chart data with filters")
             return Response(
-                {"message": "Failed to fetch chart data"},
+                {"message": ERROR_FAILED_FETCH_CHART_DATA},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(payload, status=status.HTTP_200_OK)
