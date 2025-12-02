@@ -115,6 +115,7 @@ class ExpertDownloadAPITests(TestCase):
             "end_date": end,
         }
 
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=False)
     def test_download_log_returns_accepted_when_logging_disabled(self):
         payload = {
             "metric": "jumlah_kasus",
@@ -189,6 +190,7 @@ class ExpertDownloadAPITests(TestCase):
         self.assertEqual(data_row[9], "Portal A")
         self.assertEqual(DashboardDownloadEvent.objects.count(), 1)
 
+    @override_settings(ENABLE_DOWNLOAD_LOGGING=False)
     def test_csv_download_includes_blank_news_columns(self):
         payload = {
             "metric": "jumlah_kasus",
