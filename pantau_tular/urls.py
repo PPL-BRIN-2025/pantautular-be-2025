@@ -19,6 +19,7 @@ from django.urls import path, include, re_path
 from django_prometheus import exports
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from authentication.views import SecureAuditLogAPIView
 
 from curator_feature.views import DashboardDownloadEventAPIView, DiseaseListCreateView
 
@@ -32,6 +33,7 @@ urlpatterns = [
     path('authentication/', include("authentication.urls")),
     path('admin-feature/', include('admin_feature.urls')),
     path('api/downloads/log/', DashboardDownloadEventAPIView.as_view(), name='dashboard-download-log'),
+    path('api/security/audit-log/', SecureAuditLogAPIView.as_view(), name='secure-audit-log'),
     path('api/logs/', include('curator_feature.urls')),
     path('api/curator-feature/', include('curator_feature.urls')),
     # Backwards-compatible alias to canonical location (preserve POST behavior)

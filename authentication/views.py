@@ -19,6 +19,7 @@ from .services import (
 )
 from .serializers import SignupSerializer, LoginSerializer
 from .security import APIKeyAuthentication
+from .token_security import AccessTokenAuthentication
 from authentication.registration.service import (
     RegistrationService,
     RegistrationError,
@@ -310,3 +311,25 @@ class LoginAPIView(APIView):
                 {"detail": "Login failed. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class SecureAuditLogAPIView(APIView):
+    """Example endpoint protected by AccessTokenAuthentication controls."""
+
+    authentication_classes = [AccessTokenAuthentication]
+    permission_classes = []
+    throttle_classes = []
+
+    def get(self, request):
+        consumer = request.user
+        metadata = getattr(consumer, "metadata", {}) or {}
+        payload = {
+            "detail": "Secure audit stream available.",
+            "token": request.auth,
+            "consumer": {
+                "name": getattr(consumer, "name", "API Consumer"),
+                "permissions": getattr(consumer, "permissions", []),
+                "ip": metadata.get("ip"),
+            },
+        }
+        return Response(payload, status=status.HTTP_200_OK)

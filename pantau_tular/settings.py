@@ -38,6 +38,21 @@ SECRET_API_KEY = os.getenv('SECRET_API_KEY', 'test-api-key')
 ENABLE_DOWNLOAD_LOGGING = os.getenv("ENABLE_DOWNLOAD_LOGGING", "false").lower() == "true"
 _secret_keys_env = [item.strip() for item in os.getenv("SECRET_API_KEYS", "").split(",") if item.strip()]
 SECRET_API_KEYS = tuple(dict.fromkeys([SECRET_API_KEY, *_secret_keys_env]))
+
+API_TOKEN_DEFAULT_RATE_LIMIT = {
+    "requests": 100,
+    "window": 60,
+}
+API_TOKEN_BLOCK_DURATION = 60 * 5  # 5 minutes
+API_TOKENS = {
+    "restricted-token": {
+        "name": "Restricted Access Token",
+        "permissions": ["read"],
+        "allowed_ips": ["203.0.113.10", "203.0.113.20"],
+        "rate_limit": {"requests": 50, "window": 60},
+    },
+}
+
 NEWS_DEFAULT_IMAGE_URL = os.getenv(
     "NEWS_DEFAULT_IMAGE_URL",
     "https://cdn.pantautular.com/assets/news-default.jpg",
