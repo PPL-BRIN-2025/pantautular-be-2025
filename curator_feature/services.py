@@ -18,6 +18,12 @@ from pt_backend.repositories import CaseRepository
 from pt_backend.services import CacheService, CaseService, CasesFilterService
 from pt_backend.statistics.coordinator import StatisticsCoordinator
 from .models import CuratorDataLog
+from pantau_tular.security import (
+    BusinessLogicViolation,
+    InvalidFlowTransition,
+    SecureWorkflowValidator,
+    enforce_business_rule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +413,14 @@ class ContributorSubmissionService:
     TERMINAL_STATUSES = {"APPROVED", "REJECTED"}
     REVIEWABLE_STATUSES = {"WAITING_FOR_APPROVAL", "NEED_REVISION"}
 
+    def __init__(self, workflow_validator: Optional[SecureWorkflowValidator] = None) -> None:
+        self.workflow_validator = workflow_validator or SecureWorkflowValidator()
+
+    @staticmethod
+    @enforce_business_rule("curator-role-required")
+    def _ensure_curator_role(reviewer_role: str) -> bool:
+        return reviewer_role == "CURATOR"
+
     # SAFE LIST QUERYING
     def list(self, *, search=None, status=None):
         qs = ContributorSubmission.objects.all()
@@ -433,23 +447,36 @@ class ContributorSubmissionService:
     # UPDATE STATUS WITH RBAC + VALIDATION
     @transaction.atomic
     def update_status(self, *, submission_id, new_status, reviewer, note: Optional[str] = None):
-        if reviewer.role != "CURATOR":
-            raise ValidationError({"role": "Only CURATOR can review submissions."})
+        reviewer_role = (getattr(reviewer, "role", "") or "").upper()
+        try:
+            self._ensure_curator_role(reviewer_role)
+        except BusinessLogicViolation as exc:
+            raise BusinessLogicViolation(str(exc)) from exc
 
         if new_status not in self.VALID_STATUSES - {"WAITING_FOR_APPROVAL"}:
             raise ValidationError({"status": "Invalid status provided."})
 
         sub = self.get(submission_id)
 
-        # enforce workflow transitions
+        # workflow pre-checks guard impossible states
         if sub.status in self.TERMINAL_STATUSES:
-            raise ValidationError({"status": "Submission has been finalized and cannot be changed."})
-
+            raise InvalidFlowTransition("Submission has been finalized and cannot be changed.")
         if sub.status not in self.REVIEWABLE_STATUSES:
-            raise ValidationError({"status": "Submission is not in a reviewable state."})
-
+            raise InvalidFlowTransition("Submission is not in a reviewable state.")
         if sub.status == new_status:
-            raise ValidationError({"status": "Submission already has the requested status."})
+            raise InvalidFlowTransition("Submission already has the requested status.")
+
+        # Threat modeling: final states must be accompanied by review evidence.
+        metadata = {
+            "review_notes": (note or "").strip(),
+            "allow_terminal_transition": True,
+        }
+        self.workflow_validator.validate_transition(
+            flow_name="contributor_submission",
+            current_state=sub.status,
+            requested_state=new_status,
+            metadata=metadata,
+        )
 
         sub.status = new_status
         sub.reviewed_at = timezone.now()

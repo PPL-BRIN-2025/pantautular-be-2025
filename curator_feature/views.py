@@ -1,4 +1,5 @@
 import logging
+from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.shortcuts import render  # if unused, you can remove later
@@ -46,6 +47,14 @@ from curator_feature.services import (
 from curator_feature.value_objects import ClientMetadata
 from pt_backend.models import Case
 from .permissions import IsCuratorRole
+from pantau_tular.security import (
+    BusinessLogicViolation,
+    InvalidFlowTransition,
+    SecureDesignLayerMixin,
+    TierBoundaryEnforcer,
+    secure_flow,
+    validate_authorize_execute,
+)
 
 # models for audit logs
 from .models import CuratorDataLog, BackendCase, ContributorSubmission
@@ -163,7 +172,7 @@ class DownloadLogAPIView(APIView):
         return Response(response_data, status=status.HTTP_201_CREATED)
 
 
-class DashboardDownloadEventAPIView(APIView):
+class DashboardDownloadEventAPIView(SecureDesignLayerMixin, APIView):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = []
     serializer_class = DashboardDownloadEventSerializer
@@ -172,8 +181,25 @@ class DashboardDownloadEventAPIView(APIView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = self.service_class()
+        self.initialize_secure_design()
 
+    def build_security_payload(self, request, flow_name: str) -> Dict[str, Any]:
+        payload = super().build_security_payload(request, flow_name)
+        payload["actor"] = request.headers.get("X-Client-ID") or payload.get("source") or "api-consumer"
+        payload["tenant_id"] = request.headers.get("X-Tenant-ID") or payload.get("tenant_id")
+        return payload
+
+    def build_security_metadata(self, request, flow_name: str, payload: Dict[str, Any], *, actor: Optional[str] = None) -> Dict[str, Any]:
+        actor = actor or payload.get("actor")
+        metadata = super().build_security_metadata(request, flow_name, payload, actor=actor)
+        metadata["actor"] = actor
+        metadata["tenant"] = payload.get("tenant_id") or metadata.get("tenant")
+        metadata["requested_items"] = 1
+        return metadata
+
+    @secure_flow("chart_download")
     def post(self, request, *args, **kwargs):
+        # Threat modeling: rate limiting and velocity tracking stop abusive chart exports.
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
@@ -440,7 +466,13 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
     PATCH /submissions/<id>/status/
     """
     parser_classes = [JSONParser, FormParser, MultiPartParser]
-    service = ContributorSubmissionService()
+    service_class = ContributorSubmissionService
+    tier_enforcer_class = TierBoundaryEnforcer
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = self.service_class()
+        self.tier_enforcer = self.tier_enforcer_class()
 
     def patch(self, request, id):
         raw_status = request.data.get("status") or ""
@@ -455,36 +487,53 @@ class ContributorSubmissionStatusUpdateView(_CuratorBaseView, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
+        def _validate():
+            # Threat modeling: prevent forged tier fields and state skipping.
+            self.tier_enforcer.assert_clean_payload(request.data)
+            submission = self.service.get(id)
+            actor_tenant = self.tier_enforcer.extract_actor_tenant(request)
+            resource_tenant = self.tier_enforcer.derive_resource_tenant(submission.submitted_by)
+            return {
+                "submission": submission,
+                "actor_tenant": actor_tenant,
+                "resource_tenant": resource_tenant,
+                "note": note,
+                "new_status": new_status,
+            }
+
+        def _authorize(context):
+            self.tier_enforcer.ensure_same_tenant(
+                actor_tenant=context["actor_tenant"],
+                resource_tenant=context["resource_tenant"],
+                resource_name="contributor submission",
+            )
+            return context
+
+        def _execute(context):
             updated = self.service.update_status(
                 submission_id=id,
-                new_status=new_status,
+                new_status=context["new_status"],
                 reviewer=request.user,
-                note=note,
+                note=context["note"],
             )
+            return {"submission": updated}
 
-        except PermissionDenied as exc:
-            # RBAC violation (non-curator)
-            return Response(
-                {"detail": str(exc)},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+        try:
+            result = validate_authorize_execute(_validate, _authorize, _execute)
+        except BusinessLogicViolation as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except InvalidFlowTransition as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except ValidationError as exc:
-            return Response(
-                exc.detail,
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
-            # Fallback 500 
             logger.exception("Error updating contributor submission status id=%s", id)
             return Response(
                 {"detail": "Internal error while updating submission status."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        data = ContributorSubmissionDetailSerializer(updated).data
+        data = ContributorSubmissionDetailSerializer(result["submission"]).data
         return Response(data, status=status.HTTP_200_OK)
 
 
