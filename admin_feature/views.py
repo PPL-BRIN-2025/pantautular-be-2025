@@ -1,17 +1,22 @@
 # admin_feature/views.py
+import logging
+
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
 from django.db.models import Prefetch, Q
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from rest_framework.generics import ListAPIView, DestroyAPIView
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from authentication.security import CustomJWTAuthentication
 from authentication.permissions import IsTokenAuthenticated
 from admin_feature.permissions import IsAdminRole
+from pantau_tular.security import InputValidator, SafeLogger
 
 from pt_backend.models import User, UserRole
 from .serializers import (
@@ -241,18 +246,38 @@ class AdminUserDeleteView(DestroyAPIView, AuditLogMixin):
 class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin, DateFilterMixin):
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsTokenAuthenticated, IsAdminRole]
+    validator = InputValidator
+    safe_logger = SafeLogger(logging.getLogger(__name__))
 
     def get(self, request):
         page, page_size = self.get_pagination_params(request)
 
-        search = (request.query_params.get("search") or "").strip()
-        sort = request.query_params.get("sort") or "timestamp:desc"
-        order = "-timestamp" if str(sort).endswith(":desc") else "timestamp"
+        raw_search = (request.query_params.get("search") or "").strip()
+        raw_sort = request.query_params.get("sort") or "timestamp:desc"
+        raw_start = request.query_params.get("start") or ""
+        raw_end = request.query_params.get("end") or ""
+
+        try:
+            search = self.validator.validate_safe_text(raw_search)
+            start = self.validator.validate_safe_text(raw_start)
+            end = self.validator.validate_safe_text(raw_end)
+            sort = self._validate_sort(raw_sort)
+        except DjangoValidationError as exc:
+            context = {
+                "search": self.validator.sanitize_for_logging(raw_search),
+                "sort": self.validator.sanitize_for_logging(raw_sort),
+                "start": self.validator.sanitize_for_logging(raw_start),
+                "end": self.validator.sanitize_for_logging(raw_end),
+            }
+            self.safe_logger.warning("Rejected admin log filters %s", context)
+            raise DRFValidationError(str(exc))
+
+        order = f"-{sort[0]}" if sort[1] == "desc" else sort[0]
 
         qs = AdminUserLog.objects.all()
         qs = self.apply_search(qs, search, ["username", "email", "detail"])
-        qs = self.apply_date_filter(qs, request.query_params.get("start"), "timestamp__gte")
-        qs = self.apply_date_filter(qs, request.query_params.get("end"), "timestamp__lte")
+        qs = self.apply_date_filter(qs, start, "timestamp__gte")
+        qs = self.apply_date_filter(qs, end, "timestamp__lte")
 
         total = qs.count()
         items = qs.order_by(order)[(page - 1) * page_size : page * page_size]
@@ -273,6 +298,18 @@ class AdminUserLogsAPIView(APIView, AuditLogMixin, PaginationMixin, SearchMixin,
             obj = ser.save()
             return Response(AdminUserLogSerializer(obj).data, status=status.HTTP_201_CREATED)
         return Response({"errors": ser.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _validate_sort(self, raw_sort: str):
+        sanitized = self.validator.validate_safe_text(raw_sort or "timestamp:desc") or "timestamp:desc"
+        field, _, direction = sanitized.partition(":")
+        field = self.validator.validate_keyword(field or "timestamp")
+        direction = (direction or "desc").lower()
+        allowed_fields = {"timestamp", "username", "email"}
+        if field not in allowed_fields:
+            raise DjangoValidationError("Unsupported sort field.")
+        if direction not in {"asc", "desc"}:
+            raise DjangoValidationError("Sort direction must be either asc or desc.")
+        return field, direction
 
 
 

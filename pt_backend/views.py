@@ -4,9 +4,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.views.decorators.http import require_http_methods
 from authentication.permissions import IsTokenAuthenticated
 from authentication.security import CustomJWTAuthentication
+from django.core.exceptions import ValidationError as DjangoValidationError
 from pt_backend.models import Location
 from .serializers import CaseLocationSerializer, DiseaseSeverityStatsSerializer, LocationSeverityStatsSerializer, ProvinceHumiditySerializer, ProvinceTemperatureSerializer, ProvincePrecipitationSerializer
 from .services import AverageSeverityByProvince, CacheService, CaseService, CaseDetailService, DiseaseService, LocationService, CasesFilterService, SeverityFilteringService, ClimateService
@@ -29,6 +31,8 @@ from .constants import CLIMATE_ERROR_INVALID_FORMAT, PROVINCE_TO_CODE
 from datetime import datetime
 from django.db import connections
 from django.db.utils import OperationalError
+from pantau_tular.security import InputValidator, SafeLogger
+from pt_backend.security_services import SafeCaseQueryService
 
 logger = logging.getLogger(__name__)
 
@@ -882,6 +886,34 @@ class WeightedSeverityAnalysisView(APIView):
                 {"error": INTERNAL_SERVER_ERR_MSG},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class SafeCaseLookupAPIView(APIView):
+    """Example endpoint demonstrating the injection-prevention module in action."""
+
+    authentication_classes = []
+    permission_classes = []
+    validator = InputValidator
+    safe_logger = SafeLogger(logging.getLogger(__name__))
+    service_class = SafeCaseQueryService
+
+    def get(self, request):
+        raw_keyword = (request.query_params.get("keyword") or "").strip()
+        raw_status = (request.query_params.get("status") or "").strip()
+        try:
+            keyword = self.validator.validate_safe_text(raw_keyword)
+            status_filter = self.validator.validate_keyword(raw_status) if raw_status else ""
+        except DjangoValidationError as exc:
+            context = {
+                "keyword": self.validator.sanitize_for_logging(raw_keyword),
+                "status": self.validator.sanitize_for_logging(raw_status),
+            }
+            self.safe_logger.warning("Rejected safe case lookup params %s", context)
+            raise DRFValidationError(str(exc))
+
+        service = self.service_class()
+        payload = service.lookup_case(keyword=keyword, status_filter=status_filter)
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 @require_http_methods(['GET'])
