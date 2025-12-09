@@ -183,6 +183,7 @@ if RUNNING_TESTS:
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
+SENTRY_ENABLE_LOGS = os.getenv("SENTRY_ENABLE_LOGS", "true").lower() in {"1", "true", "yes"}
 
 if SENTRY_DSN and not RUNNING_TESTS:
     import sentry_sdk
@@ -213,6 +214,7 @@ if SENTRY_DSN and not RUNNING_TESTS:
             os.getenv("BACKEND_BASE_URL", "royal-rahel-nayaka-cbe367a7.koyeb.app"),
         ),
         send_default_pii=False,
+        enable_logs=SENTRY_ENABLE_LOGS,
     )
 
 # Password validation
