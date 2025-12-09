@@ -180,7 +180,14 @@ if RUNNING_TESTS:
             'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
+import sentry_sdk
 
+sentry_sdk.init(
+    dsn="https://0f7f473f372afdf4636af26e72d4d6ec@o4510417563484160.ingest.us.sentry.io/4510417568006144",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
 SENTRY_ENABLE_LOGS = os.getenv("SENTRY_ENABLE_LOGS", "true").lower() in {"1", "true", "yes"}
