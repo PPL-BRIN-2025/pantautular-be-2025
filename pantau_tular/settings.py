@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -179,6 +180,40 @@ if RUNNING_TESTS:
             'NAME': BASE_DIR / 'test_db.sqlite3',
         }
     }
+
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
+
+if SENTRY_DSN and not RUNNING_TESTS:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    try:
+        traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
+    except (TypeError, ValueError):
+        traces_sample_rate = 0.0
+
+    try:
+        profiles_sample_rate = float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0"))
+    except (TypeError, ValueError):
+        profiles_sample_rate = 0.0
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=traces_sample_rate,
+        profiles_sample_rate=profiles_sample_rate,
+        environment=SENTRY_ENVIRONMENT,
+        server_name=os.getenv(
+            "SENTRY_SERVER_NAME",
+            os.getenv("BACKEND_BASE_URL", "royal-rahel-nayaka-cbe367a7.koyeb.app"),
+        ),
+        send_default_pii=False,
+    )
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

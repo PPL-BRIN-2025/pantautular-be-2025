@@ -47,6 +47,11 @@ Make sure to set these environment variables in your `.env` file:
 - `EMAIL_HOST_USER`: Email for sending notifications
 - `EMAIL_HOST_PASSWORD`: Password for the email account
 - `PORT`: Port to run the application (default: 8000)
+- `SENTRY_DSN`: Backend Sentry DSN (set this in Koyeb to capture production errors)
+- `SENTRY_ENVIRONMENT`: Sentry environment label (e.g., `production`, `staging`)
+- `SENTRY_SERVER_NAME`: Hostname shown in Sentry (use `royal-rahel-nayaka-cbe367a7.koyeb.app` for production)
+- `SENTRY_TRACES_SAMPLE_RATE`: Optional APM trace sample rate between 0.0 and 1.0 (default `0.0`)
+- `SENTRY_PROFILES_SAMPLE_RATE`: Optional profiling sample rate between 0.0 and 1.0 (default `0.0`)
 
 ## Using with External PostgreSQL Database
 
@@ -100,4 +105,3 @@ The project uses the following branches:
 - Created for new features or bug fixes
 - Should branch off from `staging`
 - Pull requests should target the `staging` branch
-
