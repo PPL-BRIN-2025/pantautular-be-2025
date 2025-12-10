@@ -581,6 +581,12 @@ class ExpertDatasetListView(generics.ListAPIView):
     def get_queryset(self):
         qs = ExpertDataset.objects.all()
 
+        user = getattr(self.request, "user", None)
+        if getattr(user, "is_authenticated", False):
+            identifier = getattr(user, "email", None) or getattr(user, "username", None)
+            if identifier:
+                qs = qs.filter(submitted_by__iexact=identifier)
+
         # text search (case-insensitive)
         q = (self.request.query_params.get("search") or "").strip().lower()
         if q:
