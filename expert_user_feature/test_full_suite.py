@@ -290,6 +290,7 @@ class TestExpertDatasetAPI(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username="expert",
+            email="expert@example.com",
             password=make_password(str(uuid.uuid4())),
         )
         setattr(self.user, "role", "EXPERT")
@@ -297,9 +298,9 @@ class TestExpertDatasetAPI(APITestCase):
 
         now = timezone.now()
         ExpertDataset.objects.bulk_create([
-            ExpertDataset(data_id="ID1", file_name="Report_Jakarta.xlsx",        last_edited=now,                submitted_by="EXPERTA"),
-            ExpertDataset(data_id="ID2", file_name="Survey_Bandung.csv",         last_edited=now - timezone.timedelta(days=1), submitted_by="EXPERTB"),
-            ExpertDataset(data_id="ID3", file_name="Public_Health_Analysis.xlsx",last_edited=now - timezone.timedelta(days=2), submitted_by="EXPERTD"),
+            ExpertDataset(data_id="ID1", file_name="Report_Jakarta.xlsx",        last_edited=now,                submitted_by="expert@example.com"),
+            ExpertDataset(data_id="ID2", file_name="Survey_Bandung.csv",         last_edited=now - timezone.timedelta(days=1), submitted_by="expert@example.com"),
+            ExpertDataset(data_id="ID3", file_name="Public_Health_Analysis.xlsx",last_edited=now - timezone.timedelta(days=2), submitted_by="expert@example.com"),
         ])
         self.client = APIClient()
         self.client.force_authenticate(self.user)
