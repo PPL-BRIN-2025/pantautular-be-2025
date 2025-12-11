@@ -136,10 +136,9 @@ class ContributorSubmission(models.Model):
 
     def save(self, *args, **kwargs):
         # prevent updates to title/content after review
-        if self.pk:
-            old = ContributorSubmission.objects.filter(pk=self.pk).first()
-            if old and old.status != "WAITING_FOR_APPROVAL":
-                raise ValueError("Reviewed submissions cannot be modified.")
+        old = ContributorSubmission.objects.filter(pk=self.pk).first()
+        if old and old.status != "WAITING_FOR_APPROVAL":
+            raise ValueError("Reviewed submissions cannot be modified.")
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):

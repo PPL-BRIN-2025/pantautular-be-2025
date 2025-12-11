@@ -14,6 +14,7 @@ from unittest import mock
 from django.contrib.auth.models import AnonymousUser, Group, User as DjangoUser
 from django.core.cache import cache
 from django.core.exceptions import ValidationError, PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -2254,3 +2255,266 @@ class ContributorSubmissionMarkSeenAPI(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.sub.refresh_from_db()
         self.assertFalse(self.sub.has_unseen_update)
+
+
+class ContributorSubmissionModelGuardTests(TestCase):
+    def test_prevent_update_after_review(self):
+        sub = ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Title",
+            content="Content",
+            submitted_by="alice",
+            status="WAITING_FOR_APPROVAL",
+        )
+        # update while still waiting -> allowed
+        sub.title = "Title v2"
+        sub.save()
+
+        # mark as approved then try to update -> should raise
+        sub.status = "APPROVED"
+        sub.save()
+        sub.content = "New content"
+        with self.assertRaises(ValueError):
+            sub.save()
+
+    def test_delete_raises_value_error(self):
+        sub = ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Title",
+            content="Content",
+            submitted_by="bob",
+            status="WAITING_FOR_APPROVAL",
+        )
+        with self.assertRaises(ValueError):
+            sub.delete()
+
+    def test_update_allowed_while_waiting(self):
+        sub = ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Title",
+            content="Content",
+            submitted_by="bob",
+            status="WAITING_FOR_APPROVAL",
+        )
+        sub.title = "Updated while waiting"
+        # old exists and status is WAITING_FOR_APPROVAL -> should not raise
+        sub.save()
+        sub.refresh_from_db()
+        self.assertEqual(sub.title, "Updated while waiting")
+
+    def test_save_without_pk_allows_initial_insert(self):
+        # pk is set but row does not yet exist; guard should allow first save
+        sub = ContributorSubmission(
+            id=uuid4(),
+            title="No PK yet",
+            content="Body",
+            submitted_by="noone",
+            status="WAITING_FOR_APPROVAL",
+        )
+        sub.save()
+        self.assertTrue(
+            ContributorSubmission.objects.filter(id=sub.id).exists()
+        )
+
+    def test_save_with_existing_pk_before_persist_allows_first_save(self):
+        """When pk is set but row does not exist yet, save should not raise."""
+        sub = ContributorSubmission(
+            id=uuid4(),
+            title="Fresh",
+            content="Pending",
+            submitted_by="carol",
+            status="WAITING_FOR_APPROVAL",
+        )
+        sub.save()  # should not raise ValueError
+        self.assertTrue(ContributorSubmission.objects.filter(id=sub.id).exists())
+
+
+# --- EXTRA COVERAGE FOR CONTRIBUTOR SUBMISSION VIEWS ---
+
+import uuid
+from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
+
+from django.test import TestCase, RequestFactory
+from rest_framework import status
+
+from curator_feature.views import (
+    ContributorSubmissionStatusUpdateView,
+    ContributorSubmissionMarkSeenView,
+)
+from curator_feature.models import ContributorSubmission
+
+
+class ContributorSubmissionStatusUpdateViewSuccessTests(TestCase):
+    """
+    Covers success branch of ContributorSubmissionStatusUpdateView
+    (lines 460–461: serializer + Response 200).
+    """
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionDetailSerializer")
+    @patch("curator_feature.views.ContributorSubmissionService.update_status")
+    def test_success_response_uses_serializer_data(
+        self,
+        mock_update_status,
+        mock_detail_serializer,
+        *_,
+    ):
+        # simulate PATCH /submissions/<id>/status/
+        request = self.factory.patch(
+            "/curator-feature/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json",
+        )
+        # minimal user with curator role
+        request.user = SimpleNamespace(role="CURATOR")
+
+        # service returns some "updated" object
+        updated_obj = MagicMock()
+        mock_update_status.return_value = updated_obj
+
+        # serializer returns specific data
+        serializer_instance = MagicMock()
+        serializer_instance.data = {"id": "uuid", "status": "APPROVED"}
+        mock_detail_serializer.return_value = serializer_instance
+
+        response = ContributorSubmissionStatusUpdateView.as_view()(request, id="uuid")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"id": "uuid", "status": "APPROVED"})
+
+        mock_update_status.assert_called_once_with(
+            submission_id="uuid",
+            new_status="APPROVED",
+            reviewer=request.user,
+            note="",
+        )
+        mock_detail_serializer.assert_called_once_with(updated_obj)
+
+
+class ContributorSubmissionMarkSeenViewUnitTests(TestCase):
+    """
+    Covers happy path of ContributorSubmissionMarkSeenView
+    (flag di-reset & response 200).
+    """
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionMarkSeenView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionMarkSeenView, "permission_classes", [])
+    def test_happy_path_resets_flag_and_returns_seen_true(self, *_):
+        sub = ContributorSubmission.objects.create(
+            id=uuid.uuid4(),
+            title="X",
+            content="Y",
+            submitted_by="alice",
+            has_unseen_update=True,
+        )
+
+        request = self.factory.patch(
+            f"/curator-feature/submissions/{sub.id}/mark-seen/",
+            content_type="application/json",
+        )
+        # user boleh apa aja, yang penting ada (karena auth & permission dipatch jadi kosong)
+        request.user = SimpleNamespace(username="alice", email="alice@example.com")
+
+        response = ContributorSubmissionMarkSeenView.as_view()(request, id=str(sub.id))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"seen": True})
+
+        sub.refresh_from_db()
+        self.assertFalse(sub.has_unseen_update)
+
+
+class ContributorSubmissionServiceEdgeTests(TestCase):
+    def setUp(self):
+        self.service = ContributorSubmissionService()
+
+    def test_get_missing_submission_raises_object_does_not_exist(self):
+        with self.assertRaises(ObjectDoesNotExist):
+            self.service.get(uuid4())
+
+    def test_list_search_filters_by_term(self):
+        ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Alpha report",
+            content="Zebra content",
+            submitted_by="alice",
+        )
+        ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Beta brief",
+            content="Other stuff",
+            submitted_by="bob",
+        )
+
+        qs = self.service.list(search="zebra")
+        self.assertEqual(qs.count(), 1)
+        self.assertEqual(qs.first().submitted_by, "alice")
+
+    def test_list_filters_by_status_and_search(self):
+        ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Gamma fox",
+            content="jumping over things",
+            submitted_by="carol",
+            status="NEED_REVISION",
+        )
+        ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Delta cat",
+            content="sleeping",
+            submitted_by="dave",
+            status="APPROVED",
+        )
+
+        qs = self.service.list(search="fox", status=" need_revision ")
+        self.assertEqual(qs.count(), 1)
+        self.assertEqual(qs.first().submitted_by, "carol")
+
+    def test_list_status_invalid_raises_validation_error(self):
+        with self.assertRaises(ValidationError):
+            self.service.list(status="not-a-status")
+
+    def test_list_search_whitespace_does_not_filter(self):
+        ContributorSubmission.objects.create(
+            id=uuid4(),
+            title="Title",
+            content="Body",
+            submitted_by="eve",
+        )
+        qs = self.service.list(search="   ")
+        self.assertEqual(qs.count(), 1)
+
+
+class ContributorSubmissionStatusUpdateViewErrorTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch.object(ContributorSubmissionStatusUpdateView, "authentication_classes", [])
+    @patch.object(ContributorSubmissionStatusUpdateView, "permission_classes", [])
+    @patch("curator_feature.views.ContributorSubmissionService.update_status")
+    def test_django_validation_error_returns_message_dict(
+        self,
+        mock_update_status,
+        *_,
+    ):
+        mock_update_status.side_effect = DjangoValidationError({"note": ["invalid"]})
+
+        request = self.factory.patch(
+            "/curator-feature/submissions/uuid/status/",
+            {"status": "APPROVED"},
+            content_type="application/json",
+        )
+        request.user = SimpleNamespace(role="CURATOR")
+
+        response = ContributorSubmissionStatusUpdateView.as_view()(request, id="uuid")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data, {"note": ["invalid"]})
