@@ -17,6 +17,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
+from urllib.parse import (
+    parse_qsl,
+    urlencode,
+    urlparse,
+    urlunparse,
+    quote,
+    unquote,
+)
 try:
     from csp.constants import SELF
 except ImportError:
@@ -154,9 +162,77 @@ WSGI_APPLICATION = 'pantau_tular.wsgi.application'
 
 DATABASE_URL = os.getenv('DATABASE_URL')
 
+logger = logging.getLogger(__name__)
+
+
+def _normalize_supabase_pooler_url(database_url: str) -> str:
+    """
+    Normalize Supabase pooler URLs for managed environments (e.g., Koyeb).
+
+    Supabase pooler hosts ("*.pooler.supabase.com") expect:
+    1) A tenant-aware username, like "postgres.<project_ref>".
+    2) SSL enabled (sslmode=require).
+
+    We cannot guess the project ref, but we can safely append it when
+    SUPABASE_PROJECT_REF is provided and the username is missing a tenant.
+    """
+    try:
+        parsed = urlparse(database_url)
+    except Exception:
+        # If parsing fails, return the original value and let Django surface
+        # the error in a familiar way.
+        return database_url
+
+    host = parsed.hostname or ""
+    if "pooler.supabase.com" not in host:
+        return database_url
+
+    project_ref = os.getenv("SUPABASE_PROJECT_REF", "").strip()
+    username = unquote(parsed.username or "")
+    password = unquote(parsed.password or "")
+
+    # Supabase pooler often requires a tenant-aware username.
+    if username and "." not in username:
+        if project_ref:
+            username = f"{username}.{project_ref}"
+            logger.warning(
+                "Detected Supabase pooler host and appended SUPABASE_PROJECT_REF "
+                "to the database username."
+            )
+        else:
+            logger.warning(
+                "Supabase pooler host detected, but SUPABASE_PROJECT_REF is not set. "
+                "If you see 'Tenant or user not found', set SUPABASE_PROJECT_REF and "
+                "use a tenant-aware username (e.g., postgres.<project_ref>)."
+            )
+
+    # Ensure sslmode=require for Supabase pooler connections.
+    query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if not query_params.get("sslmode"):
+        query_params["sslmode"] = os.getenv("SUPABASE_SSLMODE", "require")
+
+    # Rebuild netloc safely to account for special characters.
+    netloc = ""
+    if username:
+        netloc += quote(username, safe="")
+        if password:
+            netloc += f":{quote(password, safe='')}"
+        netloc += "@"
+
+    netloc += host
+    if parsed.port:
+        netloc += f":{parsed.port}"
+
+    normalized = parsed._replace(netloc=netloc, query=urlencode(query_params))
+    return urlunparse(normalized)
+
 if DATABASE_URL:
+    DATABASE_URL = _normalize_supabase_pooler_url(DATABASE_URL)
     DATABASES = {
-        'default': dj_database_url.config(default=DATABASE_URL)
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=int(os.getenv("DB_CONN_MAX_AGE", "0")),
+        )
     }
 else:
     DATABASES = {
@@ -191,6 +267,7 @@ sentry_sdk.init(
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "production")
 SENTRY_ENABLE_LOGS = os.getenv("SENTRY_ENABLE_LOGS", "true").lower() in {"1", "true", "yes"}
+SENTRY_SEND_DEFAULT_PII = os.getenv("SENTRY_SEND_DEFAULT_PII", "true").lower() in {"1", "true", "yes"}
 
 if SENTRY_DSN and not RUNNING_TESTS:
     import sentry_sdk
@@ -220,7 +297,7 @@ if SENTRY_DSN and not RUNNING_TESTS:
             "SENTRY_SERVER_NAME",
             os.getenv("BACKEND_BASE_URL", "royal-rahel-nayaka-cbe367a7.koyeb.app"),
         ),
-        send_default_pii=False,
+        send_default_pii=SENTRY_SEND_DEFAULT_PII,
         enable_logs=SENTRY_ENABLE_LOGS,
     )
 

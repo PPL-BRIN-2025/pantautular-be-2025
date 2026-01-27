@@ -19,11 +19,17 @@ from django.urls import path, include, re_path
 from django_prometheus import exports
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+import sentry_sdk
 
 from curator_feature.views import DashboardDownloadEventAPIView, DiseaseListCreateView
 
 def health(request):               
     return JsonResponse({"status": "ok"})
+
+def trigger_error(request):
+    # Endpoint to trigger an error for Sentry verification
+    sentry_sdk.capture_message("sentry-debug endpoint hit")
+    return 1 / 0
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -45,4 +51,5 @@ urlpatterns = [
     re_path(r"^news/?", include("news_feature.urls")),
     re_path(r"^api/news/?", include(("news_feature.urls", "news_feature"), namespace="news_feature_api")),
     path("contributor-feature/", include("contributor_feature.urls")),
+    path("sentry-debug/", trigger_error),
 ]

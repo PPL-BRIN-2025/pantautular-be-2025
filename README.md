@@ -53,6 +53,7 @@ Make sure to set these environment variables in your `.env` file:
 - `SENTRY_TRACES_SAMPLE_RATE`: Optional APM trace sample rate between 0.0 and 1.0 (default `0.0`)
 - `SENTRY_PROFILES_SAMPLE_RATE`: Optional profiling sample rate between 0.0 and 1.0 (default `0.0`)
 - `SENTRY_ENABLE_LOGS`: Set to `true` to forward application logs to Sentry (default `true`)
+- `SENTRY_SEND_DEFAULT_PII`: Set to `true` to send user data (IP/headers) for better correlation (default `true`)
 
 ## Using with External PostgreSQL Database
 
