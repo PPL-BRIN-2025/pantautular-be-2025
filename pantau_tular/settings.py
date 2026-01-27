@@ -165,6 +165,50 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 logger = logging.getLogger(__name__)
 
 
+def _derive_supabase_project_ref(database_url: str) -> str:
+    """
+    Best-effort derivation of Supabase project ref from common env vars.
+
+    This helps when managed platforms (like Koyeb) provide SUPABASE_URL but
+    the DATABASE_URL username is missing the tenant suffix.
+    """
+    for key in (
+        "SUPABASE_PROJECT_REF",
+        "SUPABASE_REF",
+        "SUPABASE_PROJECT_ID",
+        "SUPABASE_DB_PROJECT_REF",
+    ):
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+
+    supabase_url = (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or os.getenv("SUPABASE_API_URL")
+    )
+    if supabase_url:
+        try:
+            parsed = urlparse(supabase_url)
+            host = parsed.hostname or supabase_url
+            if host.endswith(".supabase.co"):
+                return host.split(".", 1)[0]
+        except Exception:
+            # Fall through to other derivations.
+            pass
+
+    # As a last resort, if the username is already tenant-aware, use it.
+    try:
+        parsed_db = urlparse(database_url)
+        username = unquote(parsed_db.username or "")
+        if "." in username:
+            return username.split(".", 1)[1]
+    except Exception:
+        pass
+
+    return ""
+
+
 def _normalize_supabase_pooler_url(database_url: str) -> str:
     """
     Normalize Supabase pooler URLs for managed environments (e.g., Koyeb).
@@ -187,23 +231,30 @@ def _normalize_supabase_pooler_url(database_url: str) -> str:
     if "pooler.supabase.com" not in host:
         return database_url
 
-    project_ref = os.getenv("SUPABASE_PROJECT_REF", "").strip()
+    project_ref = _derive_supabase_project_ref(database_url)
     username = unquote(parsed.username or "")
     password = unquote(parsed.password or "")
+    username_has_tenant = "." in username
+
+    logger.warning(
+        "Supabase pooler detected (host=%s, user_has_tenant=%s, project_ref_present=%s).",
+        host,
+        username_has_tenant,
+        bool(project_ref),
+    )
 
     # Supabase pooler often requires a tenant-aware username.
-    if username and "." not in username:
+    if username and not username_has_tenant:
         if project_ref:
             username = f"{username}.{project_ref}"
             logger.warning(
-                "Detected Supabase pooler host and appended SUPABASE_PROJECT_REF "
-                "to the database username."
+                "Appended Supabase project ref to database username for pooler host."
             )
         else:
             logger.warning(
-                "Supabase pooler host detected, but SUPABASE_PROJECT_REF is not set. "
-                "If you see 'Tenant or user not found', set SUPABASE_PROJECT_REF and "
-                "use a tenant-aware username (e.g., postgres.<project_ref>)."
+                "Supabase pooler host detected, but no project ref was found. "
+                "If you see 'Tenant or user not found', set SUPABASE_PROJECT_REF "
+                "or provide a tenant-aware username (e.g., postgres.<project_ref>)."
             )
 
     # Ensure sslmode=require for Supabase pooler connections.
